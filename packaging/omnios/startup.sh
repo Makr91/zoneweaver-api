@@ -52,8 +52,8 @@ echo "Configuration: $CONFIG_PATH"
 echo "Environment: $NODE_ENV"
 
 # Start the Node.js application in the background
-# Output goes to SMF log via stdout/stderr
-nohup node index.js </dev/null >/dev/null 2>&1 &
+# Output goes to log file so we can see SSL generation messages
+nohup node index.js </dev/null >>/var/log/zoneweaver-api/zoneweaver-api.log 2>&1 &
 NODE_PID=$!
 
 # Save the PID

@@ -11,8 +11,10 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 
-const configPath = path.join(process.cwd(), 'config', 'config.yaml');
-const backupDir = path.join(process.cwd(), 'config', 'backups');
+// Get config path from environment variable (set by SMF) or fallback to local config
+const getConfigPath = () => process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+const configPath = getConfigPath();
+const backupDir = path.join(path.dirname(configPath), 'backups');
 
 /**
  * @swagger

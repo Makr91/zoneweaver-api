@@ -23,17 +23,20 @@ class ConfigLoader {
 
   /**
    * Loads configuration from config.yaml file
-   * @description Reads and parses the YAML configuration file from config/config.yaml
+   * @description Reads and parses the YAML configuration file, checking CONFIG_PATH environment variable first
    * @throws {Error} If configuration file cannot be loaded or parsed
    */
   load() {
     try {
-      const configPath = path.join(process.cwd(), 'config', 'config.yaml');
+      // Check environment variable first (set by SMF), then fallback to local config
+      const configPath = process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+      console.log(`Loading configuration from: ${configPath}`);
       const fileContents = fs.readFileSync(configPath, 'utf8');
       const fullConfig = yaml.load(fileContents);
       this.config = fullConfig.zoneweaver_api_backend || fullConfig;
     } catch (error) {
       console.error('Error loading config file:', error);
+      console.error('Tried path:', process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml'));
       throw new Error('Failed to load configuration');
     }
   }
