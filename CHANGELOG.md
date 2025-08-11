@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.2](https://github.com/Makr91/zoneweaver-api/compare/v0.1.1...v0.1.2) (2025-08-11)
+
+
+### Bug Fixes
+
+* documentation and guides v63 + man pages for omnios package ([c5f98c8](https://github.com/Makr91/zoneweaver-api/commit/c5f98c81bad614cd14e53dd14d81a074a2a91c3e))
+* documentation and guides v64 + man pages for omnios package ([fcef0b0](https://github.com/Makr91/zoneweaver-api/commit/fcef0b06e25cd1d04f4ae0726b1b6b39bb527347))
+* documentation and guides v65 + man pages for omnios package ([2346c3f](https://github.com/Makr91/zoneweaver-api/commit/2346c3f441bbcc4106128238ec0b6af2622387ed))
+* documentation and guides v66 + man pages for omnios package ([0f694be](https://github.com/Makr91/zoneweaver-api/commit/0f694bec1bbde9100c68920f267fd1bb724b07d9))
+
 ## [0.1.1](https://github.com/Makr91/zoneweaver-api/compare/v0.1.0...v0.1.1) (2025-08-11)
 
 
