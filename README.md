@@ -1,3 +1,5 @@
+![ZoneWeaver API Logo](assets/images/logo.png)
+
 # Zoneweaver API
 
 **Zoneweaver API** is a powerful, Node.js-based API server designed for comprehensive management of Bhyve virtual machines on the OmniOS operating system. It serves as the backbone of the Zoneweaver ecosystem, providing a secure and robust RESTful API for all your virtualization needs.
