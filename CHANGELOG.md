@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/Makr91/zoneweaver-api/compare/v0.1.6...v0.1.7) (2025-08-11)
+
+
+### Bug Fixes
+
+* dependebot ([7496cd2](https://github.com/Makr91/zoneweaver-api/commit/7496cd2f73dd8fa9f135c6779a3d0f17d6c215ae))
+
 ## [0.1.6](https://github.com/Makr91/zoneweaver-api/compare/v0.1.5...v0.1.6) (2025-08-11)
 
 
