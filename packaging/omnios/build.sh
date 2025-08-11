@@ -118,10 +118,11 @@ install_app() {
     logcmd mkdir -p etc/zoneweaver-api
     logcmd cp $SRCDIR/packaging/config/production-config.yaml etc/zoneweaver-api/config.yaml
 
-    # Create empty SSL and database directories (packaged content)
+    # Create empty SSL, database, and log directories (packaged content)
     # This prevents salvaging on uninstall - files within stay in place
     logcmd mkdir -p etc/zoneweaver-api/ssl
     logcmd mkdir -p var/lib/zoneweaver-api/database
+    logcmd mkdir -p var/log/zoneweaver-api
 
     # Install SMF manifest
     logmsg "Installing SMF manifest"

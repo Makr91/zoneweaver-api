@@ -88,6 +88,11 @@ license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
 <transform dir path=var/lib/zoneweaver-api/database -> set group zoneapi>
 <transform dir path=var/lib/zoneweaver-api/database -> set mode 0755>
 
+# Log directory (packaged content to avoid permission issues)
+<transform dir path=var/log/zoneweaver-api -> set owner zoneapi>
+<transform dir path=var/log/zoneweaver-api -> set group zoneapi>
+<transform dir path=var/log/zoneweaver-api -> set mode 0755>
+
 # SMF manifest
 <transform file path=lib/svc/manifest/system/zoneweaver-api.xml -> set owner root>
 <transform file path=lib/svc/manifest/system/zoneweaver-api.xml -> set group sys>
