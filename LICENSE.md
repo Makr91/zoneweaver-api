@@ -5,6 +5,41 @@ nav_order: 6
 permalink: /license/
 ---
 
+# License
+{: .no_toc }
+
+ZoneWeaver API is distributed under the GNU General Public License v3.0.
+
+## Table of contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
+
+---
+
+## License Summary
+
+This software is **free software**: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+### Key Freedoms
+
+- ✅ **Freedom to use** the software for any purpose
+- ✅ **Freedom to study** and modify the source code
+- ✅ **Freedom to distribute** copies to help others
+- ✅ **Freedom to distribute modified versions** to benefit the community
+
+### Key Requirements
+
+- 📋 **Provide the same GPL-3.0 license** with any distribution
+- 📋 **Make source code available** when distributing
+- 📋 **Document any changes** made to the software
+
+---
+
+## Full License Text
+
+<div style="font-family: monospace; font-size: 0.85em; line-height: 1.4; background-color: #f6f8fa; padding: 20px; border-radius: 6px; overflow-x: auto; white-space: pre-line;">
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 

@@ -1,9 +1,8 @@
 ---
 title: Configuration
 layout: default
-nav_order: 1
-parent: Reference
-permalink: /docs/reference/configuration/
+nav_order: 4
+permalink: /docs/configuration/
 ---
 
 # Configuration Reference
