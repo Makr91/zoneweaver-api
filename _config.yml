@@ -58,7 +58,7 @@ exclude:
 theme: just-the-docs
 
 # Theme customization
-color_scheme: dark # Or "light", or custom schemes
+color_scheme: wider # Custom wider layout for Swagger UI
 search_enabled: true # Enable the built-in search
 
 # Aux links for header

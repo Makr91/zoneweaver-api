@@ -1,45 +1,54 @@
 ---
 title: Changelog
 layout: default
-nav_order: 4
+nav_order: 5
 permalink: /docs/changelog/
 ---
 
 # Changelog
 {: .no_toc }
 
-All notable changes to the ZoneWeaver API project will be documented in this file.
+All notable changes to the ZoneWeaver API project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-*This changelog is automatically updated from the main repository when new releases are published.*
-
-**Current Version**: Loading...
-{: #current-version }
-
-**Release Date**: Loading...
-{: #release-date }
-
-**Release Notes**: [View on GitHub](#)
-{: #release-notes }
+{% raw %}
+<div id="changelog-content">
+  <p><em>Loading changelog...</em></p>
+</div>
 
 <script>
-// Load version information
-fetch('version.json')
-  .then(response => response.json())
-  .then(data => {
-    document.getElementById('current-version').textContent = 'Current Version: ' + data.version;
-    document.getElementById('release-date').textContent = 'Release Date: ' + new Date(data.release_date).toLocaleDateString();
-    document.getElementById('release-notes').innerHTML = 'Release Notes: <a href="' + data.release_url + '" target="_blank">View on GitHub</a>';
+// Load changelog from main repository
+fetch('https://raw.githubusercontent.com/Makr91/zoneweaver-api/main/CHANGELOG.md')
+  .then(response => response.text())
+  .then(markdown => {
+    // Simple markdown-to-HTML conversion for basic changelog format
+    let html = markdown
+      // Convert headers
+      .replace(/^## \[(.*?)\]/gm, '<h2>Version $1</h2>')
+      .replace(/^### (.*)/gm, '<h3>$1</h3>')
+      // Convert bullet points
+      .replace(/^- (.*)/gm, '<li>$1</li>')
+      // Wrap consecutive li elements in ul
+      .replace(/(<li>.*<\/li>\n?)+/gs, '<ul>$&</ul>')
+      // Convert links
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+      // Convert line breaks
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+    
+    // Wrap in paragraphs
+    html = '<p>' + html + '</p>';
+    
+    document.getElementById('changelog-content').innerHTML = html;
   })
   .catch(error => {
-    console.log('Version info not available:', error);
+    document.getElementById('changelog-content').innerHTML = 
+      '<p>Unable to load changelog. <a href="https://github.com/Makr91/zoneweaver-api/blob/main/CHANGELOG.md" target="_blank">View on GitHub</a></p>';
+    console.log('Changelog loading error:', error);
   });
 </script>
-
----
-
-The changelog content will be automatically populated from CHANGELOG.md during the documentation build process.
+{% endraw %}

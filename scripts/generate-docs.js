@@ -28,17 +28,24 @@ async function generateDocs() {
     fs.writeFileSync(path.join(docsDir, 'openapi.json'), openApiJson);
     console.log('✅ Generated docs/api/openapi.json');
 
-    // Generate static Swagger UI HTML
+    // Generate static Swagger UI HTML (pure HTML, no Jekyll processing)
     console.log('📝 Generating Swagger UI HTML...');
     const swaggerHtml = generateSwaggerUI();
-    fs.writeFileSync(path.join(docsDir, 'reference.html'), swaggerHtml);
-    console.log('✅ Generated docs/api/reference.html');
+    fs.writeFileSync(path.join(docsDir, 'swagger-ui.html'), swaggerHtml);
+    console.log('✅ Generated docs/api/swagger-ui.html');
+
+    // Generate Jekyll redirect page
+    console.log('📝 Generating Jekyll redirect page...');
+    const redirectPage = generateRedirectPage();
+    fs.writeFileSync(path.join(docsDir, 'reference.md'), redirectPage);
+    console.log('✅ Generated docs/api/reference.md');
 
     console.log('🎉 Documentation generation completed successfully!');
     console.log('');
     console.log('Generated files:');
     console.log('  - docs/api/openapi.json - Raw OpenAPI specification');
-    console.log('  - docs/api/reference.html - Interactive Swagger UI documentation');
+    console.log('  - docs/api/swagger-ui.html - Pure HTML Swagger UI (no Jekyll processing)');
+    console.log('  - docs/api/reference.md - Jekyll page with embedded Swagger UI');
     console.log('');
 
   } catch (error) {
@@ -48,20 +55,11 @@ async function generateDocs() {
 }
 
 /**
- * Generate static Swagger UI HTML page
- * @returns {string} HTML content for Swagger UI
+ * Generate pure HTML Swagger UI page (no Jekyll processing)
+ * @returns {string} Pure HTML content for Swagger UI
  */
 function generateSwaggerUI() {
-  return `---
-title: API Reference
-layout: default
-nav_order: 3
-parent: API Reference
-permalink: /docs/api/reference/
----
-
-{% raw %}
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -209,8 +207,44 @@ permalink: /docs/api/reference/
         };
     </script>
 </body>
-</html>
-{% endraw %}`;
+</html>`;
+}
+
+/**
+ * Generate Jekyll redirect page that includes the pure HTML Swagger UI
+ * @returns {string} Jekyll markdown page with iframe to Swagger UI
+ */
+function generateRedirectPage() {
+  return `---
+title: API Reference
+layout: default
+nav_order: 3
+parent: API Reference
+permalink: /docs/api/reference/
+---
+
+# Interactive API Reference
+
+<div style="width: 100%; height: 800px; border: none; margin: 0; padding: 0;">
+  <iframe 
+    src="swagger-ui.html" 
+    style="width: 100%; height: 100%; border: none; background: white;" 
+    title="ZoneWeaver API Reference">
+    <p>Your browser does not support iframes. 
+       <a href="swagger-ui.html">Click here to view the API documentation</a>
+    </p>
+  </iframe>
+</div>
+
+## Alternative Formats
+
+- **[View Full Screen](swagger-ui.html)** - Open Swagger UI in a new page for better experience
+- **[Download OpenAPI Spec](openapi.json)** - Raw OpenAPI 3.0 specification file
+
+---
+
+*The interactive API documentation above allows you to explore all available endpoints, view request/response schemas, and test API calls directly from your browser.*
+`;
 }
 
 // Run the documentation generation
