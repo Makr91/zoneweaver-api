@@ -2,10 +2,9 @@
  * @fileoverview Reconciliation Service for Zoneweaver API
  * @description Periodically scans the host system and reconciles the database with the actual state of the system.
  * @author Cline
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import config from '../config/ConfigLoader.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';

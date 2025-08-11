@@ -2,10 +2,9 @@
  * @fileoverview Services Controller for Zoneweaver API
  * @description Handles API requests for OmniOS service management.
  * @author Cline
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import {
     getServices,

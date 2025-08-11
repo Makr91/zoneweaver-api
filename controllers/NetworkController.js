@@ -2,10 +2,9 @@
  * @fileoverview Network Management Controller for Zoneweaver API
  * @description Handles hostname and IP address management via ipadm and hostname commands
  * @author makr91
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import { execSync } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";

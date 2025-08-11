@@ -2,10 +2,9 @@
  * @fileoverview Package Management Controller for Zoneweaver API
  * @description Handles package management operations via pkg commands
  * @author makr91
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import { execSync, spawn } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";

@@ -2,10 +2,9 @@
  * @fileoverview Database Migration Utilities for Zoneweaver API
  * @description Handles database schema migrations and updates
  * @author makr91
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import db from "./Database.js";
 import CPUStats from "../models/CPUStatsModel.js";

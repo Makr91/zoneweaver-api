@@ -2,10 +2,9 @@
  * @fileoverview Storage Data Collection Controller for Zoneweaver API
  * @description Collects ZFS pool and dataset information from OmniOS zpool and zfs commands
  * @author makr91
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import { exec, execSync } from "child_process";
 import util from "util";

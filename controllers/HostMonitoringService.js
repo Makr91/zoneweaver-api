@@ -2,10 +2,9 @@
  * @fileoverview Host Monitoring Service for Zoneweaver API
  * @description Coordinates network and storage data collection with configurable intervals
  * @author makr91
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import config from "../config/ConfigLoader.js";
 import NetworkCollector from "./NetworkCollector.js";

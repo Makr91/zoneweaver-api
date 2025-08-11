@@ -2,10 +2,9 @@
  * @fileoverview Network Data Collection Controller for Zoneweaver API
  * @description Collects network interface information, statistics, and usage data from OmniOS dladm commands
  * @author makr91
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import { exec, execSync } from "child_process";
 import util from "util";

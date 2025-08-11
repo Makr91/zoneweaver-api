@@ -2,10 +2,9 @@
  * @fileoverview System Update Controller for Zoneweaver API
  * @description Handles system update operations via pkg update commands
  * @author makr91
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import { spawn } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";

@@ -2,10 +2,9 @@
  * @fileoverview Host Monitoring API Controller for Zoneweaver API
  * @description Provides API endpoints for accessing collected host monitoring data
  * @author makr91
- * @version 0.0.1
- * @license GPL-3.0
+
+ * @license: https://zoneweaver-api.startcloud.com/license/
  */
-// x-release-please-version
 
 import { Op } from "sequelize";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
