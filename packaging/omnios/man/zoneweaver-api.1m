@@ -102,7 +102,7 @@ SSL certificate directory (auto-generated if enabled)
 SQLite database directory
 .It Pa /var/log/zoneweaver-api/
 Service log directory
-.It Pa /opt/ooce/zoneweaver-api/
+.It Pa /opt/zoneweaver-api/
 Installation directory
 .El
 .Sh EXIT STATUS
@@ -110,7 +110,7 @@ Installation directory
 .Sh EXAMPLES
 Start the service manually for testing:
 .Bd -literal -offset indent
-# cd /opt/ooce/zoneweaver-api
+# cd /opt/zoneweaver-api
 # node index.js
 .Ed
 .Pp
@@ -137,7 +137,7 @@ Review service logs:
 .Cm svcs -L zoneweaver-api
 .It
 Verify configuration syntax: 
-.Cm node -c /opt/ooce/zoneweaver-api/index.js
+.Cm node -c /opt/zoneweaver-api/index.js
 .It
 Test network connectivity to configured ports
 .It
