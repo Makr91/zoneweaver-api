@@ -1,14 +1,32 @@
+---
+title: Security Policy
+layout: default
+nav_order: 7
+permalink: /docs/security/
+---
+
 # Security Policy
+{: .no_toc }
+
+Security policy and vulnerability reporting procedures for ZoneWeaver API.
+
+## Table of contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
+
+---
 
 ## Supported Versions
 
-ZoneWeaver API follows semantic versioning. Security updates are provided for the following versions:
+ZoneWeaver API follows semantic versioning. Security updates are provided for the latest release and the two most recent prior releases.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.0.x   | :white_check_mark: |
+<div id="supported-versions">
+<p>Loading supported versions...</p>
+</div>
 
-As the project matures, we will maintain security support for the latest major version and the previous major version when applicable.
+---
 
 ## Reporting a Vulnerability
 
@@ -23,10 +41,6 @@ If you discover a security vulnerability in ZoneWeaver API, please report it res
 3. Fill out the advisory form with detailed information
 4. Submit the advisory
 
-### Alternative Method: Email
-
-If you prefer email communication, you can reach out to the maintainers through the contact information provided in the repository.
-
 ### What to Include
 
 Please provide as much information as possible:
@@ -37,6 +51,15 @@ Please provide as much information as possible:
 - **Affected versions** (if known)
 - **Suggested fix** (if you have one)
 - **Your contact information** for follow-up questions
+
+## Response Process
+
+Due to limited development resources, please understand that:
+
+- **Initial Response**: We aim to acknowledge receipt within 48-72 hours
+- **Assessment**: Initial assessment will be completed within 1 week
+- **Resolution**: Timeline depends on severity and complexity, typically 1-4 weeks
+- **Disclosure**: Coordinated disclosure after fix is available
 
 ### Severity Levels
 
@@ -67,7 +90,7 @@ Given that ZoneWeaver API manages system-level operations on OmniOS, please pay 
 To maintain security:
 
 1. **Keep Updated**: Always run the latest stable version
-2. **Secure Configuration**: Follow the [security configuration guide](https://zoneweaver-api.startcloud.com/docs/configuration/)
+2. **Secure Configuration**: Follow the [security configuration guide](/docs/configuration/)
 3. **API Key Management**: Rotate API keys regularly, use strong keys
 4. **Network Security**: Use HTTPS, restrict network access appropriately
 5. **Monitor Logs**: Watch for suspicious activity in application logs

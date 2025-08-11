@@ -3,9 +3,10 @@
 <link rel="apple-touch-icon" sizes="192x192" href="{{ '/assets/images/logo192.png' | relative_url }}">
 <link rel="apple-touch-icon" sizes="512x512" href="{{ '/assets/images/logo512.png' | relative_url }}">
 
-<!-- Dynamic version loading for releases page -->
+<!-- Dynamic version loading for releases and security pages -->
 <script type="text/javascript">
 document.addEventListener('DOMContentLoaded', function() {
+  // Releases page version loading
   if (window.location.pathname.includes('/releases/')) {
     var releaseDiv = document.getElementById('latest-release');
     if (releaseDiv) {
@@ -17,6 +18,47 @@ document.addEventListener('DOMContentLoaded', function() {
           if (p5pLink) {
             p5pLink.href = 'https://github.com/Makr91/zoneweaver-api/releases/latest/download/zoneweaver-api-' + data.version + '.p5p';
           }
+        });
+    }
+  }
+  
+  // Security page supported versions loading
+  if (window.location.pathname.includes('/security/')) {
+    var versionsDiv = document.getElementById('supported-versions');
+    if (versionsDiv) {
+      fetch('https://api.github.com/repos/Makr91/zoneweaver-api/releases')
+        .then(function(response) { return response.json(); })
+        .then(function(releases) {
+          // Filter out drafts and prereleases, get the last 3 releases
+          var stableReleases = releases
+            .filter(function(release) { return !release.draft && !release.prerelease; })
+            .slice(0, 3);
+          
+          if (stableReleases.length === 0) {
+            versionsDiv.innerHTML = '<p><em>No stable releases available yet.</em></p>';
+            return;
+          }
+          
+          var html = '<table><thead><tr><th>Version</th><th>Release Date</th><th>Supported</th></tr></thead><tbody>';
+          
+          stableReleases.forEach(function(release, index) {
+            var releaseDate = new Date(release.published_at).toLocaleDateString();
+            var isSupported = index < 3; // Latest 3 releases
+            var supportIcon = isSupported ? '✅' : '❌';
+            
+            html += '<tr><td><a href="' + release.html_url + '">' + release.tag_name + '</a></td>';
+            html += '<td>' + releaseDate + '</td>';
+            html += '<td>' + supportIcon + '</td></tr>';
+          });
+          
+          html += '</tbody></table>';
+          html += '<p><em>Last updated: ' + new Date().toLocaleDateString() + '</em></p>';
+          
+          versionsDiv.innerHTML = html;
+        })
+        .catch(function(error) {
+          console.error('Failed to load releases:', error);
+          versionsDiv.innerHTML = '<p><em>Unable to load version information. Please check the <a href="https://github.com/Makr91/zoneweaver-api/releases">releases page</a> for current versions.</em></p>';
         });
     }
   }
