@@ -14,6 +14,8 @@ Step-by-step guides for setting up and using the ZoneWeaver API.
 ## Available Guides
 
 - [Getting Started](getting-started/) - Initial setup and configuration
+- [Production Installation](production-installation/) - Install ZoneWeaver API using OmniOS packages
+- [Development Installation](development-installation/) - Set up development environment
 - [Authentication](authentication/) - API key setup and usage
 
 ---
