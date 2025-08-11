@@ -11,7 +11,9 @@ document.addEventListener('DOMContentLoaded', function() {
     var releaseDiv = document.getElementById('latest-release');
     if (releaseDiv) {
       fetch('https://raw.githubusercontent.com/Makr91/zoneweaver-api/refs/heads/main/package.json')
-        .then(function(response) { return response.json(); })
+        .then(function(response) { 
+          return response.json(); 
+        })
         .then(function(data) {
           releaseDiv.innerHTML = '<p><strong>Version v' + data.version + '</strong> - Current Build</p>';
           var p5pLink = document.querySelector('a[href*="zoneweaver-api.p5p"]');
@@ -27,41 +29,30 @@ document.addEventListener('DOMContentLoaded', function() {
     var versionsDiv = document.getElementById('supported-versions');
     if (versionsDiv) {
       fetch('https://api.github.com/repos/Makr91/zoneweaver-api/releases')
-        .then(function(response) { return response.json(); })
+        .then(function(response) {
+          return response.json();
+        })
         .then(function(releases) {
-          var stableReleases = releases.filter(function(release) { 
-            return !release.draft && !release.prerelease; 
-          }).slice(0, 5);
-          
-          if (stableReleases.length === 0) {
-            versionsDiv.innerHTML = '<p><em>No stable releases available yet.</em></p>';
-            return;
-          }
-          
           var html = '<table><thead><tr><th>Version</th><th>Release Date</th><th>Supported</th><th>Download</th></tr></thead><tbody>';
+          var count = 0;
           
-          for (var i = 0; i < stableReleases.length; i++) {
-            var release = stableReleases[i];
-            var releaseDate = new Date(release.published_at).toLocaleDateString();
-            var isSupported = i < 3;
-            var supportIcon = isSupported ? '✅' : '❌';
-            
-            html += '<tr>';
-            html += '<td><a href="' + release.html_url + '">' + release.tag_name + '</a></td>';
-            html += '<td>' + releaseDate + '</td>';
-            html += '<td>' + supportIcon + '</td>';
-            html += '<td><a href="' + release.html_url + '">Download</a></td>';
-            html += '</tr>';
+          for (var i = 0; i < releases.length && count < 5; i++) {
+            var release = releases[i];
+            if (!release.draft && !release.prerelease) {
+              var releaseDate = new Date(release.published_at).toLocaleDateString();
+              var isSupported = count < 3;
+              var supportIcon = isSupported ? '✅' : '❌';
+              
+              html += '<tr><td><a href="' + release.html_url + '">' + release.tag_name + '</a></td><td>' + releaseDate + '</td><td>' + supportIcon + '</td><td><a href="' + release.html_url + '">Download</a></td></tr>';
+              count++;
+            }
           }
           
-          html += '</tbody></table>';
-          html += '<p><em>Last updated: ' + new Date().toLocaleDateString() + '</em></p>';
-          
+          html += '</tbody></table><p><em>Last updated: ' + new Date().toLocaleDateString() + '</em></p>';
           versionsDiv.innerHTML = html;
         })
         .catch(function(error) {
-          console.error('Failed to load releases:', error);
-          versionsDiv.innerHTML = '<p><em>Unable to load version information. Please check the releases page for current versions.</em></p>';
+          versionsDiv.innerHTML = '<p><em>Unable to load version information.</em></p>';
         });
     }
   }
