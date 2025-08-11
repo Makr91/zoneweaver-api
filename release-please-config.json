@@ -1,25 +1,16 @@
 {
-  "bootstrap-sha": "f9f0c83d71c4cf87e1de7f2b8ab1c1c8e04b6b5c",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
   "packages": {
     ".": {
-      "package-name": "zoneweaver-api",
-      "component": "zoneweaver-api",
       "release-type": "node",
-      "draft": false,
-      "prerelease": false,
-      "version-file": "package.json",
-      "changelog-path": "CHANGELOG.md",
+      "package-name": "zoneweaver-api",
       "include-component-in-tag": false,
       "extra-files": [
         {
           "type": "yaml",
           "path": "config/config.yaml",
           "jsonpath": "$.version"
-        },
-        {
-          "type": "javascript", 
-          "path": "config/swagger.js",
-          "jsonpath": "$.info.version"
         }
       ]
     }

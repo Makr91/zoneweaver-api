@@ -86,9 +86,12 @@ try {
     console.log(`   ⚠️  Release-please manifest not found: ${releasePleaseManifestPath}`);
   }
   
-  console.log(`\n🎉 Version synchronization completed!`);
-  console.log(`   📦 Root package.json: ${rootVersion}`);
-  console.log(`   🔧 All config files updated to: ${rootVersion}`);
+  console.log(`✅ Synchronized versions to ${rootVersion}`);
+  console.log(`   - Root: ${rootVersion}`);
+  console.log(`   - Swagger: ${rootVersion}`);
+  console.log(`   - Config: ${rootVersion}`);
+  console.log(`   - Production Config: ${rootVersion}`);
+  console.log(`   - Release Please Manifest: ${rootVersion}`);
   
 } catch (error) {
   console.error('❌ Error synchronizing versions:', error.message);
