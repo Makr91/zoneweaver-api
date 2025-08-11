@@ -17,20 +17,11 @@ jobs:
   build-omnios-package:
     runs-on: self-hosted
     steps:
-      # OmniOS Build Steps
+      # OmniOS Build Steps - Just sync source and build on OmniOS
       - name: Checkout for OmniOS build
         uses: actions/checkout@v4
         with:
           clean: true
-        
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          
-      - name: Install Node.js dependencies
-        run: npm ci
           
       - name: Set package variables
         run: |

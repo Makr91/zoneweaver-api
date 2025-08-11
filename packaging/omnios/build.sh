@@ -69,13 +69,13 @@ build_app() {
     export CC=gcc
     export CXX=g++
     
-    # Sync versions first
+    # Install dependencies first
+    MAKE=gmake logcmd npm ci
+    
+    # Sync versions after dependencies are installed
     if [ -f "scripts/sync-versions.js" ]; then
         logcmd node scripts/sync-versions.js
     fi
-    
-    # Install dependencies
-    MAKE=gmake logcmd npm ci
     
     # Install production dependencies only
     MAKE=gmake logcmd npm ci --omit=dev
