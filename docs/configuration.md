@@ -299,3 +299,4 @@ cp /etc/zoneweaver-api/config.yaml /etc/zoneweaver-api/config.yaml.backup
 # Restore from backup
 cp /etc/zoneweaver-api/config.yaml.backup /etc/zoneweaver-api/config.yaml
 svcadm restart zoneweaver-api
+```
