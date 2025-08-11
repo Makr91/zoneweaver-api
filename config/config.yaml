@@ -1,0 +1,112 @@
+server:
+  http_port: 5000
+  https_port: 5001
+
+ssl:
+  key_path: "./ssl/server.key"
+  cert_path: "./ssl/server.crt"
+
+cors:
+  whitelist:
+    - "http://localhost:3000"
+    - "https://localhost:3001"
+
+database:
+  dialect: "sqlite"
+  storage: "./database.sqlite"
+  logging: false
+
+# API Key Authentication Settings
+api_keys:
+  bootstrap_enabled: true           # Set to false to permanently disable bootstrap
+  bootstrap_auto_disable: true     # Auto-disable bootstrap after first use
+  key_length: 64                   # Length of random bytes for API key generation
+  hash_rounds: 12                  # bcrypt hash rounds for API key storage
+
+# Stats Endpoint Configuration
+stats:
+  public_access: true              # Set to false to require API key for /stats endpoint
+
+# Zone Management Configuration
+zones:
+  discovery_interval: 300          # Seconds between automatic zone discovery scans
+  auto_discovery: true             # Enable automatic zone discovery on startup
+  max_concurrent_tasks: 5          # Maximum number of concurrent zone operations
+  task_timeout: 300                # Task execution timeout in seconds (5 minutes)
+  orphan_retention: 7              # Days to keep orphaned zones in database
+  default_pagination_limit: 50     # Default number of items to return in paginated API calls
+
+# Provisioning Configuration
+provisioning:
+  install_tools: false             # Set to true to automatically install missing tools on startup
+
+cleanup:
+  interval: 300                    # Seconds between cleanup runs (5 minutes)
+
+# VNC Console Configuration
+vnc:
+  web_port_range_start: 8000       # Starting port for noVNC web interfaces (matches code)
+  web_port_range_end: 8100         # Ending port for noVNC web interfaces (matches code)
+  session_timeout: 1800            # VNC session timeout in seconds (30 minutes)
+  cleanup_interval: 300            # VNC session cleanup interval in seconds (5 minutes)
+  bind_address: "127.0.0.1"        # Bind address for VNC servers (localhost only for security)
+  max_concurrent_sessions: 10      # Maximum number of concurrent VNC sessions
+
+# Host Information Collection Configuration
+host_monitoring:
+  enabled: true                    # Enable/disable host information collection
+  auto_enable_network_accounting: true  # Auto-enable network accounting on startup if not enabled
+  network_accounting_file: "/var/log/net.log"  # Network accounting log file path
+  
+  # Collection intervals in seconds - Admins can customize for different performance needs
+  intervals:
+    # Network monitoring intervals
+    network_config: 60             # Network interface configuration (1 minute)
+    network_stats: 10              # Network traffic statistics (10 seconds) - can set to 1-5 for real-time
+    network_usage: 10              # Network usage accounting (10 seconds) - can set to 1-5 for real-time
+
+    # Storage monitoring intervals
+    storage: 300                   # ZFS pools and datasets (5 minutes) - can set to 60-120 for frequent updates
+    storage_frequent: 10           # Per-disk IOPS and ARC stats (10 seconds) - can set to 5-30 for different granularity
+
+    # Device monitoring intervals
+    device_discovery: 60           # PCI device discovery and passthrough status (1 minute)
+
+    # System monitoring intervals (future expansion)
+    system_metrics: 30             # CPU, memory, load averages (30 seconds)
+    
+    # Alternative high-frequency presets (uncomment to enable real-time monitoring)
+    # network_stats: 5             # 5-second updates (balanced real-time)
+    # network_usage: 5             # 5-second bandwidth monitoring  
+    # storage: 120                 # 2-minute storage updates
+    
+    # Ultra-fast preset for critical monitoring (high resource usage)
+    # network_stats: 1             # 1-second updates (maximum real-time)
+    # network_usage: 1             # 1-second bandwidth monitoring
+    # storage: 60                  # 1-minute storage updates
+  
+  # Data retention settings (days)
+  retention:
+    network_stats: 7               # Network stats (high frequency data)
+    network_usage: 30              # Network usage accounting
+    network_config: 90             # Network interface configuration
+    storage: 90                    # ZFS pool and dataset information
+    cpu_stats: 7                   # CPU performance statistics (high frequency data)
+    memory_stats: 7                # Memory usage statistics (high frequency data)
+  
+  # Error handling
+  error_handling:
+    max_consecutive_errors: 5      # Max consecutive errors before disabling collector
+    retry_delay: 30                # Seconds to wait before retrying after error
+    reset_error_count_after: 3600  # Seconds after which error count resets
+  
+  # Performance settings
+  performance:
+    max_concurrent_scans: 3        # Maximum concurrent data collection processes
+    command_timeout: 30            # Timeout for individual commands in seconds
+    batch_size: 100                # Batch size for database inserts
+
+reconciliation:
+  enabled: true
+  interval: 3600
+  log_level: 'info'
