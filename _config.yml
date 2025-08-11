@@ -7,6 +7,9 @@ repository: Makr91/zoneweaver-api # for github-metadata
 
 permalink: pretty
 
+# Include files from root directory instead of just _includes/
+includes_dir: "."
+
 # Logo and favicon settings  
 # logo: "/assets/images/logo.png"
 favicon_ico: "/assets/images/favicon.ico"

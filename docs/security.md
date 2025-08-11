@@ -28,4 +28,4 @@ ZoneWeaver API follows semantic versioning. Security updates are provided for th
 
 ---
 
-{% include_relative ../SECURITY.md %}
+{% include SECURITY.md %}
