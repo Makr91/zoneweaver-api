@@ -1,0 +1,101 @@
+# Security Policy
+
+## Supported Versions
+
+ZoneWeaver API follows semantic versioning. Security updates are provided for the following versions:
+
+| Version | Supported          |
+| ------- | ------------------ |
+| 0.0.x   | :white_check_mark: |
+
+As the project matures, we will maintain security support for the latest major version and the previous major version when applicable.
+
+## Reporting a Vulnerability
+
+**Please do not report security vulnerabilities through public GitHub issues.**
+
+If you discover a security vulnerability in ZoneWeaver API, please report it responsibly:
+
+### Preferred Method: Security Advisory
+
+1. Go to the [GitHub Security Advisory page](https://github.com/Makr91/zoneweaver-api/security/advisories)
+2. Click "Report a vulnerability"
+3. Fill out the advisory form with detailed information
+4. Submit the advisory
+
+### Alternative Method: Email
+
+If you prefer email communication, you can reach out to the maintainers through the contact information provided in the repository.
+
+### What to Include
+
+Please provide as much information as possible:
+
+- **Description** of the vulnerability
+- **Steps to reproduce** the issue
+- **Potential impact** of the vulnerability
+- **Affected versions** (if known)
+- **Suggested fix** (if you have one)
+- **Your contact information** for follow-up questions
+
+### Severity Levels
+
+- **Critical**: Immediate attention (RCE, privilege escalation)
+- **High**: Quick response needed (authentication bypass, data exposure)
+- **Medium**: Standard timeline (DoS, information disclosure)
+- **Low**: Lower priority (minor information leaks)
+
+## Security Considerations for ZoneWeaver API
+
+Given that ZoneWeaver API manages system-level operations on OmniOS, please pay special attention to:
+
+### High-Risk Areas
+- **API Key Authentication**: Bypasses or privilege escalation
+- **Zone Management**: Unauthorized zone creation/modification/deletion
+- **File System Operations**: Path traversal or unauthorized file access
+- **Command Execution**: Any potential for command injection
+- **Network Operations**: Unauthorized network configuration changes
+
+### Configuration Security
+- **Default Configurations**: Insecure defaults
+- **SSL/TLS Implementation**: Certificate validation, cipher suites
+- **CORS Configuration**: Origin validation bypasses
+- **Database Security**: SQL injection, unauthorized access
+
+## Best Practices for Users
+
+To maintain security:
+
+1. **Keep Updated**: Always run the latest stable version
+2. **Secure Configuration**: Follow the [security configuration guide](https://zoneweaver-api.startcloud.com/docs/configuration/)
+3. **API Key Management**: Rotate API keys regularly, use strong keys
+4. **Network Security**: Use HTTPS, restrict network access appropriately
+5. **Monitor Logs**: Watch for suspicious activity in application logs
+
+## Security Features
+
+ZoneWeaver API includes several security features:
+
+- **API Key Authentication**: Bcrypt-hashed keys with configurable rounds
+- **CORS Protection**: Whitelist-based origin validation
+- **SSL/TLS Support**: Configurable HTTPS with custom certificates
+- **Input Validation**: Parameter validation and sanitization
+- **Audit Logging**: API key usage tracking
+
+## Acknowledgments
+
+We appreciate the security research community's efforts in making ZoneWeaver API more secure. Responsible disclosure helps protect all users.
+
+### Hall of Fame
+
+Contributors who responsibly report security vulnerabilities will be acknowledged here (with their permission):
+
+- *No vulnerabilities reported yet*
+
+## Updates to This Policy
+
+This security policy may be updated as the project evolves. Check back periodically for changes.
+
+---
+
+**Remember**: Security is a shared responsibility. Your vigilance and responsible reporting help keep the entire ZoneWeaver community safe.
