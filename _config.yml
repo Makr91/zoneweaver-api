@@ -1,15 +1,15 @@
 # Basic Jekyll settings
 title: ZoneWeaver API Documentation
 description: Documentation for the ZoneWeaver API - Zone Hypervisor Management Backend
-baseurl: "/zoneweaver-api" # GitHub Pages subdirectory path
-url: "https://makr91.github.io" # GitHub Pages domain
+baseurl: "" # Custom domain serves from root
+url: "http://zoneweaver-api.startcloud.com" # Custom domain
 repository: Makr91/zoneweaver-api # for github-metadata
 
 permalink: pretty
 
 # Logo and favicon settings  
 # logo: "/assets/images/logo.png"
-favicon_ico: "/zoneweaver-api/assets/images/favicon.ico"
+favicon_ico: "/assets/images/favicon.ico"
 
 defaults:
   - scope:

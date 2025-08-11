@@ -30,8 +30,8 @@ Download the latest version of ZoneWeaver API.
 
 ## Installation
 
-- **[Production Installation](/docs/guides/production-installation/)** - Install using OmniOS packages
-- **[Development Setup](/docs/guides/development-installation/)** - Set up development environment
+- **[Production Installation](guides/production-installation/)** - Install using OmniOS packages
+- **[Development Setup](guides/development-installation/)** - Set up development environment
 
 ---
 

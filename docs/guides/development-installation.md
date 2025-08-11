@@ -433,7 +433,7 @@ MAKE=gmake npm install
 ### Getting Help
 
 - **GitHub Issues**: [Report bugs and request features](https://github.com/Makr91/zoneweaver-api/issues)
-- **Documentation**: Review other guides in the `/docs/guides/` directory
+- **Documentation**: Review other guides in the `guides/` directory
 - **API Reference**: Use the interactive Swagger documentation at `/api-docs`
 
 ---
