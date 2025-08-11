@@ -20,8 +20,8 @@
     <!-- Start method -->
     <exec_method name='start' type='method' exec='/opt/zoneweaver-api/startup.sh' timeout_seconds='60'>
       <method_context working_directory='/opt/zoneweaver-api'>
-        <method_credential user='zoneweaver-api' group='zoneweaver-api' 
-            privileges='basic,net_privaddr' />
+        <method_credential user='zoneweaver' group='zoneweaver' 
+            privileges='basic,net_privaddr,sys_admin,proc_owner,file_dac_read,file_dac_write,proc_priocntl' />
         <method_environment>
           <envvar name='PATH' value='/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/bin:/usr/sbin:/sbin'/>
           <envvar name='NODE_ENV' value='production'/>
@@ -34,9 +34,9 @@
     <!-- Stop method -->
     <exec_method name='stop' type='method' exec='/opt/zoneweaver-api/shutdown.sh' timeout_seconds='30'>
       <method_context working_directory='/opt/zoneweaver-api'>
-        <method_credential user='zoneweaver-api' group='zoneweaver-api' />
+        <method_credential user='zoneweaver' group='zoneweaver' />
         <method_environment>
-          <envvar name='PATH' value='/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/bin:/usr/sbin:/sbin'/>
+          <envvar name='PATH' value='/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/sbin:/sbin'/>
         </method_environment>
       </method_context>
     </exec_method>
