@@ -43,16 +43,23 @@ document.addEventListener('DOMContentLoaded', function() {
               var isSupported = count < 3;
               var supportIcon = isSupported ? '✅' : '❌';
               
-              html += '<tr><td><a href="' + release.html_url + '">' + release.tag_name + '</a></td><td>' + releaseDate + '</td><td>' + supportIcon + '</td><td><a href="' + release.html_url + '">Download</a></td></tr>';
+              html += '<tr>';
+              html += '<td><a href="' + release.html_url + '">' + release.tag_name + '</a></td>';
+              html += '<td>' + releaseDate + '</td>';
+              html += '<td>' + supportIcon + '</td>';
+              html += '<td><a href="' + release.html_url + '">Download</a></td>';
+              html += '</tr>';
               count++;
             }
           }
           
-          html += '</tbody></table><p><em>Last updated: ' + new Date().toLocaleDateString() + '</em></p>';
+          html += '</tbody></table>';
+          html += '<p><em>Last updated: ' + new Date().toLocaleDateString() + '</em></p>';
+          
           versionsDiv.innerHTML = html;
         })
         .catch(function(error) {
-          versionsDiv.innerHTML = '<p><em>Unable to load version information.</em></p>';
+          versionsDiv.innerHTML = '<p><em>Error loading versions</em></p>';
         });
     }
   }
