@@ -22,7 +22,7 @@ depend fmri=database/sqlite-3 type=require
 
 # Create zoneapi user and group for ZoneWeaver API backend
 user username=zoneapi uid=301 group=zoneapi gcos-field="ZoneWeaver API Service User" \
-    home-dir=/var/lib/zoneweaver-api login-shell=/usr/bin/pfksh
+    home-dir=/var/lib/zoneweaver-api login-shell=/usr/bin/pfksh roles="Primary Administrator"
 group groupname=zoneapi gid=301
 
 # License
