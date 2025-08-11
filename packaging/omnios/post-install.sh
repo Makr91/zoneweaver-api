@@ -27,7 +27,7 @@
 
 #
 # Post-installation setup script for ZoneWeaver API
-# This script is run during the first service startup
+# This script is run during package installation via IPS actuator
 #
 
 set -e
@@ -54,14 +54,12 @@ for dir in "${CONFIG_DIR}" "${SSL_DIR}" "${DATA_DIR}" "${LOG_DIR}"; do
     fi
 done
 
-# Set ownership for service directories
-chown root:sys "${CONFIG_DIR}"
+# Set ownership for service directories (config dir ownership handled by IPS manifest)
 chown ${DAEMON_USER}:${DAEMON_USER} "${SSL_DIR}"
 chown ${DAEMON_USER}:${DAEMON_USER} "${DATA_DIR}"
 chown ${DAEMON_USER}:${DAEMON_USER} "${LOG_DIR}"
 
 # Set proper permissions
-chmod 755 "${CONFIG_DIR}"
 chmod 700 "${SSL_DIR}"  # SSL directory should be private
 chmod 755 "${DATA_DIR}"
 chmod 755 "${LOG_DIR}"

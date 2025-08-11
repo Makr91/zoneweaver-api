@@ -51,3 +51,12 @@
 <transform dir path=opt/zoneweaver-api/middleware -> set mode 0755>
 <transform dir path=opt/zoneweaver-api/config -> set mode 0755>
 <transform dir path=opt/zoneweaver-api/lib -> set mode 0755>
+
+# Post-install script should be executable by root
+<transform file path=opt/zoneweaver-api/post-install.sh -> set owner root>
+<transform file path=opt/zoneweaver-api/post-install.sh -> set group sys>
+<transform file path=opt/zoneweaver-api/post-install.sh -> set mode 0755>
+
+# Add actuator to run post-install script during package installation
+<transform file path=opt/zoneweaver-api/post-install.sh -> add set name=org.opensolaris.actuator.file-install value=/opt/zoneweaver-api/post-install.sh>
+<transform file path=opt/zoneweaver-api/post-install.sh -> add set name=org.opensolaris.actuator.file-install.user value=root>

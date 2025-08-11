@@ -36,17 +36,7 @@ DAEMON_CONF="/etc/zoneweaver-api/config.yaml"
 DAEMON_LOG="/var/log/zoneweaver-api"
 DAEMON_PIDFILE="/var/run/zoneweaver-api.pid"
 
-# Ensure log directory exists
-mkdir -p ${DAEMON_LOG}
-chown ${DAEMON_USER}:${DAEMON_USER} ${DAEMON_LOG}
-
-# Ensure data directory exists  
-mkdir -p /var/lib/zoneweaver-api
-chown ${DAEMON_USER}:${DAEMON_USER} /var/lib/zoneweaver-api
-
-# Ensure SSL directory exists
-mkdir -p /etc/zoneweaver-api/ssl
-chown ${DAEMON_USER}:${DAEMON_USER} /etc/zoneweaver-api/ssl
+# Directories and permissions are handled during package installation
 
 # Check if configuration file exists
 if [[ ! -f ${DAEMON_CONF} ]]; then
@@ -68,19 +58,7 @@ if ! which node >/dev/null 2>&1; then
     exit $SMF_EXIT_ERR_CONFIG
 fi
 
-# Run post-install script if it exists and this is first startup
-POST_INSTALL_DONE="/var/lib/zoneweaver-api/.post_install_done"
-if [[ -f "./post-install.sh" && ! -f "${POST_INSTALL_DONE}" ]]; then
-    echo "Running post-installation setup..."
-    ./post-install.sh
-    if [[ $? -eq 0 ]]; then
-        touch "${POST_INSTALL_DONE}"
-        chown ${DAEMON_USER}:${DAEMON_USER} "${POST_INSTALL_DONE}"
-    else
-        echo "Post-installation setup failed"
-        exit $SMF_EXIT_ERR_OTHER
-    fi
-fi
+# Post-installation is handled during package installation via IPS actuator
 
 # Start the daemon
 echo "Starting ${DAEMON}"

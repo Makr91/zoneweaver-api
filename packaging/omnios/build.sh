@@ -161,7 +161,7 @@ cd "$SRCDIR"
 export VERSION="$VER"
 sed "s/@VERSION@/${VERSION}/g" packaging/omnios/zoneweaver-api.p5m > zoneweaver-api.p5m.tmp
 pkgsend generate proto | pkgfmt > zoneweaver-api.p5m.generated
-pkgmogrify -DVERSION="${VERSION}" zoneweaver-api.p5m.tmp zoneweaver-api.p5m.generated > zoneweaver-api.p5m.final
+pkgmogrify -DVERSION="${VERSION}" zoneweaver-api.p5m.tmp zoneweaver-api.p5m.generated packaging/omnios/local.mog > zoneweaver-api.p5m.final
 
 # Create temporary local repository
 TEMP_REPO="${SRCDIR}/temp-repo"
