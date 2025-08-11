@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/logo192.png" alt="ZoneWeaver API Logo" width="50%">
+  <img src="assets/images/logo192.png" alt="ZoneWeaver API Logo" width="25%">
 </p>
 
 # Zoneweaver API
