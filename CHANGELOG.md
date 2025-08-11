@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.26](https://github.com/Makr91/zoneweaver-api/compare/v0.0.25...v0.0.26) (2025-08-11)
+
+
+### Features
+
+* documentation and guides v9 ([47437d9](https://github.com/Makr91/zoneweaver-api/commit/47437d9e5df7adf8d470e467b9c3bd77b0efa16b))
+
 ## [0.0.25](https://github.com/Makr91/zoneweaver-api/compare/v0.0.24...v0.0.25) (2025-08-11)
 
 
