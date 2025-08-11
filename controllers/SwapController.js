@@ -128,10 +128,32 @@ export const listSwapAreas = async (req, res) => {
  *                   type: number
  *                 swapAreas:
  *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       path:
+ *                         type: string
+ *                       pool:
+ *                         type: string
+ *                       sizeGB:
+ *                         type: string
+ *                       usedGB:
+ *                         type: string
+ *                       utilization:
+ *                         type: number
  *                 poolDistribution:
  *                   type: object
  *                 recommendations:
  *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       type:
+ *                         type: string
+ *                       category:
+ *                         type: string
+ *                       message:
+ *                         type: string
  *       500:
  *         description: Failed to get swap summary
  */
@@ -522,6 +544,20 @@ export const removeSwapArea = async (req, res) => {
  *               properties:
  *                 hostsWithLowSwap:
  *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       host:
+ *                         type: string
+ *                       swap_total_gb:
+ *                         type: string
+ *                       swap_used_gb:
+ *                         type: string
+ *                       swap_utilization_pct:
+ *                         type: number
+ *                       last_checked:
+ *                         type: string
+ *                         format: date-time
  *                 totalCount:
  *                   type: integer
  *                 threshold:

@@ -71,11 +71,13 @@ const { DataTypes } = Sequelize;
  *           description: Number of blocked processes
  *           example: 2
  *         context_switches:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Context switches since boot
  *           example: 1234567
  *         interrupts:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Interrupts since boot
  *           example: 9876543
  *         scan_timestamp:

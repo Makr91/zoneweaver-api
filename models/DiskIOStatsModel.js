@@ -59,11 +59,13 @@ const { DataTypes } = Sequelize;
  *           description: Write operations per second (calculated)
  *           example: 2.6
  *         read_bandwidth_bytes:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Read bandwidth in bytes/sec
  *           example: 4947
  *         write_bandwidth_bytes:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Write bandwidth in bytes/sec
  *           example: 691200
  *         scan_timestamp:

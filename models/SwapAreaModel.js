@@ -16,57 +16,51 @@ const { DataTypes } = Sequelize;
  *           example: 1
  *         host:
  *           type: string
- *           description: Host where the swap area exists
+ *           description: Host where the swap area is located
  *           example: "hv-04"
- *         path:
+ *         swapfile:
  *           type: string
- *           description: Swap area path/device
+ *           description: Path to swap file or device
  *           example: "/dev/zvol/dsk/rpool/swap"
- *         device_info:
+ *         dev:
  *           type: string
- *           description: Device major/minor numbers
+ *           description: Device identifier
  *           example: "85,1"
- *         swaplow:
- *           type: bigint
- *           description: Offset in 512-byte blocks
+ *         swaplo:
+ *           type: integer
+ *           format: int64
+ *           description: Starting block of swap area
  *           example: 16
  *         blocks:
- *           type: bigint
- *           description: Size in 512-byte blocks
- *           example: 16777200
- *         free_blocks:
- *           type: bigint
- *           description: Available blocks
- *           example: 16777200
+ *           type: integer
+ *           format: int64
+ *           description: Size in blocks
+ *           example: 4194288
+ *         free:
+ *           type: integer
+ *           format: int64
+ *           description: Free blocks
+ *           example: 4194288
  *         size_bytes:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Total size in bytes
- *           example: 8589926400
- *         free_bytes:
- *           type: bigint
- *           description: Available space in bytes
- *           example: 8589926400
+ *           example: 2147483648
  *         used_bytes:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Used space in bytes
  *           example: 0
+ *         free_bytes:
+ *           type: integer
+ *           format: int64
+ *           description: Free space in bytes
+ *           example: 2147483648
  *         utilization_pct:
  *           type: number
  *           format: float
  *           description: Utilization percentage
  *           example: 0.0
- *         pool_assignment:
- *           type: string
- *           description: ZFS pool assignment (extracted from path)
- *           example: "rpool"
- *         is_active:
- *           type: boolean
- *           description: Whether the swap area is currently active
- *           example: true
- *         priority:
- *           type: integer
- *           description: Swap priority (if supported)
- *           example: 0
  *         scan_timestamp:
  *           type: string
  *           format: date-time
@@ -84,67 +78,52 @@ const SwapArea = db.define('swap_areas', {
     host: {
         type: DataTypes.STRING,
         allowNull: false,
-        comment: 'Host where the swap area exists'
+        comment: 'Host where the swap area is located'
     },
-    path: {
+    swapfile: {
         type: DataTypes.STRING,
         allowNull: false,
-        comment: 'Swap area path/device (e.g., /dev/zvol/dsk/rpool/swap)'
+        comment: 'Path to swap file or device (e.g., /dev/zvol/dsk/rpool/swap)'
     },
-    device_info: {
+    dev: {
         type: DataTypes.STRING,
         allowNull: true,
-        comment: 'Device major/minor numbers from swap -l'
+        comment: 'Device identifier (major,minor)'
     },
-    swaplow: {
+    swaplo: {
         type: DataTypes.BIGINT,
         allowNull: true,
-        comment: 'Offset in 512-byte blocks'
+        comment: 'Starting block of swap area'
     },
     blocks: {
         type: DataTypes.BIGINT,
-        allowNull: false,
-        comment: 'Size in 512-byte blocks'
+        allowNull: true,
+        comment: 'Size in blocks (512-byte blocks)'
     },
-    free_blocks: {
+    free: {
         type: DataTypes.BIGINT,
-        allowNull: false,
-        comment: 'Available blocks'
+        allowNull: true,
+        comment: 'Free blocks available'
     },
     size_bytes: {
         type: DataTypes.BIGINT,
-        allowNull: false,
-        comment: 'Total size in bytes (blocks * 512)'
-    },
-    free_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: false,
-        comment: 'Available space in bytes (free_blocks * 512)'
+        allowNull: true,
+        comment: 'Total swap area size in bytes'
     },
     used_bytes: {
         type: DataTypes.BIGINT,
-        allowNull: false,
-        comment: 'Used space in bytes (calculated)'
+        allowNull: true,
+        comment: 'Used swap space in bytes'
+    },
+    free_bytes: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        comment: 'Free swap space in bytes'
     },
     utilization_pct: {
         type: DataTypes.DECIMAL(5, 2),
-        allowNull: false,
-        comment: 'Utilization percentage'
-    },
-    pool_assignment: {
-        type: DataTypes.STRING,
         allowNull: true,
-        comment: 'ZFS pool assignment extracted from path'
-    },
-    is_active: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true,
-        comment: 'Whether the swap area is currently active'
-    },
-    priority: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Swap priority (if supported by system)'
+        comment: 'Swap utilization percentage (used/total * 100)'
     },
     scan_timestamp: {
         type: DataTypes.DATE,
@@ -153,8 +132,11 @@ const SwapArea = db.define('swap_areas', {
     }
 }, {
     freezeTableName: true,
-    comment: 'Individual swap area tracking from swap -l command',
+    comment: 'Individual swap area information from swap -l (collected every 5 minutes)',
     indexes: [
+        {
+            fields: ['host', 'swapfile', 'scan_timestamp']
+        },
         {
             fields: ['host', 'scan_timestamp']
         },
@@ -162,23 +144,13 @@ const SwapArea = db.define('swap_areas', {
             fields: ['scan_timestamp']
         },
         {
-            fields: ['host', 'path']
-        },
-        {
-            fields: ['pool_assignment']
-        },
-        {
             fields: ['utilization_pct']
         },
         {
-            fields: ['is_active']
-        },
-        {
             unique: false,
-            fields: ['host', 'path', 'scan_timestamp'],
-            name: 'swap_areas_host_path_time_idx'
+            fields: ['swapfile']
         }
     ]
 });
-
+ 
 export default SwapArea;

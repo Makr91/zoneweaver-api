@@ -19,127 +19,158 @@ const { DataTypes } = Sequelize;
  *           description: Host where the ARC stats are collected
  *           example: "hv-04"
  *         arc_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Current ARC size in bytes
  *           example: 136699101592
  *         arc_target_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Target ARC size in bytes (c)
  *           example: 136434647499
  *         arc_min_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Minimum ARC size in bytes (c_min)
  *           example: 1073741824
  *         arc_max_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Maximum ARC size in bytes (c_max)
  *           example: 204474830848
  *         arc_meta_used:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: ARC metadata size in bytes
  *           example: 2528202648
  *         arc_meta_limit:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: ARC metadata limit in bytes
  *           example: 51118707712
  *         mru_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Most Recently Used cache size in bytes
  *           example: 134817696256
  *         mfu_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Most Frequently Used cache size in bytes
  *           example: 554039296
  *         data_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Data cache size in bytes
  *           example: 134170898944
  *         metadata_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Metadata cache size in bytes
  *           example: 1213681152
  *         hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Total cache hits
  *           example: 10229453041
  *         misses:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Total cache misses
  *           example: 206754685
  *         demand_data_hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Demand data hits
  *           example: 2957100695
  *         demand_data_misses:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Demand data misses
  *           example: 79996255
  *         demand_metadata_hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Demand metadata hits
  *           example: 7270439836
  *         demand_metadata_misses:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Demand metadata misses
  *           example: 55370302
  *         prefetch_data_hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Prefetch data hits
  *           example: 1886683
  *         prefetch_data_misses:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Prefetch data misses
  *           example: 65496492
  *         mru_hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Most Recently Used hits
  *           example: 2883540389
  *         mfu_hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Most Frequently Used hits
  *           example: 7344012091
  *         mru_ghost_hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: MRU ghost list hits
  *           example: 3855979
  *         mfu_ghost_hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: MFU ghost list hits
  *           example: 90682075
  *         hit_ratio:
- *           type: decimal
+ *           type: number
+ *           format: float
  *           description: Overall cache hit ratio percentage
  *           example: 98.02
  *         data_demand_efficiency:
- *           type: decimal
+ *           type: number
+ *           format: float
  *           description: Data demand efficiency percentage
  *           example: 97.37
  *         data_prefetch_efficiency:
- *           type: decimal
+ *           type: number
+ *           format: float
  *           description: Data prefetch efficiency percentage
  *           example: 2.80
  *         arc_p:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: ARC target size for MRU list
  *           example: 127903505327
  *         compressed_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Compressed data size in bytes
  *           example: 129050594304
  *         uncompressed_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: Uncompressed data size in bytes
  *           example: 134791710720
  *         l2_size:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: L2ARC size in bytes
  *           example: 0
  *         l2_hits:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: L2ARC hits
  *           example: 0
  *         l2_misses:
- *           type: bigint
+ *           type: integer
+ *           format: int64
  *           description: L2ARC misses
  *           example: 0
  *         scan_timestamp:

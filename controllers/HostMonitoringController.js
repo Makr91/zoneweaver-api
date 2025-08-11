@@ -1331,6 +1331,22 @@ export const getMemoryStats = async (req, res) => {
  *                 load:
  *                   type: array
  *                   description: System load metrics time series
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       timestamp:
+ *                         type: string
+ *                         format: date-time
+ *                       load_averages:
+ *                         type: object
+ *                       system_activity:
+ *                         type: object
+ *                       memory_pressure:
+ *                         type: object
+ *                       process_activity:
+ *                         type: object
+ *                       cpu_count:
+ *                         type: integer
  *                 totalCount:
  *                   type: integer
  *                 latest:
