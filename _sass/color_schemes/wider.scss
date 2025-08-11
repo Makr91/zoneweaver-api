@@ -6,3 +6,13 @@
 
 // Then override the width
 $content-width: 60rem;  // Much wider than default 50rem for Swagger UI
+
+// Fix duplicate background-size properties in Swagger UI model toggles
+.swagger-ui .model-toggle::after {
+  background-size: 100% !important;  // Override duplicate background-size properties
+}
+
+// Style Swagger UI tab headers with dark background
+.swagger-ui .opblock-section-header {
+  background: hsla(0, 0%, 0%, 0.8) !important;  // Semi-transparent dark background
+}
