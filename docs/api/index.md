@@ -2,7 +2,7 @@
 title: API Reference
 layout: default
 nav_order: 2
-has_children: true
+has_children: false
 permalink: /docs/api/
 ---
 

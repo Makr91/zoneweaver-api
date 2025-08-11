@@ -203,15 +203,14 @@ function generateSwaggerUI() {
         }
         
         .swagger-ui .scheme-container table td:first-child {
-            /* Label styling - dark squares */
-            background: #0d1117 !important;
-            border: 1px solid #30363d !important;
+            /* Label styling - no boxes, just plain text */
+            background: transparent !important;
+            border: none !important;
             color: #f0f6fc !important;
-            padding: 8px 12px !important;
-            border-radius: 4px !important;
+            padding: 8px 12px 8px 0 !important;
             min-width: 80px !important;
-            text-align: center !important;
-            font-weight: 600 !important;
+            text-align: left !important;
+            font-weight: 400 !important;
             margin-right: 12px !important;
             flex-shrink: 0 !important;
         }
@@ -293,10 +292,38 @@ function generateSwaggerUI() {
             background: #21262d !important;
             color: #f0f6fc !important;
             border-bottom: 1px solid #30363d !important;
+            width: 100% !important;
+            padding: 12px 16px !important;
+            display: flex !important;
+            align-items: center !important;
+            cursor: pointer !important;
+            font-size: 13px !important;
+            border-radius: 4px 4px 0 0 !important;
         }
         
         .swagger-ui .model-box-control:hover {
             background: #30363d !important;
+        }
+        
+        .swagger-ui .model-toggle {
+            margin-right: 8px !important;
+            font-size: 12px !important;
+            display: inline-block !important;
+        }
+        
+        .swagger-ui .model-toggle.collapsed:after {
+            content: '▶' !important;
+            color: #8b949e !important;
+        }
+        
+        .swagger-ui .model-toggle:not(.collapsed):after {
+            content: '▼' !important;
+            color: #8b949e !important;
+        }
+        
+        .swagger-ui .model-box {
+            width: 100% !important;
+            max-width: 100% !important;
         }
         
         .swagger-ui .opblock {
