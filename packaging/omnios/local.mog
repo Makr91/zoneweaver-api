@@ -1,56 +1,24 @@
-#
-# This file and its contents are supplied under the terms of the
-# Common Development and Distribution License ("CDDL"), version 1.0.
-# You may only use this file in accordance with the terms of version
-# 1.0 of the CDDL.
-#
-# A full copy of the text of the CDDL should have accompanied this
-# source.  A copy of the CDDL is also available via the Internet at
-# http://www.illumos.org/license/CDDL.
-#
+# License file for ZoneWeaver API
+license LICENSE.md license="GPL-3.0"
 
-# Local modifications for ZoneWeaver API package
+# Set ownership and permissions for zoneweaver-api user/group files
+<transform file path=opt/zoneweaver-api/.* -> set owner zoneweaver-api>
+<transform file path=opt/zoneweaver-api/.* -> set group zoneweaver-api>
+<transform file path=var/lib/zoneweaver-api/.* -> set owner zoneweaver-api>
+<transform file path=var/lib/zoneweaver-api/.* -> set group zoneweaver-api>
+<transform file path=var/log/zoneweaver-api/.* -> set owner zoneweaver-api>
+<transform file path=var/log/zoneweaver-api/.* -> set group zoneweaver-api>
 
-# Drop unnecessary node_modules files to reduce package size
-<transform file path=opt/zoneweaver-api/node_modules/.*/README.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/readme.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/CHANGELOG.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/changelog.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/HISTORY.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/history.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/.npmignore -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/.gitignore -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/\.git/.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/test/.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/tests/.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/example/.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/examples/.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/\.nyc_output/.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/coverage/.* -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*\.md -> drop>
+# SMF method scripts should be executable by root
+<transform file path=opt/zoneweaver-api/startup.sh -> set owner root>
+<transform file path=opt/zoneweaver-api/startup.sh -> set group sys>
+<transform file path=opt/zoneweaver-api/startup.sh -> set mode 0755>
+<transform file path=opt/zoneweaver-api/shutdown.sh -> set owner root>
+<transform file path=opt/zoneweaver-api/shutdown.sh -> set group sys>
+<transform file path=opt/zoneweaver-api/shutdown.sh -> set mode 0755>
 
-# Ensure proper permissions for configuration files
-<transform file path=etc/zoneweaver-api/config.yaml -> set preserve renamenew>
-
-# Set execute permissions for Node.js binary files
+# Make executable scripts executable
 <transform file path=opt/zoneweaver-api/node_modules/.*/bin/.* -> set mode 0755>
-<transform file path=opt/zoneweaver-api/node_modules/.*\.node -> set mode 0755>
-
-# Handle special cases for native modules
-<transform file path=opt/zoneweaver-api/node_modules/.*/binding\.gyp -> drop>
-<transform file path=opt/zoneweaver-api/node_modules/.*/build/Release/.*\.node -> set mode 0755>
-
-# Set proper ownership for all application files
-<transform file path=opt/zoneweaver-api/index.js -> set mode 0644>
-<transform file path=opt/zoneweaver-api/package.json -> set mode 0644>
-
-# Ensure directories have proper permissions
-<transform dir path=opt/zoneweaver-api/controllers -> set mode 0755>
-<transform dir path=opt/zoneweaver-api/models -> set mode 0755>
-<transform dir path=opt/zoneweaver-api/routes -> set mode 0755>
-<transform dir path=opt/zoneweaver-api/middleware -> set mode 0755>
-<transform dir path=opt/zoneweaver-api/config -> set mode 0755>
-<transform dir path=opt/zoneweaver-api/lib -> set mode 0755>
 
 # Post-install script should be executable by root
 <transform file path=opt/zoneweaver-api/post-install.sh -> set owner root>
