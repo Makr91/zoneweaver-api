@@ -2,7 +2,6 @@
  * @fileoverview Host Devices API Controller for Zoneweaver API
  * @description Handles API endpoints for PCI device inventory and passthrough capabilities
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

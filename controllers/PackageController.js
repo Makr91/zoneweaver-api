@@ -2,7 +2,6 @@
  * @fileoverview Package Management Controller for Zoneweaver API
  * @description Handles package management operations via pkg commands
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

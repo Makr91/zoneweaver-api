@@ -2,7 +2,6 @@
  * @fileoverview Boot Environment Controller for Zoneweaver API
  * @description Handles boot environment management operations via beadm commands
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

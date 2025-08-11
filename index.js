@@ -2,7 +2,6 @@
  * @fileoverview Zoneweaver API - Main application entry point
  * @description Express.js server for managing Bhyve virtual machines on OmniOS with API key authentication
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

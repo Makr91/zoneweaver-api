@@ -2,7 +2,6 @@
  * @fileoverview Link Aggregation Management Controller for Zoneweaver API
  * @description Handles link aggregation creation, deletion, and management via dladm commands
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

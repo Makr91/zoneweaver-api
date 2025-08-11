@@ -2,7 +2,6 @@
  * @fileoverview Settings Management Controller for Zoneweaver API
  * @description Handles getting and updating application configuration
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

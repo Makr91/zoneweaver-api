@@ -2,7 +2,6 @@
  * @fileoverview Repository Controller for Zoneweaver API
  * @description Handles package repository management operations via pkg publisher commands
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

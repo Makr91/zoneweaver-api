@@ -2,7 +2,6 @@
  * @fileoverview VLAN Management Controller for Zoneweaver API
  * @description Handles VLAN creation, deletion, and management via dladm commands
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

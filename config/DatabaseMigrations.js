@@ -2,7 +2,6 @@
  * @fileoverview Database Migration Utilities for Zoneweaver API
  * @description Handles database schema migrations and updates
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

@@ -2,7 +2,6 @@
  * @fileoverview Device Data Collection Controller for Zoneweaver API
  * @description Collects PCI device information and passthrough capabilities from OmniOS prtconf and pptadm commands
  * @author makr91
-
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
