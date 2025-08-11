@@ -25,6 +25,9 @@ user username=zoneweaver-api uid=96 group=zoneweaver-api gcos-field="ZoneWeaver 
     home-dir=/var/lib/zoneweaver-api login-shell=/usr/bin/pfksh
 group groupname=zoneweaver-api gid=96
 
+# License
+license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
+
 # Drop system directories that already exist (avoid conflicts with system packages)
 <transform dir path=^etc$ -> drop>
 <transform dir path=^var$ -> drop>
