@@ -32,6 +32,8 @@ Complete guide for installing ZoneWeaver API in production using the OmniOS pack
 The following packages are automatically installed as dependencies:
 - **Node.js**: `ooce/runtime/node-22`
 - **SQLite**: `database/sqlite-3`
+- **GCC 14**: `developer/gcc-14` (for bcrypt native module compilation)
+- **GNU Make**: `developer/build/gnu-make`
 - **OpenSSL**: For SSL certificate generation
 
 ---
@@ -58,7 +60,7 @@ pfexec pkg install system/virtualization/zoneweaver-api
 ```
 
 The installation will:
-- Create the `zoneweaver-api` system user and group
+- Create the `zoneapi` system user and group
 - Install application files to `/opt/zoneweaver-api`
 - Set up configuration directory at `/etc/zoneweaver-api`
 - Create data directory at `/var/lib/zoneweaver-api`
@@ -108,24 +110,26 @@ api_keys:
 
 ### SSL Certificates
 
-SSL certificates are automatically generated on first startup:
+**SSL certificates are automatically generated on first startup** if they don't exist:
 - **Private Key**: `/etc/zoneweaver-api/ssl/server.key`
 - **Certificate**: `/etc/zoneweaver-api/ssl/server.crt`
 
-For production use with custom certificates:
+**Optional: Custom SSL certificates** (only needed if you want to use your own certificates):
 ```bash
 # Copy your certificates
 pfexec cp your-server.key /etc/zoneweaver-api/ssl/server.key
 pfexec cp your-server.crt /etc/zoneweaver-api/ssl/server.crt
 
 # Set proper ownership
-pfexec chown zoneweaver-api:zoneweaver-api /etc/zoneweaver-api/ssl/*
+pfexec chown zoneapi:zoneapi /etc/zoneweaver-api/ssl/*
 pfexec chmod 600 /etc/zoneweaver-api/ssl/server.key
 pfexec chmod 644 /etc/zoneweaver-api/ssl/server.crt
 
 # Restart service to use new certificates
 pfexec svcadm restart application/zoneweaver-api
 ```
+
+**Note**: If you set `generate_ssl: false` in the configuration, you must provide your own SSL certificates.
 
 ---
 
@@ -319,7 +323,7 @@ pfexec svcadm restart application/zoneweaver-api
 #### Database Permission Issues
 ```bash
 # Fix database directory permissions
-pfexec chown -R zoneweaver-api:zoneweaver-api /var/lib/zoneweaver-api
+pfexec chown -R zoneapi:zoneapi /var/lib/zoneweaver-api
 pfexec chmod -R 755 /var/lib/zoneweaver-api
 pfexec svcadm restart application/zoneweaver-api
 ```
@@ -327,7 +331,7 @@ pfexec svcadm restart application/zoneweaver-api
 #### Configuration Issues
 ```bash
 # Validate configuration syntax
-pfexec -u zoneweaver-api /opt/zoneweaver-api/node_modules/.bin/node -c /etc/zoneweaver-api/config.yaml
+pfexec -u zoneapi /opt/zoneweaver-api/node_modules/.bin/node -c /etc/zoneweaver-api/config.yaml
 ```
 
 ### Support and Documentation

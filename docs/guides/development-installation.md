@@ -42,7 +42,7 @@ Complete guide for setting up ZoneWeaver API for development and testing.
 
 ```bash
 # Install Node.js and development tools
-pfexec pkg install ooce/runtime/node-22 developer/build/gnu-make
+pfexec pkg install ooce/runtime/node-22 developer/build/gnu-make developer/gcc-14
 
 # Install Git if not already present
 pfexec pkg install developer/versioning/git
@@ -75,8 +75,8 @@ pfexec npm install -g nodemon
 ### 4. Setup Development Configuration
 
 ```bash
-# Copy example configuration
-cp config/config.yaml config/config.dev.yaml
+# Copy production configuration as starting point
+cp packaging/config/production-config.yaml config/config.dev.yaml
 
 # Edit development configuration
 vi config/config.dev.yaml
