@@ -29,6 +29,7 @@ group groupname=zoneapi gid=301
 license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
 
 # Drop system directories that already exist (avoid conflicts with system packages)
+<transform dir path=^opt$ -> drop>
 <transform dir path=^etc$ -> drop>
 <transform dir path=^var$ -> drop>
 <transform dir path=^lib$ -> drop>
