@@ -1,0 +1,330 @@
+.Dd $Mdocdate$
+.Dt ZONEWEAVER-API.YAML 4
+.Os
+.Sh NAME
+.Nm zoneweaver-api.yaml
+.Nd configuration file for ZoneWeaver API server
+.Sh DESCRIPTION
+The
+.Nm
+file is the main configuration file for the ZoneWeaver API server.
+It is written in YAML format and controls all aspects of the service
+operation including network settings, authentication, database configuration,
+and zone management parameters.
+.Pp
+The configuration file is typically located at:
+.Pa /etc/zoneweaver-api/config.yaml
+.Sh CONFIGURATION SECTIONS
+The configuration file is organized into logical sections that control
+different aspects of the service operation.
+.Ss version
+Configuration file format version for migration compatibility.
+.Bl -tag -width "version"
+.It Cm version
+String specifying the configuration format version (e.g., "0.0.1")
+.El
+.Ss server
+HTTP and HTTPS server configuration.
+.Bl -tag -width "https_port"
+.It Cm http_port
+TCP port number for HTTP server (default: 5000)
+.It Cm https_port  
+TCP port number for HTTPS server (default: 5001)
+.El
+.Ss ssl
+SSL/TLS certificate and encryption settings.
+.Bl -tag -width "generate_ssl"
+.It Cm enabled
+Boolean enabling HTTPS server (default: true)
+.It Cm generate_ssl
+Boolean enabling automatic self-signed certificate generation (default: true)
+.It Cm key_path
+Filesystem path to SSL private key file
+.It Cm cert_path
+Filesystem path to SSL certificate file
+.El
+.Pp
+When
+.Cm generate_ssl
+is enabled, the service will automatically create self-signed certificates
+if they do not exist at the specified paths.
+.Ss cors
+Cross-Origin Resource Sharing (CORS) configuration for web frontend access.
+.Bl -tag -width "whitelist"
+.It Cm whitelist
+Array of allowed origin URLs for CORS requests. Only origins listed here
+can access the API from web browsers.
+.El
+.Ss database
+Database configuration and storage settings.
+.Bl -tag -width "dialect"
+.It Cm dialect
+Database type, currently only "sqlite" is supported
+.It Cm storage
+Filesystem path to SQLite database file
+.It Cm logging
+Boolean enabling SQL query logging (default: false for production)
+.El
+.Ss api_keys
+API key authentication configuration.
+.Bl -tag -width "bootstrap_auto_disable"
+.It Cm bootstrap_enabled
+Boolean enabling the /bootstrap endpoint for initial API key generation
+.It Cm bootstrap_auto_disable
+Boolean to automatically disable bootstrap after first successful use
+.It Cm key_length
+Number of random bytes for API key generation before base64 encoding (default: 64)
+.It Cm hash_rounds
+bcrypt rounds for secure API key storage (default: 12)
+.El
+.Ss stats
+Server statistics endpoint access control.
+.Bl -tag -width "public_access"
+.It Cm public_access
+Boolean controlling whether /stats endpoint requires API key authentication
+(default: false, requiring authentication)
+.El
+.Ss zones
+Zone management and discovery configuration.
+.Bl -tag -width "default_pagination_limit"
+.It Cm discovery_interval
+Seconds between automatic zone discovery scans (default: 300)
+.It Cm auto_discovery
+Boolean enabling automatic detection of new/removed zones
+.It Cm max_concurrent_tasks
+Maximum number of concurrent zone operations to prevent system overload
+.It Cm task_timeout
+Task execution timeout in seconds (default: 300)
+.It Cm orphan_retention
+Days to retain orphaned zone records before cleanup (default: 7)
+.It Cm default_pagination_limit
+Default number of items per page for paginated API responses (default: 50)
+.El
+.Ss provisioning
+Zone provisioning and tool installation settings.
+.Bl -tag -width "install_tools"
+.It Cm install_tools
+Boolean enabling automatic installation of required zone management tools
+.El
+.Ss cleanup
+Background cleanup service configuration.
+.Bl -tag -width "interval"
+.It Cm interval
+Seconds between cleanup service runs (default: 300)
+.El
+.Ss vnc
+VNC console access configuration.
+.Bl -tag -width "max_concurrent_sessions"
+.It Cm web_port_range_start
+Starting port number for noVNC web interface allocation (default: 8000)
+.It Cm web_port_range_end
+Ending port number for noVNC web interface allocation (default: 8100)
+.It Cm session_timeout
+VNC session timeout in seconds (default: 1800)
+.It Cm cleanup_interval
+Seconds between expired session cleanup checks (default: 300)
+.It Cm bind_address
+IP address to bind VNC servers to (default: 127.0.0.1 for security)
+.It Cm max_concurrent_sessions
+Maximum number of concurrent VNC sessions (default: 10)
+.El
+.Ss host_monitoring
+Host system monitoring and data collection configuration.
+.Bl -tag -width "auto_enable_network_accounting"
+.It Cm enabled
+Boolean enabling host monitoring service
+.It Cm auto_enable_network_accounting
+Boolean to automatically enable OmniOS network usage tracking
+.It Cm network_accounting_file
+Path to OmniOS network accounting log file (default: /var/log/net.log)
+.El
+.Pp
+The
+.Cm intervals
+subsection controls data collection frequency:
+.Bl -tag -width "system_metrics" -offset indent
+.It Cm network_config
+Network interface configuration scan interval in seconds (default: 60)
+.It Cm network_stats
+Network interface statistics collection interval (default: 10)
+.It Cm network_usage
+Network usage/bandwidth data collection interval (default: 10)
+.It Cm storage
+Storage capacity and pool status scan interval (default: 300)
+.It Cm storage_frequent
+Frequently changing storage metrics interval (default: 10)
+.It Cm device_discovery
+Hardware device discovery interval (default: 60)
+.It Cm system_metrics
+CPU, memory, and system load metrics interval (default: 30)
+.El
+.Pp
+The
+.Cm retention
+subsection controls data retention periods in days:
+.Bl -tag -width "network_config" -offset indent
+.It Cm network_stats
+Network statistics retention (default: 7 days)
+.It Cm network_usage
+Network usage trends retention (default: 30 days)
+.It Cm network_config
+Network configuration history retention (default: 90 days)
+.It Cm storage
+Storage metrics retention (default: 90 days)
+.It Cm cpu_stats
+CPU statistics retention (default: 7 days)
+.It Cm memory_stats
+Memory statistics retention (default: 7 days)
+.El
+.Pp
+The
+.Cm error_handling
+subsection controls monitoring resilience:
+.Bl -tag -width "reset_error_count_after" -offset indent
+.It Cm max_consecutive_errors
+Maximum failures before disabling a collector (default: 5)
+.It Cm retry_delay
+Seconds to wait before retrying after error (default: 30)
+.It Cm reset_error_count_after
+Reset error counter after this many seconds of success (default: 3600)
+.El
+.Pp
+The
+.Cm performance
+subsection controls resource usage:
+.Bl -tag -width "max_concurrent_scans" -offset indent
+.It Cm max_concurrent_scans
+Maximum concurrent monitoring operations (default: 3)
+.It Cm command_timeout
+Timeout for system commands in seconds (default: 30)
+.It Cm batch_size
+Database batch size for bulk operations (default: 100)
+.El
+.Ss reconciliation
+System reconciliation service for consistency maintenance.
+.Bl -tag -width "log_level"
+.It Cm enabled
+Boolean enabling reconciliation service
+.It Cm interval
+Seconds between reconciliation runs (default: 3600)
+.It Cm log_level
+Logging level for reconciliation service (default: warn)
+.El
+.Ss api_docs
+API documentation endpoint control.
+.Bl -tag -width "enabled"
+.It Cm enabled
+Boolean enabling the /api-docs interactive documentation endpoint
+.El
+.Sh FILES
+.Bl -tag -width ".Pa /etc/zoneweaver-api/"
+.It Pa /etc/zoneweaver-api/config.yaml
+Default configuration file location
+.It Pa /etc/zoneweaver-api/ssl/
+SSL certificate directory
+.It Pa /var/lib/zoneweaver-api/database/
+Database storage directory
+.It Pa /var/log/zoneweaver-api/
+Log file directory
+.El
+.Sh EXAMPLES
+Minimal configuration for testing:
+.Bd -literal -offset indent
+version: 0.0.1
+server:
+  http_port: 5000
+  https_port: 5001
+ssl:
+  enabled: true
+  generate_ssl: true
+cors:
+  whitelist:
+    - http://localhost:3000
+database:
+  dialect: sqlite
+  storage: /var/lib/zoneweaver-api/database/database.sqlite
+api_keys:
+  bootstrap_enabled: true
+.Ed
+.Pp
+Production configuration with security hardening:
+.Bd -literal -offset indent
+version: 0.0.1
+server:
+  http_port: 5000
+  https_port: 5001
+ssl:
+  enabled: true
+  generate_ssl: false
+  key_path: /etc/zoneweaver-api/ssl/server.key
+  cert_path: /etc/zoneweaver-api/ssl/server.crt
+cors:
+  whitelist:
+    - https://zoneweaver.example.com
+api_keys:
+  bootstrap_enabled: false
+  hash_rounds: 15
+stats:
+  public_access: false
+zones:
+  max_concurrent_tasks: 3
+vnc:
+  max_concurrent_sessions: 5
+api_docs:
+  enabled: false
+.Ed
+.Sh DIAGNOSTICS
+Configuration file syntax errors will prevent the service from starting.
+Check the SMF service logs for detailed error information:
+.Pp
+.Dl # svcs -L zoneweaver-api
+.Pp
+Common configuration issues:
+.Bl -bullet -offset indent
+.It
+Invalid YAML syntax (indentation, special characters)
+.It
+Non-existent file paths for SSL certificates or database storage
+.It
+Port conflicts with other services
+.It
+Insufficient filesystem permissions for specified directories
+.It
+Invalid CORS origin URLs
+.El
+.Sh SEE ALSO
+.Xr zoneweaver-api 1M ,
+.Xr yaml 7 ,
+.Xr svcadm 8 ,
+.Xr svcs 1
+.Sh STANDARDS
+The configuration file uses YAML 1.2 format as defined by the YAML specification.
+SSL/TLS settings follow standard OpenSSL certificate formats.
+.Sh SECURITY CONSIDERATIONS
+The configuration file may contain sensitive information:
+.Bl -bullet -offset indent
+.It
+SSL certificate and key file paths
+.It
+Database storage locations
+.It
+CORS origin whitelist defining trusted frontend URLs
+.It
+Security-related timeouts and limits
+.El
+.Pp
+Recommended security practices:
+.Bl -bullet -offset indent
+.It
+Set restrictive filesystem permissions (mode 0600) on configuration files
+.It
+Use strong SSL certificates from a trusted Certificate Authority in production
+.It
+Configure CORS whitelist to include only necessary frontend origins
+.It
+Disable API documentation endpoint in production environments
+.It
+Disable bootstrap endpoint after initial setup
+.It
+Use appropriate bcrypt hash rounds (12 or higher) for API key storage
+.El
