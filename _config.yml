@@ -18,6 +18,11 @@ defaults:
     values:
       layout: "default"
 
+# Explicitly include API documentation files
+include:
+  - "docs/api/*.html"
+  - "docs/api/*.json"
+
 exclude:
   # from https://github.com/jekyll/jekyll/blob/master/lib/site_template/_config.yml:
   - .sass-cache/

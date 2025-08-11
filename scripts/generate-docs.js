@@ -153,24 +153,99 @@ function generateSwaggerUI() {
             border-top: none;
         }
         
-        /* Dark theme adjustments for Just the Docs integration */
-        @media (prefers-color-scheme: dark) {
-            body {
-                background: #1e1e1e;
-            }
-            .swagger-ui .scheme-container table td {
-                background: #2d2d2d;
-                border-color: #444;
-                color: #fff;
-            }
-            .swagger-ui .computed-url code {
-                background: #2d2d2d;
-                color: #fff;
-            }
-            .swagger-ui table.model td {
-                border-color: #444;
-                color: #fff;
-            }
+        /* Dark theme to match Just the Docs */
+        body {
+            background: #1c1c1e !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        }
+        
+        .swagger-ui {
+            color: #e6edf3 !important;
+        }
+        
+        .swagger-ui .info .title {
+            color: #e6edf3 !important;
+        }
+        
+        .swagger-ui .info .description {
+            color: #8b949e !important;
+        }
+        
+        .swagger-ui .scheme-container {
+            background: #21262d !important;
+            border: 1px solid #30363d !important;
+        }
+        
+        .swagger-ui .scheme-container table td {
+            background: #0d1117 !important;
+            border-color: #30363d !important;
+            color: #e6edf3 !important;
+        }
+        
+        .swagger-ui .computed-url code {
+            background: #21262d !important;
+            color: #79c0ff !important;
+            border: 1px solid #30363d !important;
+        }
+        
+        .swagger-ui table.model td {
+            background: #0d1117 !important;
+            border-color: #30363d !important;
+            color: #e6edf3 !important;
+        }
+        
+        .swagger-ui .opblock {
+            background: #0d1117 !important;
+            border: 1px solid #30363d !important;
+        }
+        
+        .swagger-ui .opblock .opblock-summary {
+            border-color: #30363d !important;
+        }
+        
+        .swagger-ui .opblock.opblock-post {
+            background: #0d1117 !important;
+            border-color: #238636 !important;
+        }
+        
+        .swagger-ui .opblock.opblock-get {
+            background: #0d1117 !important;
+            border-color: #1f6feb !important;
+        }
+        
+        .swagger-ui .opblock.opblock-put {
+            background: #0d1117 !important;
+            border-color: #d2a863 !important;
+        }
+        
+        .swagger-ui .opblock.opblock-delete {
+            background: #0d1117 !important;
+            border-color: #da3633 !important;
+        }
+        
+        .swagger-ui .opblock .opblock-summary-method {
+            text-shadow: none !important;
+        }
+        
+        .swagger-ui .btn.authorize {
+            background: #238636 !important;
+            border-color: #2ea043 !important;
+            color: #ffffff !important;
+        }
+        
+        .swagger-ui .btn.authorize:hover {
+            background: #2ea043 !important;
+        }
+        
+        .swagger-ui input[type=text], .swagger-ui input[type=password], .swagger-ui input[type=search], .swagger-ui input[type=email], .swagger-ui textarea, .swagger-ui select {
+            background: #21262d !important;
+            border: 1px solid #30363d !important;
+            color: #e6edf3 !important;
+        }
+        
+        .swagger-ui input[type=text]:focus, .swagger-ui input[type=password]:focus, .swagger-ui input[type=search]:focus, .swagger-ui input[type=email]:focus, .swagger-ui textarea:focus, .swagger-ui select:focus {
+            border-color: #1f6feb !important;
+            box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.3) !important;
         }
     </style>
 </head>
