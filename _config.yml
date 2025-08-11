@@ -1,8 +1,8 @@
 # Basic Jekyll settings
 title: ZoneWeaver API Documentation
 description: Documentation for the ZoneWeaver API - Zone Hypervisor Management Backend
-baseurl: "" # Keep empty for hosting at the root of the domain
-url: "https://makr91.github.io/zoneweaver-api" # GitHub Pages URL
+baseurl: "/zoneweaver-api" # GitHub Pages subdirectory path
+url: "https://makr91.github.io" # GitHub Pages domain
 repository: Makr91/zoneweaver-api # for github-metadata
 
 permalink: pretty
