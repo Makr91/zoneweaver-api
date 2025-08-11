@@ -22,7 +22,7 @@ Security policy and vulnerability reporting procedures for ZoneWeaver API.
 
 ZoneWeaver API follows semantic versioning. Security updates are provided for the latest release and the two most recent prior releases.
 
-<div id="supported-versions">
+<div id="supported-versions-content">
 <p>Loading supported versions...</p>
 </div>
 

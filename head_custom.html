@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <script type="text/javascript">
 document.addEventListener('DOMContentLoaded', function() {
   if (window.location.pathname.includes('/security/')) {
-    var versionsDiv = document.getElementById('supported-versions');
+    var versionsDiv = document.getElementById('supported-versions-content');
     if (versionsDiv) {
       fetch('https://api.github.com/repos/Makr91/zoneweaver-api/releases')
         .then(function(response) {

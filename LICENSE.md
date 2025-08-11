@@ -23,7 +23,6 @@ This software is **free software**: you can redistribute it and/or modify it und
 
 ## Full License Text
 GNU General Public License
-==========================
 
 _Version 3, 29 June 2007_  
 _Copyright © 2007 Free Software Foundation, Inc. <http://fsf.org/>_
