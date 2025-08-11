@@ -20,10 +20,10 @@ set name=info.upstream-url value="https://github.com/Makr91/zoneweaver-api"
 depend fmri=ooce/runtime/node-22 type=require
 depend fmri=database/sqlite-3 type=require
 
-# Create zoneweaver user and group (reuse from frontend if exists)
-user username=zoneweaver uid=95 group=zoneweaver gcos-field="ZoneWeaver Service User" \
-    home-dir=/var/lib/zoneweaver login-shell=/usr/bin/pfksh
-group groupname=zoneweaver gid=95
+# Create zoneapi user and group for ZoneWeaver API backend
+user username=zoneapi uid=301 group=zoneapi gcos-field="ZoneWeaver API Service User" \
+    home-dir=/var/lib/zoneweaver-api login-shell=/usr/bin/pfksh
+group groupname=zoneapi gid=301
 
 # License
 license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
@@ -43,16 +43,16 @@ license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
 <transform dir path=opt$ -> set group sys>
 <transform dir path=opt$ -> set mode 0755>
 
-<transform dir path=opt/zoneweaver-api$ -> set owner zoneweaver>
-<transform dir path=opt/zoneweaver-api$ -> set group zoneweaver>
+<transform dir path=opt/zoneweaver-api$ -> set owner zoneapi>
+<transform dir path=opt/zoneweaver-api$ -> set group zoneapi>
 <transform dir path=opt/zoneweaver-api$ -> set mode 0755>
 
-<transform dir path=opt/zoneweaver-api/.* -> set owner zoneweaver>
-<transform dir path=opt/zoneweaver-api/.* -> set group zoneweaver>
+<transform dir path=opt/zoneweaver-api/.* -> set owner zoneapi>
+<transform dir path=opt/zoneweaver-api/.* -> set group zoneapi>
 <transform dir path=opt/zoneweaver-api/.* -> set mode 0755>
 
-<transform file path=opt/zoneweaver-api/.* -> set owner zoneweaver>
-<transform file path=opt/zoneweaver-api/.* -> set group zoneweaver>
+<transform file path=opt/zoneweaver-api/.* -> set owner zoneapi>
+<transform file path=opt/zoneweaver-api/.* -> set group zoneapi>
 <transform file path=opt/zoneweaver-api/.* -> set mode 0644>
 
 # SMF method scripts need to be executable by root
@@ -79,21 +79,21 @@ license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
 <transform file path=etc/zoneweaver-api/config.yaml -> set preserve true>
 
 # SSL directory (certificates generated at runtime)
-<transform dir path=etc/zoneweaver-api/ssl -> set owner zoneweaver>
-<transform dir path=etc/zoneweaver-api/ssl -> set group zoneweaver>
+<transform dir path=etc/zoneweaver-api/ssl -> set owner zoneapi>
+<transform dir path=etc/zoneweaver-api/ssl -> set group zoneapi>
 <transform dir path=etc/zoneweaver-api/ssl -> set mode 0700>
 
 # Data and log directories
-<transform dir path=var/lib/zoneweaver-api$ -> set owner zoneweaver>
-<transform dir path=var/lib/zoneweaver-api$ -> set group zoneweaver>
+<transform dir path=var/lib/zoneweaver-api$ -> set owner zoneapi>
+<transform dir path=var/lib/zoneweaver-api$ -> set group zoneapi>
 <transform dir path=var/lib/zoneweaver-api$ -> set mode 0755>
 
-<transform dir path=var/lib/zoneweaver-api/.* -> set owner zoneweaver>
-<transform dir path=var/lib/zoneweaver-api/.* -> set group zoneweaver>
+<transform dir path=var/lib/zoneweaver-api/.* -> set owner zoneapi>
+<transform dir path=var/lib/zoneweaver-api/.* -> set group zoneapi>
 <transform dir path=var/lib/zoneweaver-api/.* -> set mode 0755>
 
-<transform dir path=var/log/zoneweaver-api -> set owner zoneweaver>
-<transform dir path=var/log/zoneweaver-api -> set group zoneweaver>
+<transform dir path=var/log/zoneweaver-api -> set owner zoneapi>
+<transform dir path=var/log/zoneweaver-api -> set group zoneapi>
 <transform dir path=var/log/zoneweaver-api -> set mode 0755>
 
 # SMF manifest

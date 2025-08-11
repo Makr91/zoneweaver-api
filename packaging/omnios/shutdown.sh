@@ -8,7 +8,7 @@ set -e
 # Environment
 export PATH="/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/bin:/usr/sbin:/sbin"
 
-# PID file location (in user's home directory since we run as zoneweaver-api user)
+# PID file location (in user's home directory since we run as zoneapi user)
 PIDFILE="/var/lib/zoneweaver-api/zoneweaver-api.pid"
 
 echo "Stopping ZoneWeaver API..."
