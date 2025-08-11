@@ -10,11 +10,11 @@ const options = {
       description: 'API for managing Bhyve virtual machines on OmniOS',
       license: {
         name: 'GPL-3.0',
-        url: 'https://www.gnu.org/licenses/gpl-3.0.html',
+        url: 'https://zoneweaver-api.startcloud.com/license/',
       },
       contact: {
         name: 'Zoneweaver API',
-        url: 'https://zoneweaver-api.startcloud.com/docs',
+        url: 'https://zoneweaver-api.startcloud.com',
       },
     },
     externalDocs: {

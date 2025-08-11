@@ -1,3 +1,10 @@
+---
+title: License
+layout: default
+nav_order: 6
+permalink: /license/
+---
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 

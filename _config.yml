@@ -40,7 +40,6 @@ exclude:
   - lib/
   - "*.gemspec"
   - "*.gem"
-  - LICENSE.md
   - package.json
   - package-lock.json
   - Rakefile
