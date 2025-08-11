@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.17](https://github.com/Makr91/zoneweaver-api/compare/v0.0.16...v0.0.17) (2025-08-11)
+
+
+### Features
+
+* packaging for OmniOS v18 ([13fff18](https://github.com/Makr91/zoneweaver-api/commit/13fff18875992a8b5023b4343487002e2cd0799b))
+
 ## [0.0.16](https://github.com/Makr91/zoneweaver-api/compare/v0.0.15...v0.0.16) (2025-08-11)
 
 
