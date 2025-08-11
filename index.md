@@ -32,6 +32,15 @@ ZoneWeaver API is the backend component of the ZoneWeaver zone management system
 - **Real-time Monitoring**: System metrics and zone status monitoring
 - **Package Management**: Automated provisioning and updates
 
+### Architecture
+
+```mermaid
+graph TD
+    A[ZoneWeaver Frontend] -- HTTPS/HTTP API Calls --> B[Zoneweaver API on OmniOS Host];
+    B -- Manages --> C[Bhyve Zones / Virtual Machines];
+    B -- Monitors --> D[OmniOS Host System];
+```
+
 ### Quick start
 
 1. **Installation**: Install via OmniOS package or build from source
