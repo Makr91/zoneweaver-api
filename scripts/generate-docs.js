@@ -110,7 +110,7 @@ permalink: /docs/api/reference/
         window.onload = function() {
             // Begin Swagger UI call region
             const ui = SwaggerUIBundle({
-                url: 'openapi.json',
+                url: '../openapi.json',
                 dom_id: '#swagger-ui',
                 deepLinking: true,
                 presets: [
