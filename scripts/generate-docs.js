@@ -86,17 +86,88 @@ permalink: /docs/api/reference/
         .swagger-ui .scheme-container {
             background: #4f566b;
             box-shadow: 0 1px 2px 0 rgba(0,0,0,.15);
+            margin-bottom: 20px;
         }
+        
+        /* Fix server variables styling conflicts with Just the Docs */
+        .swagger-ui .scheme-container table {
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 12px;
+        }
+        .swagger-ui .scheme-container table td {
+            padding: 8px 12px;
+            border: 1px solid #d3d3d3;
+            background: #fff;
+        }
+        .swagger-ui .scheme-container select,
+        .swagger-ui .scheme-container input {
+            font-size: 12px;
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        .swagger-ui .computed-url {
+            margin: 10px 0;
+            font-size: 13px;
+        }
+        .swagger-ui .computed-url code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        
+        /* Fix model/schema table styling conflicts */
+        .swagger-ui .model-box-control {
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            color: #3b4151;
+            font-size: 12px;
+        }
+        .swagger-ui .model-toggle {
+            margin-right: 6px;
+        }
+        .swagger-ui .model-toggle.collapsed:after {
+            content: '▶';
+        }
+        .swagger-ui .model-toggle:not(.collapsed):after {
+            content: '▼';
+        }
+        .swagger-ui table.model {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .swagger-ui table.model td {
+            padding: 6px 10px;
+            border-top: 1px solid #ebebeb;
+            vertical-align: top;
+            font-size: 13px;
+        }
+        .swagger-ui table.model .property-row:first-child td {
+            border-top: none;
+        }
+        
         /* Dark theme adjustments for Just the Docs integration */
         @media (prefers-color-scheme: dark) {
             body {
                 background: #1e1e1e;
             }
-            .swagger-ui {
-                filter: invert(1) hue-rotate(180deg);
+            .swagger-ui .scheme-container table td {
+                background: #2d2d2d;
+                border-color: #444;
+                color: #fff;
             }
-            .swagger-ui .scheme-container {
-                filter: invert(1) hue-rotate(180deg);
+            .swagger-ui .computed-url code {
+                background: #2d2d2d;
+                color: #fff;
+            }
+            .swagger-ui table.model td {
+                border-color: #444;
+                color: #fff;
             }
         }
     </style>
