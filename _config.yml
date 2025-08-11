@@ -25,7 +25,6 @@ defaults:
 include:
   - "docs/api/*.html"
   - "docs/api/*.json"
-  - "assets/js/*.js"
 
 exclude:
   # from https://github.com/jekyll/jekyll/blob/master/lib/site_template/_config.yml:

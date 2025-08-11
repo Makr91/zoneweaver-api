@@ -131,10 +131,10 @@ install_app() {
 
     # Install man pages in OOCE location (separate from main app)
     logmsg "Installing man pages"
-    logcmd mkdir -p opt/ooce/zoneweaver-api/share/man/man1m opt/ooce/zoneweaver-api/share/man/man4
-    logcmd cp $SRCDIR/packaging/omnios/man/zoneweaver-api.1m opt/ooce/zoneweaver-api/share/man/man1m/ || \
+    logcmd mkdir -p opt/ooce/zoneweaver-api/share/man/man8 opt/ooce/zoneweaver-api/share/man/man5
+    logcmd cp $SRCDIR/packaging/omnios/man/zoneweaver-api.8 opt/ooce/zoneweaver-api/share/man/man8/ || \
         logerr "--- copying main man page failed"
-    logcmd cp $SRCDIR/packaging/omnios/man/zoneweaver-api.yaml.4 opt/ooce/zoneweaver-api/share/man/man4/ || \
+    logcmd cp $SRCDIR/packaging/omnios/man/zoneweaver-api.yaml.5 opt/ooce/zoneweaver-api/share/man/man5/ || \
         logerr "--- copying config man page failed"
 
     popd >/dev/null # $DESTDIR
