@@ -1,112 +1,77 @@
-# Configuration version for future migration compatibility
-version: 0.0.1
-
-# HTTP/HTTPS server configuration
+version: 0.1.3
 server:
   http_port: 5000
   https_port: 5001
-
-# SSL/TLS certificate configuration
 ssl:
   enabled: true
-  generate_ssl: true  # Auto-generate self-signed certificates if missing
+  generate_ssl: true
   key_path: /etc/zoneweaver-api/ssl/server.key
   cert_path: /etc/zoneweaver-api/ssl/server.crt
-
-# Cross-Origin Resource Sharing (CORS) allowed origins
 cors:
   whitelist:
-    - http://localhost:3000   # ZoneWeaver frontend (development)
-    - https://localhost:3001  # ZoneWeaver frontend (production)
-    - http://localhost:3001   # ZoneWeaver frontend (HTTP fallback)
-    - https://localhost:5001  # API server (for self-referencing)
-
-# Database configuration
+    - http://localhost:3000
+    - https://localhost:3001
+    - http://localhost:3001
+    - https://localhost:5001
 database:
   dialect: sqlite
   storage: /var/lib/zoneweaver-api/database/database.sqlite
-  logging: false  # Disable SQL query logging in production
-
-# API key authentication settings
+  logging: false
 api_keys:
-  bootstrap_enabled: true      # Enable initial API key generation via /bootstrap
-  bootstrap_auto_disable: true # Disable bootstrap after first successful use
-  key_length: 64              # Random bytes for API key generation (before base64)
-  hash_rounds: 12             # bcrypt rounds for secure key storage
-
-# Server statistics endpoint access
+  bootstrap_enabled: true
+  bootstrap_auto_disable: true
+  key_length: 64
+  hash_rounds: 12
 stats:
-  public_access: false  # Require API key for /stats endpoint (recommended for production)
-
-# Zone management configuration
+  public_access: false
 zones:
-  discovery_interval: 300      # Seconds between automatic zone discovery scans
-  auto_discovery: true         # Automatically detect new/removed zones
-  max_concurrent_tasks: 5      # Limit concurrent zone operations to prevent system overload
-  task_timeout: 300           # Task execution timeout in seconds
-  orphan_retention: 7         # Days to keep orphaned zone records before cleanup
-  default_pagination_limit: 50 # Default items per page for API responses
-
-# Zone provisioning settings
+  discovery_interval: 300
+  auto_discovery: true
+  max_concurrent_tasks: 5
+  task_timeout: 300
+  orphan_retention: 7
+  default_pagination_limit: 50
 provisioning:
-  install_tools: true  # Install required zone management tools automatically
-
-# Background cleanup service
+  install_tools: true
 cleanup:
-  interval: 300  # Run cleanup tasks every 5 minutes
-
-# VNC console access configuration
+  interval: 300
 vnc:
-  web_port_range_start: 8000    # Start of port range for noVNC web interfaces
-  web_port_range_end: 8100      # End of port range for noVNC web interfaces  
-  session_timeout: 1800         # VNC session timeout in seconds (30 minutes)
-  cleanup_interval: 300         # Check for expired sessions every 5 minutes
-  bind_address: 127.0.0.1       # Bind VNC servers to localhost only for security
-  max_concurrent_sessions: 10   # Limit concurrent VNC sessions
-
-# Host system monitoring configuration
+  web_port_range_start: 8000
+  web_port_range_end: 8100
+  session_timeout: 1800
+  cleanup_interval: 300
+  bind_address: 127.0.0.1
+  max_concurrent_sessions: 10
 host_monitoring:
   enabled: true
-  auto_enable_network_accounting: true  # Automatically enable network usage tracking
-  network_accounting_file: /var/log/net.log  # OmniOS network accounting log
-  
-  # Data collection intervals (in seconds) - faster for responsive monitoring
+  auto_enable_network_accounting: true
+  network_accounting_file: /var/log/net.log
   intervals:
-    network_config: 60     # Network interface configuration changes
-    network_stats: 10      # Network interface statistics (responsive)
-    network_usage: 10      # Network usage/bandwidth data (responsive)  
-    storage: 300          # Storage capacity and pool status
-    storage_frequent: 10   # Frequently changing storage metrics (responsive)
-    device_discovery: 60   # Hardware device discovery (responsive)
-    system_metrics: 30     # CPU, memory, system load metrics
-  
-  # Data retention periods (in days) - shorter for development-style monitoring
+    network_config: 60
+    network_stats: 10
+    network_usage: 10
+    storage: 300
+    storage_frequent: 10
+    device_discovery: 60
+    system_metrics: 30
   retention:
-    network_stats: 7       # Network statistics (1 week)
-    network_usage: 30      # Network usage trends (1 month)
-    network_config: 90     # Network configuration history (3 months)
-    storage: 90           # Storage metrics (3 months)
-    cpu_stats: 7          # CPU statistics (1 week)
-    memory_stats: 7       # Memory statistics (1 week)
-  
-  # Error handling and resilience
+    network_stats: 7
+    network_usage: 30
+    network_config: 90
+    storage: 90
+    cpu_stats: 7
+    memory_stats: 7
   error_handling:
-    max_consecutive_errors: 5    # Max failures before disabling a collector
-    retry_delay: 30             # Seconds to wait before retrying after error
-    reset_error_count_after: 3600  # Reset error counter after 1 hour of success
-  
-  # Performance and resource usage
+    max_consecutive_errors: 5
+    retry_delay: 30
+    reset_error_count_after: 3600
   performance:
-    max_concurrent_scans: 3  # Limit concurrent monitoring operations
-    command_timeout: 30      # Timeout for system commands (seconds)
-    batch_size: 100         # Database batch size for bulk operations
-
-# System reconciliation service - ensures consistency
+    max_concurrent_scans: 3
+    command_timeout: 30
+    batch_size: 100
 reconciliation:
   enabled: true
-  interval: 3600    # Run reconciliation every hour
-  log_level: warn   # Only log warnings and errors (reduce log noise)
-
-# API documentation endpoint control
+  interval: 3600
+  log_level: warn
 api_docs:
-  enabled: true  # Enable /api-docs endpoint - set to false to hide in production
+  enabled: true
