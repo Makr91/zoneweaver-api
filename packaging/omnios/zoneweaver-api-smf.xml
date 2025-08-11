@@ -1,0 +1,92 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+<!--
+ Copyright 2025 Makr91. All rights reserved.
+ Use is subject to license terms.
+-->
+
+<service_bundle type='manifest' name='zoneweaver-api'>
+
+<service
+	name='application/zoneweaver-api'
+	type='service'
+	version='1'>
+
+	<create_default_instance enabled='false' />
+
+	<single_instance />
+
+	<dependency
+		name='network'
+		grouping='require_all'
+		restart_on='none'
+		type='service'>
+		<service_fmri value='svc:/milestone/network:default' />
+	</dependency>
+
+	<dependency
+		name='filesystem'
+		grouping='require_all'
+		restart_on='none'
+		type='service'>
+		<service_fmri value='svc:/system/filesystem/local' />
+	</dependency>
+
+	<method_context working_directory='/opt/zoneweaver-api'>
+		<method_credential user='zoneweaver-api' group='zoneweaver-api' />
+		<method_environment>
+			<envvar name='PATH' value='/opt/ooce/node-22/bin:/opt/ooce/bin:/usr/bin:/bin' />
+			<envvar name='NODE_ENV' value='production' />
+			<envvar name='HOME' value='/var/lib/zoneweaver-api' />
+		</method_environment>
+	</method_context>
+
+	<exec_method
+		type='method'
+		name='start'
+		exec='/opt/zoneweaver-api/startup.sh'
+		timeout_seconds='60' />
+
+	<exec_method
+		type='method'
+		name='stop'
+		exec='/opt/zoneweaver-api/shutdown.sh'
+		timeout_seconds='60' />
+
+	<exec_method
+		type='method'
+		name='refresh'
+		exec=':kill -HUP'
+		timeout_seconds='60' />
+
+	<property_group name='startd' type='framework'>
+		<propval name='duration' type='astring' value='contract' />
+		<propval name='ignore_error' type='astring'
+			value='core,signal' />
+	</property_group>
+
+	<property_group name='application' type='application'>
+		<stability value='Evolving' />
+		<propval name='auto_enable' type='boolean' value='true' />
+	</property_group>
+
+	<stability value='Evolving' />
+
+	<template>
+		<common_name>
+			<loctext xml:lang='C'>
+				ZoneWeaver API Service
+			</loctext>
+		</common_name>
+		<description>
+			<loctext xml:lang='C'>
+				Node.js API backend for ZoneWeaver zone hypervisor management.
+				Provides RESTful API for managing Bhyve virtual machines, networking, 
+				storage, and system monitoring.
+			</loctext>
+		</description>
+	</template>
+
+</service>
+
+</service_bundle>

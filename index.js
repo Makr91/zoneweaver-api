@@ -337,35 +337,92 @@ const handleWebSocketUpgrade = async (request, socket, head) => {
 httpServer.on('upgrade', handleWebSocketUpgrade);
 
 /**
+ * Generate SSL certificates if they don't exist and generate_ssl is enabled
+ */
+async function generateSSLCertificatesIfNeeded() {
+  if (!sslConfig.generate_ssl) {
+    return false; // SSL generation disabled
+  }
+
+  const keyPath = sslConfig.key_path;
+  const certPath = sslConfig.cert_path;
+
+  // Check if certificates already exist
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    console.log('SSL certificates already exist, skipping generation');
+    return false; // Certificates exist, no need to generate
+  }
+
+  try {
+    console.log('Generating SSL certificates...');
+    
+    // Import child_process for running openssl
+    const { execSync } = await import('child_process');
+    const path = await import('path');
+    
+    // Ensure SSL directory exists
+    const sslDir = path.dirname(keyPath);
+    if (!fs.existsSync(sslDir)) {
+      fs.mkdirSync(sslDir, { recursive: true, mode: 0o700 });
+    }
+
+    // Generate SSL certificate using OpenSSL
+    const opensslCmd = `openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -subj "/C=US/ST=State/L=City/O=ZoneWeaver/CN=localhost"`;
+    
+    execSync(opensslCmd, { stdio: 'pipe' });
+    
+    // Set proper permissions (readable by current user only)
+    fs.chmodSync(keyPath, 0o600);
+    fs.chmodSync(certPath, 0o600);
+    
+    console.log('SSL certificates generated successfully');
+    console.log(`Key: ${keyPath}`);
+    console.log(`Certificate: ${certPath}`);
+    
+    return true; // Certificates generated successfully
+  } catch (error) {
+    console.error('Failed to generate SSL certificates:', error.message);
+    console.error('Continuing with HTTP fallback...');
+    return false; // Generation failed
+  }
+}
+
+/**
  * HTTPS server setup with SSL certificate handling
  * @description Attempts to create HTTPS server with SSL certificates, gracefully handles missing certificates
  */
-let httpsServer;
-try {
-  // Try to load SSL certificates
-  const sslOptions = {
-    key: fs.readFileSync(sslConfig.key_path),
-    cert: fs.readFileSync(sslConfig.cert_path)
-  };
-  
-  httpsServer = https.createServer(sslOptions, app);
-  
-  // Add WebSocket upgrade handler to HTTPS server
-  httpsServer.on('upgrade', handleWebSocketUpgrade);
-  
-  // Start HTTPS server
-  httpsServer.listen(httpsPort, () => {
-    console.log(`HTTPS Server running on port ${httpsPort}`);
-    console.log(`API Documentation: https://localhost:${httpsPort}/api-docs`);
-  });
-  
-} catch (error) {
-  console.log('SSL certificates not found or invalid. HTTPS server not started.');
-  console.log(`To enable HTTPS, ensure SSL certificates are available at:`);
-  console.log(`- Key: ${sslConfig.key_path}`);
-  console.log(`- Cert: ${sslConfig.cert_path}`);
-  console.log('Error:', error.message);
-}
+(async () => {
+  if (sslConfig.enabled) {
+    // Try to generate SSL certificates if needed
+    await generateSSLCertificatesIfNeeded();
+    
+    try {
+      const privateKey = fs.readFileSync(sslConfig.key_path, 'utf8');
+      const certificate = fs.readFileSync(sslConfig.cert_path, 'utf8');
+      
+      let credentials = { key: privateKey, cert: certificate };
+
+      const httpsServer = https.createServer(credentials, app);
+      
+      // Add WebSocket upgrade handler for HTTPS server
+      httpsServer.on('upgrade', handleWebSocketUpgrade);
+      
+      httpsServer.listen(httpsPort, () => {
+        console.log(`HTTPS Server running on port ${httpsPort}`);
+        console.log(`API Documentation: https://localhost:${httpsPort}/api-docs`);
+      });
+      
+    } catch (error) {
+      console.error('SSL Certificate Error:', error.message);
+      console.log('HTTPS server not started due to SSL certificate issues');
+      console.log(`To enable HTTPS, ensure SSL certificates are available at:`);
+      console.log(`- Key: ${sslConfig.key_path}`);
+      console.log(`- Cert: ${sslConfig.cert_path}`);
+    }
+  } else {
+    console.log('SSL disabled in configuration - HTTPS server not started');
+  }
+})();
 
 /**
  * Start HTTP server

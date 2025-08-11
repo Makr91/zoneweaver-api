@@ -1,0 +1,185 @@
+#!/usr/bin/bash
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License, Version 1.0 only
+# (the "License").  You may not use this file except in compliance
+# with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+#
+# Copyright 2025 Makr91. All rights reserved.
+# Use is subject to license terms.
+#
+
+set -e
+
+# Simple logging functions
+logmsg() { echo "=== $*"; }
+logcmd() { echo ">>> $*"; "$@"; }
+
+# Set up variables
+SRCDIR="$(pwd)"
+DESTDIR="${SRCDIR}/proto"
+PROG=zoneweaver-api
+VER=$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.0")
+PKG=system/virtualization/zoneweaver-api
+
+# Clean and create staging directory
+rm -rf "$DESTDIR"
+mkdir -p "$DESTDIR"
+
+#### Build Structure
+# /opt/zoneweaver-api/
+#   # Node.js application files
+#   index.js
+#   package.json
+#   controllers/
+#   models/
+#   routes/
+#   middleware/
+#   config/
+#   lib/
+#   node_modules/
+#   startup.sh
+#   shutdown.sh
+# /etc/zoneweaver-api/
+#   config.yaml
+# /var/lib/zoneweaver-api/
+# /var/log/zoneweaver-api/
+
+build_app() {
+    logmsg "Building ZoneWeaver API"
+    
+    # Set up environment for OmniOS/Solaris
+    export MAKE=gmake
+    export CC=gcc
+    export CXX=g++
+    
+    # Sync versions first
+    if [ -f "scripts/sync-versions.js" ]; then
+        logcmd node scripts/sync-versions.js
+    fi
+    
+    # Install dependencies
+    MAKE=gmake logcmd npm ci
+    
+    # Install production dependencies only
+    MAKE=gmake logcmd npm ci --omit=dev
+}
+
+install_app() {
+    pushd $DESTDIR >/dev/null
+
+    # Create main application directory
+    logcmd mkdir -p opt/zoneweaver-api
+    pushd opt/zoneweaver-api >/dev/null
+
+    # Copy application files
+    logmsg "Installing ZoneWeaver API application files"
+    logcmd cp $SRCDIR/index.js .
+    logcmd cp $SRCDIR/package.json .
+    
+    # Copy application directories
+    for dir in controllers models routes middleware config lib; do
+        if [ -d "$SRCDIR/$dir" ]; then
+            logcmd cp -r $SRCDIR/$dir .
+        fi
+    done
+    
+    # Copy node_modules (production only)
+    if [ -d "$SRCDIR/node_modules" ]; then
+        logcmd cp -r $SRCDIR/node_modules .
+    fi
+    
+    # Copy SMF method scripts
+    logcmd cp $SRCDIR/packaging/omnios/startup.sh .
+    logcmd cp $SRCDIR/packaging/omnios/shutdown.sh .
+    logcmd chmod 755 startup.sh shutdown.sh
+    
+    popd >/dev/null # /opt/zoneweaver-api
+
+    # Install configuration
+    logmsg "Installing configuration files"
+    logcmd mkdir -p etc/zoneweaver-api
+    logcmd cp $SRCDIR/packaging/config/production-config.yaml etc/zoneweaver-api/config.yaml
+
+    # Create data and log directories
+    logcmd mkdir -p var/lib/zoneweaver-api
+    logcmd mkdir -p var/log/zoneweaver-api
+
+    # Install SMF manifest
+    logmsg "Installing SMF manifest"
+    logcmd mkdir -p lib/svc/manifest/system
+    logcmd cp $SRCDIR/packaging/omnios/zoneweaver-api-smf.xml lib/svc/manifest/system/zoneweaver-api.xml
+
+    popd >/dev/null # $DESTDIR
+}
+
+post_install() {
+    logmsg "--- Setting up ZoneWeaver API staging directory"
+    
+    pushd $DESTDIR >/dev/null
+    
+    # Create SSL directory (certificates will be generated during installation)
+    logcmd mkdir -p etc/zoneweaver-api/ssl
+    
+    # Create database directory
+    logcmd mkdir -p var/lib/zoneweaver-api/database
+    
+    # Include post-install script in package
+    logcmd cp $SRCDIR/packaging/omnios/post-install.sh opt/zoneweaver-api/
+
+    popd >/dev/null
+    
+    logmsg "ZoneWeaver API staging setup completed"
+}
+
+# Main build process
+logmsg "Starting ZoneWeaver API build process"
+build_app
+install_app
+post_install
+
+# Create the complete package
+logmsg "Creating IPS package"
+cd "$SRCDIR"
+export VERSION="$VER"
+sed "s/@VERSION@/${VERSION}/g" packaging/omnios/zoneweaver-api.p5m > zoneweaver-api.p5m.tmp
+pkgsend generate proto | pkgfmt > zoneweaver-api.p5m.generated
+pkgmogrify -DVERSION="${VERSION}" zoneweaver-api.p5m.tmp zoneweaver-api.p5m.generated > zoneweaver-api.p5m.final
+
+# Create temporary local repository
+TEMP_REPO="${SRCDIR}/temp-repo"
+rm -rf "$TEMP_REPO"
+pkgrepo create "$TEMP_REPO"
+pkgrepo set -s "$TEMP_REPO" publisher/prefix=Makr91
+
+# Publish package to temporary repository
+pkgsend -s "file://${TEMP_REPO}" publish -d proto zoneweaver-api.p5m.final
+
+# Create .p5p package archive
+PACKAGE_FILE="zoneweaver-api-${VERSION}.p5p"
+pkgrecv -s "file://${TEMP_REPO}" -a -d "${PACKAGE_FILE}" "${PKG}"
+
+# Clean up temporary repository
+rm -rf "$TEMP_REPO"
+
+logmsg "Package build completed: ${PACKAGE_FILE}"
+logmsg "Complete package ready for upload to GitHub artifacts"
+
+# Vim hints
+# vim:ts=4:sw=4:et:

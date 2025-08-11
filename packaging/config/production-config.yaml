@@ -5,15 +5,17 @@ server:
 ssl:
   enabled: true
   generate_ssl: true
-  key_path: ./ssl/server.key
-  cert_path: ./ssl/server.crt
+  key_path: /etc/zoneweaver-api/ssl/server.key
+  cert_path: /etc/zoneweaver-api/ssl/server.crt
 cors:
   whitelist:
     - http://localhost:3000
     - https://localhost:3001
+    - http://localhost:3001
+    - https://localhost:5001
 database:
   dialect: sqlite
-  storage: ./database.sqlite
+  storage: /var/lib/zoneweaver-api/database/database.sqlite
   logging: false
 api_keys:
   bootstrap_enabled: true
@@ -21,7 +23,7 @@ api_keys:
   key_length: 64
   hash_rounds: 12
 stats:
-  public_access: true
+  public_access: false
 zones:
   discovery_interval: 300
   auto_discovery: true
@@ -30,7 +32,7 @@ zones:
   orphan_retention: 7
   default_pagination_limit: 50
 provisioning:
-  install_tools: false
+  install_tools: true
 cleanup:
   interval: 300
 vnc:
@@ -46,28 +48,28 @@ host_monitoring:
   network_accounting_file: /var/log/net.log
   intervals:
     network_config: 60
-    network_stats: 10
-    network_usage: 10
+    network_stats: 30
+    network_usage: 30
     storage: 300
-    storage_frequent: 10
-    device_discovery: 60
+    storage_frequent: 30
+    device_discovery: 300
     system_metrics: 30
   retention:
-    network_stats: 7
-    network_usage: 30
-    network_config: 90
-    storage: 90
-    cpu_stats: 7
-    memory_stats: 7
+    network_stats: 30
+    network_usage: 90
+    network_config: 365
+    storage: 365
+    cpu_stats: 30
+    memory_stats: 30
   error_handling:
-    max_consecutive_errors: 5
-    retry_delay: 30
+    max_consecutive_errors: 10
+    retry_delay: 60
     reset_error_count_after: 3600
   performance:
-    max_concurrent_scans: 3
-    command_timeout: 30
-    batch_size: 100
+    max_concurrent_scans: 2
+    command_timeout: 45
+    batch_size: 50
 reconciliation:
   enabled: true
   interval: 3600
-  log_level: info
+  log_level: warn

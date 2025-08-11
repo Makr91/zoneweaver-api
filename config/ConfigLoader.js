@@ -87,6 +87,8 @@ class ConfigLoader {
    * Gets SSL configuration
    * @description Returns SSL certificate configuration
    * @returns {Object} SSL configuration object
+   * @returns {boolean} returns.enabled - Whether SSL is enabled
+   * @returns {boolean} returns.generate_ssl - Whether to auto-generate SSL certificates
    * @returns {string} returns.key_path - Path to SSL private key
    * @returns {string} returns.cert_path - Path to SSL certificate
    */
