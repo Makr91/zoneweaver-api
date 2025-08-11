@@ -9,9 +9,6 @@ document.addEventListener('DOMContentLoaded', function() {
   if (window.location.pathname.includes('/releases/')) {
     var releaseDiv = document.getElementById('latest-release');
     if (releaseDiv) {
-      // Clear any existing content immediately
-      releaseDiv.innerHTML = '<p><em>Loading version information...</em></p>';
-      
       fetch('https://raw.githubusercontent.com/Makr91/zoneweaver-api/refs/heads/main/package.json')
         .then(function(response) { return response.json(); })
         .then(function(data) {
@@ -20,9 +17,6 @@ document.addEventListener('DOMContentLoaded', function() {
           if (p5pLink) {
             p5pLink.href = 'https://github.com/Makr91/zoneweaver-api/releases/latest/download/zoneweaver-api-' + data.version + '.p5p';
           }
-        })
-        .catch(function(error) {
-          releaseDiv.innerHTML = '<p><em>Unable to load version information</em></p>';
         });
     }
   }
@@ -35,9 +29,6 @@ document.addEventListener('DOMContentLoaded', function() {
   if (window.location.pathname.includes('/security/')) {
     var versionsDiv = document.getElementById('supported-versions');
     if (versionsDiv) {
-      // Clear any existing content immediately
-      versionsDiv.innerHTML = '<p><em>Loading version information...</em></p>';
-      
       fetch('https://api.github.com/repos/Makr91/zoneweaver-api/releases')
         .then(function(response) {
           return response.json();
@@ -69,7 +60,7 @@ document.addEventListener('DOMContentLoaded', function() {
           versionsDiv.innerHTML = html;
         })
         .catch(function(error) {
-          versionsDiv.innerHTML = '<p><em>Unable to load version information</em></p>';
+          versionsDiv.innerHTML = '<p><em>Error loading versions</em></p>';
         });
     }
   }
