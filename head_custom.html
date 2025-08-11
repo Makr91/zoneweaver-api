@@ -7,7 +7,7 @@
 <script type="text/javascript">
 document.addEventListener('DOMContentLoaded', function() {
   if (window.location.pathname.includes('/releases/')) {
-    var releaseDiv = document.getElementById('latest-release');
+    var releaseDiv = document.getElementById('latest-release-content');
     if (releaseDiv) {
       fetch('https://raw.githubusercontent.com/Makr91/zoneweaver-api/refs/heads/main/package.json')
         .then(function(response) { return response.json(); })

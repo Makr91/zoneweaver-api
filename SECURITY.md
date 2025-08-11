@@ -1,13 +1,5 @@
 # Security Policy
 
-## Supported Versions
-
-ZoneWeaver API follows semantic versioning. Security updates are provided for the latest release and the two most recent prior releases.
-
-For the current list of supported versions, please visit our [Security Policy documentation](https://zoneweaver-api.startcloud.com/docs/security/).
-
----
-
 ## Reporting a Vulnerability
 
 **Please do not report security vulnerabilities through public GitHub issues.**

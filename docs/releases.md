@@ -14,7 +14,7 @@ Download the latest version of ZoneWeaver API.
 
 ## Latest Release
 
-<div id="latest-release">
+<div id="latest-release-content">
 <p>Loading latest release information...</p>
 </div>
 
