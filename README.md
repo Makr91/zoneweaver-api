@@ -1,4 +1,6 @@
-![ZoneWeaver API Logo](assets/images/logo192.png)
+<p align="center">
+  <img src="assets/images/logo192.png" alt="ZoneWeaver API Logo" width="50%">
+</p>
 
 # Zoneweaver API
 
