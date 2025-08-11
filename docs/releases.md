@@ -37,5 +37,5 @@ Download the latest version of ZoneWeaver API.
 
 ## Release History
 
-[📋 View Changelog](changelog/){: .btn .btn-outline }
+[📋 View Changelog](/docs/changelog/){: .btn .btn-outline }
 [🔍 All Releases](https://github.com/Makr91/zoneweaver-api/releases){: .btn .btn-outline }
