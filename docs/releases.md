@@ -35,15 +35,6 @@ Download the latest version of ZoneWeaver API.
 
 ---
 
-## System Requirements
-
-- **OS**: OmniOS (Latest stable)
-- **Architecture**: x86_64
-- **Memory**: 512MB+ RAM
-- **Storage**: 1GB+ free space
-
----
-
 ## Release History
 
 [📋 View Changelog](changelog/){: .btn .btn-outline }

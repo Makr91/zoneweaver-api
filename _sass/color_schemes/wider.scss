@@ -7,28 +7,39 @@
 // Then override the width
 $content-width: 60rem;  // Much wider than default 50rem for Swagger UI
 
-// Fix double toggle icons by completely overriding both SVG background and Unicode content
+// Fix double toggle icons with highest specificity to override all Swagger UI styles
 .swagger-ui .model-toggle::after,
-.swagger-ui span.model-toggle::after {
-  background: none !important;           // Remove SVG background arrow
-  background-image: none !important;     // Ensure no background image
-  content: "" !important;                // Remove any Unicode content arrow
-  width: auto !important;                // Reset width
-  height: auto !important;               // Reset height
-  display: inline !important;            // Reset display
+.swagger-ui span.model-toggle::after,
+.swagger-ui .model-box-control .model-toggle::after {
+  background: none !important;
+  background-image: none !important;
+  background-color: transparent !important;
+  background-size: 0 !important;
+  content: "" !important;
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
 }
 
-// Add back single Unicode arrow with consistent styling
-.swagger-ui .model-toggle:not(.collapsed)::after,
-.swagger-ui span.model-toggle:not(.collapsed)::after {
-  content: "▼" !important;               // Expanded: down arrow
-  color: #8b949e !important;             // Consistent grey color
+// Use ::before instead of ::after to avoid conflicts
+.swagger-ui .model-toggle.collapsed::before,
+.swagger-ui span.model-toggle.collapsed::before,
+.swagger-ui .model-box-control .model-toggle.collapsed::before {
+  content: "►" !important;
+  color: #8b949e !important;
+  display: inline !important;
+  font-size: 12px !important;
+  margin-right: 6px !important;
 }
 
-.swagger-ui .model-toggle.collapsed::after,
-.swagger-ui span.model-toggle.collapsed::after {
-  content: "►" !important;               // Collapsed: right arrow
-  color: #8b949e !important;             // Consistent grey color
+.swagger-ui .model-toggle:not(.collapsed)::before,
+.swagger-ui span.model-toggle:not(.collapsed)::before,
+.swagger-ui .model-box-control .model-toggle:not(.collapsed)::before {
+  content: "▼" !important;
+  color: #8b949e !important;
+  display: inline !important;
+  font-size: 12px !important;
+  margin-right: 6px !important;
 }
 
 // Style Swagger UI tab headers with dark background
