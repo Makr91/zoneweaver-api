@@ -456,4 +456,4 @@ MAKE=gmake npm install
 - [ ] Security considerations have been addressed
 - [ ] Performance impact has been considered
 
-See the [Code of Conduct](../../CODE_OF_CONDUCT.md) for community guidelines.
+See the [Code of Conduct](https://github.com/Makr91/zoneweaver-api/blob/main/CODE_OF_CONDUCT.md) for community guidelines.
