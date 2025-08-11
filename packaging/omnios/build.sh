@@ -92,6 +92,7 @@ install_app() {
     logmsg "Installing ZoneWeaver API application files"
     logcmd cp $SRCDIR/index.js .
     logcmd cp $SRCDIR/package.json .
+    logcmd cp $SRCDIR/LICENSE.md .
     
     # Copy application directories
     for dir in controllers models routes middleware config lib; do
