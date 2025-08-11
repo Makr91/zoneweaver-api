@@ -83,44 +83,51 @@ app.use(express.json());
 app.use(router);
 
 /**
- * Swagger API Documentation middleware
- * @description Serves interactive API documentation at /api-docs endpoint with dynamic host detection and custom server options
+ * Swagger API Documentation middleware (conditionally enabled)
+ * @description Serves interactive API documentation at /api-docs endpoint when enabled in configuration
  */
-app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
-  // Dynamically set the server URL based on the current request
-  const protocol = req.protocol;
-  const host = req.get('host');
-  const dynamicSpecs = {
-    ...specs,
-    servers: [
-      {
-        url: `${protocol}://${host}`,
-        description: 'Current server (auto-detected)'
-      },
-      {
-        url: '{protocol}://{host}',
-        description: 'Custom server',
-        variables: {
-          protocol: {
-            enum: ['http', 'https'],
-            default: 'https',
-            description: 'The protocol used to access the server'
-          },
-          host: {
-            default: 'localhost:5001',
-            description: 'The hostname and port of the server'
+const apiDocsConfig = config.getApiDocs();
+if (apiDocsConfig && apiDocsConfig.enabled) {
+  console.log('API documentation endpoint enabled at /api-docs');
+  
+  app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
+    // Dynamically set the server URL based on the current request
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const dynamicSpecs = {
+      ...specs,
+      servers: [
+        {
+          url: `${protocol}://${host}`,
+          description: 'Current server (auto-detected)'
+        },
+        {
+          url: '{protocol}://{host}',
+          description: 'Custom server',
+          variables: {
+            protocol: {
+              enum: ['http', 'https'],
+              default: 'https',
+              description: 'The protocol used to access the server'
+            },
+            host: {
+              default: 'localhost:5001',
+              description: 'The hostname and port of the server'
+            }
           }
         }
-      }
-    ]
-  };
-  
-  swaggerUi.setup(dynamicSpecs, {
-    explorer: true,
-    customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: 'Zoneweaver API Documentation'
-  })(req, res, next);
-});
+      ]
+    };
+    
+    swaggerUi.setup(dynamicSpecs, {
+      explorer: true,
+      customCss: '.swagger-ui .topbar { display: none }',
+      customSiteTitle: 'Zoneweaver API Documentation'
+    })(req, res, next);
+  });
+} else {
+  console.log('API documentation endpoint disabled by configuration');
+}
 
 /**
  * HTTP server instance

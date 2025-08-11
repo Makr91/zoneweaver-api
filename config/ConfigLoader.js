@@ -194,6 +194,16 @@ class ConfigLoader {
   getHostMonitoring() {
     return this.config.host_monitoring;
   }
+
+  /**
+   * Gets API documentation configuration
+   * @description Returns API documentation endpoint configuration
+   * @returns {Object} API docs configuration object
+   * @returns {boolean} returns.enabled - Whether API docs endpoint is enabled
+   */
+  getApiDocs() {
+    return this.config.api_docs;
+  }
 }
 
 // Export singleton instance
