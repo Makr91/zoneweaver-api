@@ -26,26 +26,25 @@ Download the latest version of ZoneWeaver API.
 | **Source Code** | All | [📁 Download Source](https://github.com/Makr91/zoneweaver-api/archive/refs/heads/main.tar.gz){: .btn .btn-outline } |
 
 <script>
-// Fetch latest release from GitHub API
-fetch('https://api.github.com/repos/Makr91/zoneweaver-api/releases/latest')
+// Fetch version from package.json
+fetch('https://raw.githubusercontent.com/Makr91/zoneweaver-api/refs/heads/main/package.json')
   .then(response => response.json())
   .then(data => {
     const releaseDiv = document.getElementById('latest-release');
-    const releaseDate = new Date(data.published_at).toLocaleDateString('en-US', {
+    const currentDate = new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long', 
       day: 'numeric'
     });
     
     releaseDiv.innerHTML = `
-      <p><strong>Version ${data.tag_name}</strong> - Released ${releaseDate}</p>
-      ${data.body ? `<details><summary>Release Notes</summary><div class="highlight">${data.body.replace(/\n/g, '<br>')}</div></details>` : ''}
+      <p><strong>Version v${data.version}</strong> - Current Build</p>
     `;
   })
   .catch(error => {
-    console.error('Error fetching release data:', error);
+    console.error('Error fetching version data:', error);
     document.getElementById('latest-release').innerHTML = 
-      '<p><strong>Unable to load release information.</strong> Please visit <a href="https://github.com/Makr91/zoneweaver-api/releases">GitHub Releases</a> for the latest version.</p>';
+      '<p><strong>Unable to load version information.</strong> Please visit <a href="https://github.com/Makr91/zoneweaver-api/releases">GitHub Releases</a> for the latest version.</p>';
   });
 </script>
 
