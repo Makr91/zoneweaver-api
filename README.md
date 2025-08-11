@@ -1,4 +1,4 @@
-![ZoneWeaver API Logo](assets/images/logo.png)
+![ZoneWeaver API Logo](assets/images/logo192.png)
 
 # Zoneweaver API
 
