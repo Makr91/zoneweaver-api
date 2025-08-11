@@ -42,8 +42,13 @@ graph TD
 
 ## Documentation
 
--   **[Setup and Configuration Guide](SETUP.md)**: Your complete guide to installing and configuring the Zoneweaver API.
--   **[API Documentation](http://your-host:5000/api-docs)**: Explore the interactive Swagger documentation, available when the server is running.
+📚 **Complete documentation is available at: [zoneweaver-api.startcloud.com](https://zoneweaver-api.startcloud.com/)**
+
+-   **[Getting Started Guide](https://zoneweaver-api.startcloud.com/docs/guides/getting-started/)**: Quick start and setup instructions
+-   **[Installation Guide](https://zoneweaver-api.startcloud.com/docs/guides/production-installation/)**: Complete installation guide for production
+-   **[Configuration Reference](https://zoneweaver-api.startcloud.com/docs/configuration/)**: Detailed configuration options
+-   **[API Reference](https://zoneweaver-api.startcloud.com/docs/api/)**: Interactive OpenAPI documentation
+-   **[Authentication Guide](https://zoneweaver-api.startcloud.com/docs/guides/authentication/)**: API key setup and usage
 
 ## System Requirements
 
