@@ -5,6 +5,7 @@
  * @version 0.0.1
  * @license GPL-3.0
  */
+// x-release-please-version
 
 import { execSync } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
