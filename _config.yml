@@ -7,9 +7,9 @@ repository: Makr91/zoneweaver-api # for github-metadata
 
 permalink: pretty
 
-# Logo and favicon settings
+# Logo and favicon settings  
 # logo: "/assets/images/logo.png"
-# favicon_ico: "/assets/images/favicon.ico"
+favicon_ico: "/zoneweaver-api/assets/images/favicon.ico"
 
 defaults:
   - scope:

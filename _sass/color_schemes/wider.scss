@@ -1,4 +1,8 @@
-// Custom color scheme for wider layout
+// Custom color scheme for wider layout with dark theme
 // Based on Just the Docs official method for wider content
 
+// Import dark theme first
+@import "dark";
+
+// Then override the width
 $content-width: 60rem;  // Much wider than default 50rem for Swagger UI
