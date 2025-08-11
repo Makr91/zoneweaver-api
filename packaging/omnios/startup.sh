@@ -1,72 +1,74 @@
-#!/usr/bin/bash
+#!/bin/bash
 #
-# CDDL HEADER START
-#
-# The contents of this file are subject to the terms of the
-# Common Development and Distribution License, Version 1.0 only
-# (the "License").  You may not use this file except in compliance
-# with the License.
-#
-# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
-# or http://www.opensolaris.org/os/licensing.
-# See the License for the specific language governing permissions
-# and limitations under the License.
-#
-# When distributing Covered Code, include this CDDL HEADER in each
-# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
-# If applicable, add the following below this CDDL HEADER, with the
-# fields enclosed by brackets "[]" replaced with your own identifying
-# information: Portions Copyright [yyyy] [name of copyright owner]
-#
-# CDDL HEADER END
-#
-#
-# Copyright 2025 Makr91. All rights reserved.
-# Use is subject to license terms.
+# ZoneWeaver API startup script for SMF
 #
 
-set -o xtrace
+set -e
 
-. /lib/svc/share/smf_include.sh
+# Environment is set by SMF, but ensure we have the basics
+export PATH="/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/bin:/usr/sbin:/sbin"
+export NODE_ENV="${NODE_ENV:-production}"
+export CONFIG_PATH="${CONFIG_PATH:-/etc/zoneweaver-api/config.yaml}"
+export HOME="${HOME:-/var/lib/zoneweaver-api}"
 
-DAEMON="ZoneWeaver API"
-DAEMON_HOME="/opt/zoneweaver-api"
-DAEMON_USER="zoneweaver-api"
-DAEMON_CONF="/etc/zoneweaver-api/config.yaml" 
-DAEMON_LOG="/var/log/zoneweaver-api"
-DAEMON_PIDFILE="/var/run/zoneweaver-api.pid"
+cd /opt/zoneweaver-api
 
-# Directories and permissions are handled during package installation
+PIDFILE="/var/lib/zoneweaver-api/zoneweaver-api.pid"
 
-# Check if configuration file exists
-if [[ ! -f ${DAEMON_CONF} ]]; then
-    echo "Configuration file ${DAEMON_CONF} not found"
-    exit $SMF_EXIT_ERR_CONFIG
-fi
-
-# Set up environment
-export PATH="/opt/ooce/node-22/bin:/opt/ooce/bin:${PATH}"
-export NODE_ENV="production"
-export HOME="/var/lib/zoneweaver-api"
-
-# Change to daemon directory
-cd ${DAEMON_HOME}
+mkdir -p /var/log/zoneweaver-api
 
 # Check if Node.js is available
-if ! which node >/dev/null 2>&1; then
-    echo "Node.js not found in PATH: ${PATH}"
-    exit $SMF_EXIT_ERR_CONFIG
+if ! command -v node >/dev/null 2>&1; then
+    echo "Error: Node.js not found in PATH" >&2
+    exit 1
 fi
 
-# Post-installation is handled during package installation via IPS actuator
+# Check if main application file exists
+if [ ! -f "/opt/zoneweaver-api/index.js" ]; then
+    echo "Error: ZoneWeaver API application not found at /opt/zoneweaver-api/index.js" >&2
+    exit 1
+fi
 
-# Start the daemon
-echo "Starting ${DAEMON}"
-exec /opt/ooce/node-22/bin/node index.js \
-    </dev/null \
-    >>${DAEMON_LOG}/zoneweaver-api.log 2>&1 &
+# Check if configuration file exists
+if [ ! -f "$CONFIG_PATH" ]; then
+    echo "Error: Configuration file not found at $CONFIG_PATH" >&2
+    exit 1
+fi
 
-# Store PID
-echo $! > ${DAEMON_PIDFILE}
+# Remove stale PID file if it exists
+if [ -f "$PIDFILE" ]; then
+    if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "Removing stale PID file $PIDFILE"
+        rm -f "$PIDFILE"
+    else
+        echo "Error: ZoneWeaver API appears to be already running (PID $(cat "$PIDFILE"))" >&2
+        exit 1
+    fi
+fi
 
-exit $SMF_EXIT_OK
+echo "Starting ZoneWeaver API..."
+echo "Node.js version: $(node --version)"
+echo "Configuration: $CONFIG_PATH"
+echo "Environment: $NODE_ENV"
+
+# Start the Node.js application in the background
+# Output goes to SMF log via stdout/stderr
+nohup node index.js </dev/null >/dev/null 2>&1 &
+NODE_PID=$!
+
+# Save the PID
+echo $NODE_PID > "$PIDFILE"
+
+# Give it a moment to start and check if it's still running
+sleep 2
+if ! kill -0 $NODE_PID 2>/dev/null; then
+    echo "Error: ZoneWeaver API failed to start" >&2
+    rm -f "$PIDFILE"
+    exit 1
+fi
+
+echo "ZoneWeaver API started successfully with PID $NODE_PID"
+echo "Log output will be available via SMF logging"
+echo "Access the API at https://localhost:5001"
+
+exit 0

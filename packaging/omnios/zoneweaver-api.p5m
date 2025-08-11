@@ -64,9 +64,6 @@ license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
 <transform file path=opt/zoneweaver-api/shutdown.sh -> set group sys>
 <transform file path=opt/zoneweaver-api/shutdown.sh -> set mode 0755>
 
-<transform file path=opt/zoneweaver-api/post-install.sh -> set owner root>
-<transform file path=opt/zoneweaver-api/post-install.sh -> set group sys>
-<transform file path=opt/zoneweaver-api/post-install.sh -> set mode 0755>
 
 # Make node binaries executable
 <transform file path=opt/zoneweaver-api/node_modules/.*/bin/.* -> set mode 0755>
