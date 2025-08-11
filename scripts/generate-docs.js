@@ -321,6 +321,28 @@ function generateSwaggerUI() {
             color: #8b949e !important;
         }
         
+        /* Fix all toggle arrows - make them consistent */
+        .swagger-ui .model-toggle:before {
+            display: none !important;
+        }
+        
+        .swagger-ui .model-toggle {
+            color: #8b949e !important;
+        }
+        
+        /* Override any default Swagger UI toggle styling */
+        .swagger-ui span.model-toggle {
+            color: #8b949e !important;
+        }
+        
+        .swagger-ui span.model-toggle:before {
+            display: none !important;
+        }
+        
+        .swagger-ui span.model-toggle:after {
+            color: #8b949e !important;
+        }
+        
         .swagger-ui .model-box {
             width: 100% !important;
             max-width: 100% !important;
