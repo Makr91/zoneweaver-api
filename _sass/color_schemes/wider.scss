@@ -7,9 +7,9 @@
 // Then override the width
 $content-width: 60rem;  // Much wider than default 50rem for Swagger UI
 
-// Fix duplicate background-size properties in Swagger UI model toggles
+// Fix double toggle icons by removing CSS background SVG arrow
 .swagger-ui .model-toggle::after {
-  background-size: 100% !important;  // Override duplicate background-size properties
+  background: none !important;  // Remove the CSS background SVG arrow to prevent double icons
 }
 
 // Style Swagger UI tab headers with dark background
