@@ -11,7 +11,6 @@ import yaml from 'js-yaml';
 
 const rootPackagePath = './package.json';
 const swaggerConfigPath = './config/swagger.js';
-const configYamlPath = './config/config.yaml';
 const productionConfigPath = './packaging/config/production-config.yaml';
 const releasePleaseManifestPath = './.release-please-manifest.json';
 
@@ -30,28 +29,6 @@ try {
     console.log(`   ✅ Updated swagger config`);
   } else {
     console.log(`   ⚠️  Swagger config not found: ${swaggerConfigPath}`);
-  }
-  
-  // 2. Update config.yaml
-  if (fs.existsSync(configYamlPath)) {
-    try {
-      const configData = yaml.load(fs.readFileSync(configYamlPath, 'utf8'));
-      configData.version = rootVersion;
-      fs.writeFileSync(configYamlPath, yaml.dump(configData, {
-        indent: 2,
-        lineWidth: -1,
-        noCompatMode: true
-      }));
-      console.log(`   ✅ Updated config.yaml`);
-    } catch (error) {
-      console.warn(`   ⚠️  Could not parse config.yaml as YAML, trying text replacement`);
-      let configYaml = fs.readFileSync(configYamlPath, 'utf8');
-      configYaml = configYaml.replace(/version:\s*[^\n]*/g, `version: "${rootVersion}"`);
-      fs.writeFileSync(configYamlPath, configYaml);
-      console.log(`   ✅ Updated config.yaml (text replacement)`);
-    }
-  } else {
-    console.log(`   ⚠️  Config YAML not found: ${configYamlPath}`);
   }
   
   // 3. Update production config (if exists)
@@ -89,7 +66,6 @@ try {
   console.log(`✅ Synchronized versions to ${rootVersion}`);
   console.log(`   - Root: ${rootVersion}`);
   console.log(`   - Swagger: ${rootVersion}`);
-  console.log(`   - Config: ${rootVersion}`);
   console.log(`   - Production Config: ${rootVersion}`);
   console.log(`   - Release Please Manifest: ${rootVersion}`);
   

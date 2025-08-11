@@ -60,12 +60,16 @@ parent: API Reference
 permalink: /docs/api/reference/
 ---
 
+{% raw %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZoneWeaver API Reference</title>
+    <link rel="icon" type="image/x-icon" href="/zoneweaver-api/assets/images/favicon.ico">
+    <link rel="apple-touch-icon" sizes="192x192" href="/zoneweaver-api/assets/images/logo192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="/zoneweaver-api/assets/images/logo512.png">
     <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css" />
     <style>
         html {
@@ -205,7 +209,8 @@ permalink: /docs/api/reference/
         };
     </script>
 </body>
-</html>`;
+</html>
+{% endraw %}`;
 }
 
 // Run the documentation generation
