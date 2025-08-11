@@ -14,8 +14,12 @@ const options = {
       },
       contact: {
         name: 'Zoneweaver API',
-        url: 'https://github.com/Makr91/zoneweaver-api',
+        url: 'https://zoneweaver-api.startcloud.com/docs',
       },
+    },
+    externalDocs: {
+      description: 'View on GitHub',
+      url: 'https://github.com/Makr91/zoneweaver-api'
     },
     servers: [
       {

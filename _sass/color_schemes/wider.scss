@@ -21,6 +21,10 @@ $content-width: 60rem;  // Much wider than default 50rem for Swagger UI
   display: none !important;
 }
 
+.model-toggle {
+  background-image: none !important;
+}
+
 // Use ::before instead of ::after to avoid conflicts
 .swagger-ui .model-toggle.collapsed::before,
 .swagger-ui span.model-toggle.collapsed::before,
@@ -45,4 +49,11 @@ $content-width: 60rem;  // Much wider than default 50rem for Swagger UI
 // Style Swagger UI tab headers with dark background
 .swagger-ui .opblock-section-header {
   background: hsla(0, 0%, 0%, 0.8) !important;  // Semi-transparent dark background
+}
+
+// Style scheme container for better layout
+.swagger-ui .scheme-container {
+  max-width: 1460px !important;
+  padding: 0 20px !important;
+  width: 100% !important;
 }
