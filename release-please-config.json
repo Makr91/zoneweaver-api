@@ -6,6 +6,10 @@
       "release-type": "node",
       "package-name": "zoneweaver-api",
       "include-component-in-tag": false,
+      "extra-files": [
+        "config/swagger.js",
+        "packaging/config/production-config.yaml"
+      ],
       "changelog-sections": [
         {"type": "feat", "section": "Features", "hidden": false},
         {"type": "fix", "section": "Bug Fixes", "hidden": false},
