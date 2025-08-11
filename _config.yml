@@ -48,7 +48,6 @@ exclude:
   - CODE_OF_CONDUCT.md
   - docker-compose.yml
   - Dockerfile
-  - "*.js"
   - "*.mjs"
   - config/
   - controllers/
@@ -59,6 +58,7 @@ exclude:
   - scripts/
   - SETUP.md
   - CHANGELOG.md
+  - index.js
 
 # Theme settings
 theme: just-the-docs

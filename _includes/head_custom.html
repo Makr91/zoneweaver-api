@@ -4,4 +4,21 @@
 <link rel="apple-touch-icon" sizes="512x512" href="{{ '/assets/images/logo512.png' | relative_url }}">
 
 <!-- Dynamic version loading for releases page -->
-<script src="{{ '/assets/js/releases.js' | relative_url }}"></script>
+<script type="text/javascript">
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.location.pathname.includes('/releases/')) {
+    var releaseDiv = document.getElementById('latest-release');
+    if (releaseDiv) {
+      fetch('https://raw.githubusercontent.com/Makr91/zoneweaver-api/refs/heads/main/package.json')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          releaseDiv.innerHTML = '<p><strong>Version v' + data.version + '</strong> - Current Build</p>';
+        })
+        .catch(function(error) {
+          console.error('Error fetching version data:', error);
+          releaseDiv.innerHTML = '<p><strong>Unable to load version information.</strong> Please visit <a href="https://github.com/Makr91/zoneweaver-api/releases">GitHub Releases</a> for the latest version.</p>';
+        });
+    }
+  }
+});
+</script>
