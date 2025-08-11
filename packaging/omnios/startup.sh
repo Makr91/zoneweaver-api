@@ -15,7 +15,19 @@ cd /opt/zoneweaver-api
 
 PIDFILE="/var/lib/zoneweaver-api/zoneweaver-api.pid"
 
+# Create runtime directories following IPS best practices
+# These are unpackaged content - preserved across package operations
+mkdir -p /var/lib/zoneweaver-api/database
+mkdir -p /etc/zoneweaver-api/ssl
 mkdir -p /var/log/zoneweaver-api
+
+# Set proper ownership for runtime directories
+chown -R zoneapi:zoneapi /var/lib/zoneweaver-api
+chown -R zoneapi:zoneapi /etc/zoneweaver-api/ssl
+chown -R zoneapi:zoneapi /var/log/zoneweaver-api
+
+# Set proper permissions for SSL directory (more restrictive)
+chmod 700 /etc/zoneweaver-api/ssl
 
 # Check if Node.js is available
 if ! command -v node >/dev/null 2>&1; then

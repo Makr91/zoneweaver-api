@@ -39,10 +39,6 @@ license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
 <transform dir path=var/log$ -> drop>
 
 # Transform rules to set ownership and permissions for auto-generated files
-<transform dir path=opt$ -> set owner root>
-<transform dir path=opt$ -> set group sys>
-<transform dir path=opt$ -> set mode 0755>
-
 <transform dir path=opt/zoneweaver-api$ -> set owner zoneapi>
 <transform dir path=opt/zoneweaver-api$ -> set group zoneapi>
 <transform dir path=opt/zoneweaver-api$ -> set mode 0755>
@@ -68,33 +64,28 @@ license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
 # Make node binaries executable
 <transform file path=opt/zoneweaver-api/node_modules/.*/bin/.* -> set mode 0755>
 
-# Configuration directory and files
-<transform dir path=etc/zoneweaver-api$ -> set owner root>
-<transform dir path=etc/zoneweaver-api$ -> set group sys>
+# Configuration directory and files (config file preserved via preserve=true)
+<transform dir path=etc/zoneweaver-api$ -> set owner zoneapi>
+<transform dir path=etc/zoneweaver-api$ -> set group zoneapi>
 <transform dir path=etc/zoneweaver-api$ -> set mode 0755>
 
-<transform file path=etc/zoneweaver-api/config.yaml -> set owner root>
-<transform file path=etc/zoneweaver-api/config.yaml -> set group sys>
+<transform file path=etc/zoneweaver-api/config.yaml -> set owner zoneapi>
+<transform file path=etc/zoneweaver-api/config.yaml -> set group zoneapi>
 <transform file path=etc/zoneweaver-api/config.yaml -> set mode 0644>
 <transform file path=etc/zoneweaver-api/config.yaml -> set preserve true>
 
-# SSL directory (certificates generated at runtime)
+# SSL and database directories (empty) - keeps persistent data in place on uninstall
 <transform dir path=etc/zoneweaver-api/ssl -> set owner zoneapi>
 <transform dir path=etc/zoneweaver-api/ssl -> set group zoneapi>
 <transform dir path=etc/zoneweaver-api/ssl -> set mode 0700>
 
-# Data and log directories
 <transform dir path=var/lib/zoneweaver-api$ -> set owner zoneapi>
 <transform dir path=var/lib/zoneweaver-api$ -> set group zoneapi>
 <transform dir path=var/lib/zoneweaver-api$ -> set mode 0755>
 
-<transform dir path=var/lib/zoneweaver-api/.* -> set owner zoneapi>
-<transform dir path=var/lib/zoneweaver-api/.* -> set group zoneapi>
-<transform dir path=var/lib/zoneweaver-api/.* -> set mode 0755>
-
-<transform dir path=var/log/zoneweaver-api -> set owner zoneapi>
-<transform dir path=var/log/zoneweaver-api -> set group zoneapi>
-<transform dir path=var/log/zoneweaver-api -> set mode 0755>
+<transform dir path=var/lib/zoneweaver-api/database -> set owner zoneapi>
+<transform dir path=var/lib/zoneweaver-api/database -> set group zoneapi>
+<transform dir path=var/lib/zoneweaver-api/database -> set mode 0755>
 
 # SMF manifest
 <transform file path=lib/svc/manifest/system/zoneweaver-api.xml -> set owner root>
