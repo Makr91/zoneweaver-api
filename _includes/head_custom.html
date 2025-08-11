@@ -3,17 +3,14 @@
 <link rel="apple-touch-icon" sizes="192x192" href="{{ '/assets/images/logo192.png' | relative_url }}">
 <link rel="apple-touch-icon" sizes="512x512" href="{{ '/assets/images/logo512.png' | relative_url }}">
 
-<!-- Dynamic version loading for releases and security pages -->
+<!-- Dynamic version loading for releases page -->
 <script type="text/javascript">
 document.addEventListener('DOMContentLoaded', function() {
-  // Releases page version loading
   if (window.location.pathname.includes('/releases/')) {
     var releaseDiv = document.getElementById('latest-release');
     if (releaseDiv) {
       fetch('https://raw.githubusercontent.com/Makr91/zoneweaver-api/refs/heads/main/package.json')
-        .then(function(response) { 
-          return response.json(); 
-        })
+        .then(function(response) { return response.json(); })
         .then(function(data) {
           releaseDiv.innerHTML = '<p><strong>Version v' + data.version + '</strong> - Current Build</p>';
           var p5pLink = document.querySelector('a[href*="zoneweaver-api.p5p"]');
@@ -23,8 +20,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
   }
-  
-  // Security page supported versions loading
+});
+</script>
+
+<!-- Dynamic version loading for security page -->
+<script type="text/javascript">
+document.addEventListener('DOMContentLoaded', function() {
   if (window.location.pathname.includes('/security/')) {
     var versionsDiv = document.getElementById('supported-versions');
     if (versionsDiv) {
