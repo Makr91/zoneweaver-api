@@ -35,7 +35,7 @@ graph TD
 
 ## Quick Start
 
-1.  **Setup**: Follow the detailed instructions in the [Setup Guide](SETUP.md) to get your environment ready.
+1.  **Setup**: Follow the detailed instructions in the [Installation Guide](https://zoneweaver-api.startcloud.com/docs/guides/production-installation/) to get your environment ready.
 2.  **Bootstrap**: Generate your first API key using the secure bootstrap endpoint.
 3.  **Configure**: Customize your server settings in `config/config.yaml`.
 4.  **Connect**: Integrate with the ZoneWeaver frontend or start using the API directly.
