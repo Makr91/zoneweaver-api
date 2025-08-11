@@ -14,7 +14,9 @@ Download the latest version of ZoneWeaver API.
 
 ## Latest Release
 
-**Version v0.0.26** - Released August 11, 2025
+<div id="latest-release">
+<p>Loading latest release information...</p>
+</div>
 
 ### Download Options
 
@@ -22,6 +24,30 @@ Download the latest version of ZoneWeaver API.
 |:-------------|:---------|:---------|
 | **OmniOS Package** | x86_64 | [📦 Download .p5p](https://github.com/Makr91/zoneweaver-api/releases/latest/download/zoneweaver-api.p5p){: .btn .btn-primary } |
 | **Source Code** | All | [📁 Download Source](https://github.com/Makr91/zoneweaver-api/archive/refs/heads/main.tar.gz){: .btn .btn-outline } |
+
+<script>
+// Fetch latest release from GitHub API
+fetch('https://api.github.com/repos/Makr91/zoneweaver-api/releases/latest')
+  .then(response => response.json())
+  .then(data => {
+    const releaseDiv = document.getElementById('latest-release');
+    const releaseDate = new Date(data.published_at).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric'
+    });
+    
+    releaseDiv.innerHTML = `
+      <p><strong>Version ${data.tag_name}</strong> - Released ${releaseDate}</p>
+      ${data.body ? `<details><summary>Release Notes</summary><div class="highlight">${data.body.replace(/\n/g, '<br>')}</div></details>` : ''}
+    `;
+  })
+  .catch(error => {
+    console.error('Error fetching release data:', error);
+    document.getElementById('latest-release').innerHTML = 
+      '<p><strong>Unable to load release information.</strong> Please visit <a href="https://github.com/Makr91/zoneweaver-api/releases">GitHub Releases</a> for the latest version.</p>';
+  });
+</script>
 
 ---
 
