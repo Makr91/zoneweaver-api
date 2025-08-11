@@ -25,28 +25,6 @@ Download the latest version of ZoneWeaver API.
 | **OmniOS Package** | x86_64 | [📦 Download .p5p](https://github.com/Makr91/zoneweaver-api/releases/latest/download/zoneweaver-api.p5p){: .btn .btn-primary } |
 | **Source Code** | All | [📁 Download Source](https://github.com/Makr91/zoneweaver-api/archive/refs/heads/main.tar.gz){: .btn .btn-outline } |
 
-<script>
-// Fetch version from package.json
-fetch('https://raw.githubusercontent.com/Makr91/zoneweaver-api/refs/heads/main/package.json')
-  .then(response => response.json())
-  .then(data => {
-    const releaseDiv = document.getElementById('latest-release');
-    const currentDate = new Date().toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long', 
-      day: 'numeric'
-    });
-    
-    releaseDiv.innerHTML = `
-      <p><strong>Version v${data.version}</strong> - Current Build</p>
-    `;
-  })
-  .catch(error => {
-    console.error('Error fetching version data:', error);
-    document.getElementById('latest-release').innerHTML = 
-      '<p><strong>Unable to load version information.</strong> Please visit <a href="https://github.com/Makr91/zoneweaver-api/releases">GitHub Releases</a> for the latest version.</p>';
-  });
-</script>
 
 ---
 
