@@ -65,9 +65,9 @@ function generateSwaggerUI() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZoneWeaver API Reference</title>
-    <link rel="icon" type="image/x-icon" href="../assets/images/favicon.ico">
-    <link rel="apple-touch-icon" sizes="192x192" href="../assets/images/logo192.png">
-    <link rel="apple-touch-icon" sizes="512x512" href="../assets/images/logo512.png">
+    <link rel="icon" type="image/x-icon" href="/zoneweaver-api/assets/images/favicon.ico">
+    <link rel="apple-touch-icon" sizes="192x192" href="/zoneweaver-api/assets/images/logo192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="/zoneweaver-api/assets/images/logo512.png">
     <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css" />
     <style>
         html {
@@ -160,26 +160,57 @@ function generateSwaggerUI() {
         }
         
         .swagger-ui {
-            color: #e6edf3 !important;
+            color: #f0f6fc !important;
         }
         
         .swagger-ui .info .title {
-            color: #e6edf3 !important;
+            color: #f0f6fc !important;
         }
         
         .swagger-ui .info .description {
-            color: #8b949e !important;
+            color: #c9d1d9 !important;
         }
         
+        /* Fix server variables section */
         .swagger-ui .scheme-container {
             background: #21262d !important;
             border: 1px solid #30363d !important;
+            padding: 16px !important;
+            border-radius: 6px !important;
+        }
+        
+        .swagger-ui .scheme-container table {
+            width: 100% !important;
+            background: transparent !important;
+            border-collapse: separate !important;
+            border-spacing: 8px !important;
         }
         
         .swagger-ui .scheme-container table td {
             background: #0d1117 !important;
-            border-color: #30363d !important;
-            color: #e6edf3 !important;
+            border: 1px solid #30363d !important;
+            color: #f0f6fc !important;
+            padding: 8px 12px !important;
+            vertical-align: middle !important;
+            border-radius: 4px !important;
+        }
+        
+        .swagger-ui .scheme-container select,
+        .swagger-ui .scheme-container input {
+            background: #21262d !important;
+            border: 1px solid #30363d !important;
+            color: #f0f6fc !important;
+            padding: 6px 10px !important;
+            border-radius: 4px !important;
+            font-size: 12px !important;
+            width: 100% !important;
+        }
+        
+        .swagger-ui .scheme-container select:focus,
+        .swagger-ui .scheme-container input:focus {
+            border-color: #1f6feb !important;
+            box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.3) !important;
+            outline: none !important;
         }
         
         .swagger-ui .computed-url code {
