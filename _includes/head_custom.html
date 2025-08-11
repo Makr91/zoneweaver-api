@@ -13,6 +13,12 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(function(response) { return response.json(); })
         .then(function(data) {
           releaseDiv.innerHTML = '<p><strong>Version v' + data.version + '</strong> - Current Build</p>';
+          
+          // Update download links dynamically
+          var p5pLink = document.querySelector('a[href*="zoneweaver-api.p5p"]');
+          if (p5pLink) {
+            p5pLink.href = 'https://github.com/Makr91/zoneweaver-api/releases/latest/download/zoneweaver-api-' + data.version + '.p5p';
+          }
         })
         .catch(function(error) {
           console.error('Error fetching version data:', error);
