@@ -1,79 +1,80 @@
-#!/usr/bin/bash
+#!/bin/bash
 #
-# CDDL HEADER START
-#
-# The contents of this file are subject to the terms of the
-# Common Development and Distribution License, Version 1.0 only
-# (the "License").  You may not use this file except in compliance
-# with the License.
-#
-# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
-# or http://www.opensolaris.org/os/licensing.
-# See the License for the specific language governing permissions
-# and limitations under the License.
-#
-# When distributing Covered Code, include this CDDL HEADER in each
-# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
-# If applicable, add the following below this CDDL HEADER, with the
-# fields enclosed by brackets "[]" replaced with your own identifying
-# information: Portions Copyright [yyyy] [name of copyright owner]
-#
-# CDDL HEADER END
-#
-#
-# Copyright 2025 Makr91. All rights reserved.
-# Use is subject to license terms.
+# ZoneWeaver API shutdown script for SMF
 #
 
-set -o xtrace
+set -e
 
-. /lib/svc/share/smf_include.sh
+# Environment
+export PATH="/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/bin:/usr/sbin:/sbin"
 
-DAEMON="ZoneWeaver API"
-DAEMON_PIDFILE="/var/run/zoneweaver-api.pid"
+# PID file location (in user's home directory since we run as zoneweaver-api user)
+PIDFILE="/var/lib/zoneweaver-api/zoneweaver-api.pid"
+
+echo "Stopping ZoneWeaver API..."
 
 # Check if PID file exists
-if [[ -f ${DAEMON_PIDFILE} ]]; then
-    PID=$(cat ${DAEMON_PIDFILE})
-    
-    # Check if process is actually running
-    if kill -0 ${PID} 2>/dev/null; then
-        echo "Stopping ${DAEMON} (PID: ${PID})"
-        
-        # Send SIGTERM first for graceful shutdown
-        kill -TERM ${PID}
-        
-        # Wait up to 30 seconds for graceful shutdown
-        for i in {1..30}; do
-            if ! kill -0 ${PID} 2>/dev/null; then
-                echo "${DAEMON} stopped gracefully"
-                rm -f ${DAEMON_PIDFILE}
-                exit $SMF_EXIT_OK
-            fi
-            sleep 1
+if [ ! -f "$PIDFILE" ]; then
+    echo "PID file $PIDFILE not found. ZoneWeaver API may not be running."
+    # Check for any running zoneweaver processes
+    PIDS=$(pgrep -f "node.*index.js" 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+        echo "Found ZoneWeaver API processes: $PIDS"
+        echo "Attempting to stop them..."
+        for pid in $PIDS; do
+            kill $pid 2>/dev/null || true
         done
-        
-        # Force kill if still running
-        echo "Graceful shutdown timeout, force killing ${DAEMON}"
-        kill -KILL ${PID} 2>/dev/null
-        
-        # Wait a bit more
         sleep 2
-        
-        # Check if it's really dead
-        if kill -0 ${PID} 2>/dev/null; then
-            echo "Failed to kill ${DAEMON}"
-            exit $SMF_EXIT_ERR_OTHER
-        fi
-        
-        echo "${DAEMON} force killed"
-    else
-        echo "PID ${PID} not running, cleaning up stale PID file"
+        # Force kill if still running
+        for pid in $PIDS; do
+            if kill -0 $pid 2>/dev/null; then
+                echo "Force killing process $pid"
+                kill -9 $pid 2>/dev/null || true
+            fi
+        done
     fi
-    
-    rm -f ${DAEMON_PIDFILE}
-else
-    echo "No PID file found for ${DAEMON}"
+    exit 0
 fi
 
-exit $SMF_EXIT_OK
+# Read PID from file
+PID=$(cat "$PIDFILE")
+
+# Check if process is actually running
+if ! kill -0 "$PID" 2>/dev/null; then
+    echo "Process with PID $PID is not running. Removing stale PID file."
+    rm -f "$PIDFILE"
+    exit 0
+fi
+
+echo "Sending TERM signal to ZoneWeaver API (PID: $PID)..."
+kill -TERM "$PID"
+
+# Wait for graceful shutdown (up to 15 seconds)
+TIMEOUT=15
+COUNT=0
+while kill -0 "$PID" 2>/dev/null && [ $COUNT -lt $TIMEOUT ]; do
+    sleep 1
+    COUNT=$((COUNT + 1))
+    if [ $((COUNT % 5)) -eq 0 ]; then
+        echo "Waiting for graceful shutdown... ($COUNT/$TIMEOUT seconds)"
+    fi
+done
+
+# Check if process is still running
+if kill -0 "$PID" 2>/dev/null; then
+    echo "Process did not terminate gracefully. Sending KILL signal..."
+    kill -KILL "$PID" 2>/dev/null || true
+    sleep 1
+    
+    # Final check
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "Error: Unable to stop ZoneWeaver API process (PID: $PID)" >&2
+        exit 1
+    fi
+fi
+
+# Remove PID file
+rm -f "$PIDFILE"
+
+echo "ZoneWeaver API stopped successfully."
+exit 0
