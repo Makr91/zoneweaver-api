@@ -171,7 +171,12 @@ function generateSwaggerUI() {
             color: #c9d1d9 !important;
         }
         
-        /* Fix server variables section */
+        /* Fix API description text */
+        .swagger-ui .info .description p {
+            color: #c9d1d9 !important;
+        }
+        
+        /* Fix server variables section - make it look professional */
         .swagger-ui .scheme-container {
             background: #21262d !important;
             border: 1px solid #30363d !important;
@@ -183,16 +188,40 @@ function generateSwaggerUI() {
             width: 100% !important;
             background: transparent !important;
             border-collapse: separate !important;
-            border-spacing: 8px !important;
+            border-spacing: 0 !important;
+            margin: 0 !important;
         }
         
-        .swagger-ui .scheme-container table td {
+        .swagger-ui .scheme-container table tr {
+            display: flex !important;
+            align-items: center !important;
+            margin-bottom: 12px !important;
+        }
+        
+        .swagger-ui .scheme-container table tr:last-child {
+            margin-bottom: 0 !important;
+        }
+        
+        .swagger-ui .scheme-container table td:first-child {
+            /* Label styling - dark squares */
             background: #0d1117 !important;
             border: 1px solid #30363d !important;
             color: #f0f6fc !important;
             padding: 8px 12px !important;
-            vertical-align: middle !important;
             border-radius: 4px !important;
+            min-width: 80px !important;
+            text-align: center !important;
+            font-weight: 600 !important;
+            margin-right: 12px !important;
+            flex-shrink: 0 !important;
+        }
+        
+        .swagger-ui .scheme-container table td:last-child {
+            /* Input field container - no background */
+            background: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            flex: 1 !important;
         }
         
         .swagger-ui .scheme-container select,
@@ -200,10 +229,11 @@ function generateSwaggerUI() {
             background: #21262d !important;
             border: 1px solid #30363d !important;
             color: #f0f6fc !important;
-            padding: 6px 10px !important;
+            padding: 8px 12px !important;
             border-radius: 4px !important;
-            font-size: 12px !important;
+            font-size: 13px !important;
             width: 100% !important;
+            box-sizing: border-box !important;
         }
         
         .swagger-ui .scheme-container select:focus,
@@ -219,10 +249,54 @@ function generateSwaggerUI() {
             border: 1px solid #30363d !important;
         }
         
+        /* Fix model/schema tables */
+        .swagger-ui table.model {
+            background: #0d1117 !important;
+            border: 1px solid #30363d !important;
+            border-radius: 4px !important;
+            margin: 10px 0 !important;
+        }
+        
         .swagger-ui table.model td {
             background: #0d1117 !important;
             border-color: #30363d !important;
-            color: #e6edf3 !important;
+            color: #f0f6fc !important;
+            padding: 8px 12px !important;
+            border-top: 1px solid #30363d !important;
+        }
+        
+        .swagger-ui table.model .property-row:first-child td {
+            border-top: none !important;
+        }
+        
+        .swagger-ui table.model .property-name {
+            color: #79c0ff !important;
+            font-weight: 600 !important;
+        }
+        
+        .swagger-ui table.model .property-type {
+            color: #a5a5a5 !important;
+            font-style: italic !important;
+        }
+        
+        .swagger-ui .model-title {
+            color: #f0f6fc !important;
+        }
+        
+        .swagger-ui .model-box {
+            background: #0d1117 !important;
+            border: 1px solid #30363d !important;
+            border-radius: 4px !important;
+        }
+        
+        .swagger-ui .model-box-control {
+            background: #21262d !important;
+            color: #f0f6fc !important;
+            border-bottom: 1px solid #30363d !important;
+        }
+        
+        .swagger-ui .model-box-control:hover {
+            background: #30363d !important;
         }
         
         .swagger-ui .opblock {
