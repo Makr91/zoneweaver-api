@@ -14,7 +14,7 @@ Download the latest version of ZoneWeaver API.
 
 ## Latest Release
 
-**Version 1.0.0** - Released January 15, 2025
+**Version v0.0.26** - Released August 11, 2025
 
 ### Download Options
 
@@ -27,11 +27,19 @@ Download the latest version of ZoneWeaver API.
 
 ## Installation
 
-- **[Production Installation](guides/production-installation/)** - Install using OmniOS packages
-- **[Development Setup](guides/development-installation/)** - Set up development environment
+- **[Production Installation](/docs/guides/production-installation/)** - Install using OmniOS packages
+- **[Development Setup](/docs/guides/development-installation/)** - Set up development environment
 
 ---
 
+## System Requirements
+
+- **OS**: OmniOS (Latest stable)
+- **Architecture**: x86_64
+- **Memory**: 512MB+ RAM
+- **Storage**: 1GB+ free space
+
+---
 
 ## Release History
 
