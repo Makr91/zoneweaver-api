@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/Makr91/zoneweaver-api/compare/v0.1.12...v0.1.13) (2025-08-14)
+
+
+### Bug Fixes
+
+* name casing ([a1df9f6](https://github.com/Makr91/zoneweaver-api/commit/a1df9f659337a705ee849ab91b0f97403c251572))
+
 ## [0.1.12](https://github.com/Makr91/zoneweaver-api/compare/v0.1.11...v0.1.12) (2025-08-14)
 
 
