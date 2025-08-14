@@ -376,7 +376,7 @@ class SystemMetricsCollector {
             // Debug output for kstat parsing
             
             // Get swap information
-            const { stdout: swapOutput } = await execProm('swap -s', { timeout });
+            const { stdout: swapOutput } = await execProm('pfexec swap -s', { timeout });
             const swapStats = this.parseSwapOutput(swapOutput);
             
             // Also get memory information from Node.js os module for cross-reference
@@ -523,20 +523,37 @@ class SystemMetricsCollector {
                 return true; // Not necessarily an error
             }
             
-            // Mark all existing swap areas for this host as inactive first
-            await SwapArea.update(
-                { is_active: false },
-                { where: { host: this.hostname } }
-            );
+            // Get current active swap devices for this host
+            const currentSwapDevices = new Set();
             
-            // Insert or update swap area records
+            // Use proper upsert with unique constraint on (host, swapfile)
             for (const swapArea of swapAreas) {
+                currentSwapDevices.add(swapArea.swapfile);
+                
                 await SwapArea.upsert({
                     host: this.hostname,
                     ...swapArea
+                }, {
+                    conflictFields: ['host', 'swapfile']
                 });
             }
             
+            // Mark any swap areas that are no longer active as inactive
+            // (devices that existed before but are not in current scan)
+            if (currentSwapDevices.size > 0) {
+                await SwapArea.update(
+                    { is_active: false },
+                    {
+                        where: {
+                            host: this.hostname,
+                            swapfile: { [Op.notIn]: [...currentSwapDevices] },
+                            is_active: true
+                        }
+                    }
+                );
+            }
+            
+            console.log(`✅ Swap area collection completed: ${swapAreas.length} active swap device(s) found`);
             
             await this.updateHostInfo({
                 last_swap_scan: new Date()

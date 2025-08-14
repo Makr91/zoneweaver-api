@@ -730,8 +730,8 @@ class DatabaseMigrations {
     }
 
     /**
-     * Clean up swap_areas table by removing duplicate columns
-     * @description Removes old duplicate columns (path, device_info, swaplow, free_blocks) from swap_areas table
+     * Clean up swap_areas table by removing duplicate records and applying unique constraint
+     * @description Removes duplicate swap area records and applies unique constraint on (host, swapfile)
      * @returns {Promise<boolean>} True if cleanup successful
      */
     async cleanupSwapAreasTable() {
@@ -743,87 +743,67 @@ class DatabaseMigrations {
                 return true;
             }
 
-            // Check if old columns still exist
-            const hasOldColumns = await this.columnExists('swap_areas', 'path') || 
-                                 await this.columnExists('swap_areas', 'device_info') ||
-                                 await this.columnExists('swap_areas', 'swaplow') ||
-                                 await this.columnExists('swap_areas', 'free_blocks');
-
-            if (!hasOldColumns) {
-                console.log('ℹ️  Swap areas table already cleaned up, no duplicate columns found');
-                return true;
-            }
-
-            console.log('🔧 Cleaning up duplicate columns in swap_areas table...');
-
-            // SQLite doesn't support DROP COLUMN, so we need to recreate the table
-            // 1. Create new table with clean schema
-            await db.query(`
-                CREATE TABLE swap_areas_new (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    host VARCHAR(255) NOT NULL,
-                    swapfile TEXT,
-                    dev TEXT,
-                    swaplo BIGINT,
-                    blocks BIGINT,
-                    free BIGINT,
-                    size_bytes BIGINT,
-                    used_bytes BIGINT,
-                    free_bytes BIGINT,
-                    utilization_pct DECIMAL(5,2),
-                    pool_assignment VARCHAR(255),
-                    is_active TINYINT(1) DEFAULT 1,
-                    priority INTEGER,
-                    scan_timestamp DATETIME,
-                    createdAt DATETIME NOT NULL,
-                    updatedAt DATETIME NOT NULL
-                )
-            `);
-
-            // 2. Copy data from old table to new table, mapping old columns to new ones
-            await db.query(`
-                INSERT INTO swap_areas_new (
-                    id, host, swapfile, dev, swaplo, blocks, free, size_bytes, 
-                    used_bytes, free_bytes, utilization_pct, pool_assignment, 
-                    is_active, priority, scan_timestamp, createdAt, updatedAt
-                )
+            // Count total records and check for duplicates
+            const [countResults] = await db.query(`
                 SELECT 
-                    id, 
-                    host,
-                    COALESCE(swapfile, path) as swapfile,
-                    COALESCE(dev, device_info) as dev,
-                    COALESCE(swaplo, swaplow) as swaplo,
-                    blocks,
-                    COALESCE(free, free_blocks) as free,
-                    size_bytes,
-                    used_bytes,
-                    free_bytes,
-                    utilization_pct,
-                    pool_assignment,
-                    is_active,
-                    priority,
-                    scan_timestamp,
-                    createdAt,
-                    updatedAt
+                    COUNT(*) as total_records,
+                    COUNT(DISTINCT host || '-' || swapfile) as unique_records
                 FROM swap_areas
             `);
+            
+            const totalRecords = countResults[0]?.total_records || 0;
+            const uniqueRecords = countResults[0]?.unique_records || 0;
+            const duplicateCount = totalRecords - uniqueRecords;
+            
+            if (duplicateCount > 0) {
+                console.log(`🔧 Found ${duplicateCount} duplicate swap area records, cleaning up...`);
+                
+                // Keep only the most recent record for each (host, swapfile) combination
+                const [deleteResults] = await db.query(`
+                    DELETE FROM swap_areas 
+                    WHERE id NOT IN (
+                        SELECT MAX(id) 
+                        FROM swap_areas 
+                        GROUP BY host, swapfile
+                    )
+                `);
+                
+                console.log(`✅ Removed ${duplicateCount} duplicate swap area records`);
+            } else {
+                console.log('ℹ️  No duplicate swap area records found');
+            }
 
-            // 3. Drop old table
-            await db.query(`DROP TABLE swap_areas`);
+            // Check if unique constraint already exists
+            const [indexResults] = await db.query(`
+                SELECT name FROM sqlite_master 
+                WHERE type='index' AND name='unique_host_swapfile' AND tbl_name='swap_areas'
+            `);
+            
+            if (indexResults.length === 0) {
+                console.log('🔧 Adding unique constraint on (host, swapfile)...');
+                
+                // Add unique constraint
+                await db.query(`
+                    CREATE UNIQUE INDEX unique_host_swapfile 
+                    ON swap_areas(host, swapfile)
+                `);
+                
+                console.log('✅ Unique constraint added successfully');
+            } else {
+                console.log('ℹ️  Unique constraint already exists');
+            }
 
-            // 4. Rename new table
-            await db.query(`ALTER TABLE swap_areas_new RENAME TO swap_areas`);
-
-            // 5. Recreate indexes if needed
-            await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_host_swapfile ON swap_areas(host, swapfile)`);
+            // Ensure other indexes exist
             await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_host_timestamp ON swap_areas(host, scan_timestamp)`);
-            await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_active ON swap_areas(is_active)`);
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_timestamp ON swap_areas(scan_timestamp)`);
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_utilization ON swap_areas(utilization_pct)`);
 
-            console.log('✅ Swap areas table cleanup completed successfully - removed duplicate columns');
+            console.log('✅ Swap areas table cleanup completed successfully');
             return true;
 
         } catch (error) {
             console.error('❌ Failed to cleanup swap_areas table:', error.message);
+            console.error('❌ Error details:', error.stack);
             return false;
         }
     }

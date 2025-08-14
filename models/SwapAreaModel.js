@@ -135,7 +135,9 @@ const SwapArea = db.define('swap_areas', {
     comment: 'Individual swap area information from swap -l (collected every 5 minutes)',
     indexes: [
         {
-            fields: ['host', 'swapfile', 'scan_timestamp']
+            unique: true,
+            fields: ['host', 'swapfile'],
+            name: 'unique_host_swapfile'
         },
         {
             fields: ['host', 'scan_timestamp']
@@ -145,10 +147,6 @@ const SwapArea = db.define('swap_areas', {
         },
         {
             fields: ['utilization_pct']
-        },
-        {
-            unique: false,
-            fields: ['swapfile']
         }
     ]
 });
