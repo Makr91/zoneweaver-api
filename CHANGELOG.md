@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/Makr91/zoneweaver-api/compare/v0.1.11...v0.1.12) (2025-08-14)
+
+
+### Bug Fixes
+
+* doc nav ordering ([073dbf0](https://github.com/Makr91/zoneweaver-api/commit/073dbf0981c206565dcbd3abb84e94b29e151e0e))
+
 ## [0.1.11](https://github.com/Makr91/zoneweaver-api/compare/v0.1.10...v0.1.11) (2025-08-14)
 
 
