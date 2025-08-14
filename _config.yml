@@ -72,8 +72,8 @@ search_enabled: true # Enable the built-in search
 aux_links:
   "View on GitHub":
     - "https://github.com/Makr91/zoneweaver-api"
-  "ZoneWeaver Frontend":
-    - "https://github.com/Makr91/zoneweaver"
+  "ZoneWeaver":
+    - "https://zoneweaver.startcloud.com/"
 aux_links_new_tab: true
 
 # Footer content
