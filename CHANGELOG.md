@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/Makr91/zoneweaver-api/compare/v0.1.8...v0.1.9) (2025-08-14)
+
+
+### Bug Fixes
+
+* networking collector command including headers in data ([d122670](https://github.com/Makr91/zoneweaver-api/commit/d122670ce3d530afd67fec3ca4cb79f61b73545e))
+
 ## [0.1.8](https://github.com/Makr91/zoneweaver-api/compare/v0.1.7...v0.1.8) (2025-08-12)
 
 
