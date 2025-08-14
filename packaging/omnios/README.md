@@ -5,8 +5,8 @@ This directory contains the files needed to build an OmniOS IPS package for the 
 ## Package Information
 
 - **Package Name**: `system/virtualization/zoneweaver-api`
-- **Service Name**: `application/zoneweaver-api`
-- **User/Group**: `zoneweaver-api` (UID/GID: 96)
+- **Service Name**: `system/virtualization/zoneweaver-api`
+- **User/Group**: `zoneweaver-api` (UID/GID: 301)
 - **Installation Path**: `/opt/zoneweaver-api`
 - **Configuration**: `/etc/zoneweaver-api`
 - **Data Directory**: `/var/lib/zoneweaver-api`
@@ -50,10 +50,10 @@ pkg install -g zoneweaver-api-x.x.x.p5p system/virtualization/zoneweaver-api
 ### Enable and Start Service
 ```bash
 # Enable the service
-svcadm enable application/zoneweaver-api
+svcadm enable system/virtualization/zoneweaver-api
 
 # Check service status
-svcs application/zoneweaver-api
+svcs system/virtualization/zoneweaver-api
 
 # View service logs
 tail -f /var/log/zoneweaver-api/zoneweaver-api.log
@@ -86,24 +86,24 @@ Once running, the API will be available at:
 ### SMF Commands
 ```bash
 # Start service
-svcadm enable application/zoneweaver-api
+svcadm enable system/virtualization/zoneweaver-api
 
 # Stop service
-svcadm disable application/zoneweaver-api
+svcadm disable system/virtualization/zoneweaver-api
 
 # Restart service
-svcadm restart application/zoneweaver-api
+svcadm restart system/virtualization/zoneweaver-api
 
 # Refresh configuration
-svcadm refresh application/zoneweaver-api
+svcadm refresh system/virtualization/zoneweaver-api
 
 # View service status
-svcs -l application/zoneweaver-api
+svcs -l system/virtualization/zoneweaver-api
 ```
 
 ### Log Files
 - **Service Log**: `/var/log/zoneweaver-api/zoneweaver-api.log`
-- **SMF Log**: `/var/svc/log/application-zoneweaver-api:default.log`
+- **SMF Log**: `/var/svc/log/system-virtualization-zoneweaver-api:default.log`
 
 ## Build Process
 
@@ -119,8 +119,8 @@ The package is built automatically via GitHub Actions when a new release is crea
 ## Troubleshooting
 
 ### Service Won't Start
-1. Check SMF service status: `svcs -xv application/zoneweaver-api`
-2. Check service logs: `tail -f /var/svc/log/application-zoneweaver-api:default.log`
+1. Check SMF service status: `svcs -xv system/virtualization/zoneweaver-api`
+2. Check service logs: `tail -f /var/svc/log/system-virtualization-zoneweaver-api:default.log`
 3. Check application logs: `tail -f /var/log/zoneweaver-api/zoneweaver-api.log`
 4. Verify configuration: `/etc/zoneweaver-api/config.yaml`
 
@@ -142,7 +142,7 @@ Configuration files are preserved during package updates. The service will autom
 
 ```bash
 # Stop and disable service
-svcadm disable application/zoneweaver-api
+svcadm disable system/virtualization/zoneweaver-api
 
 # Remove package
 pkg uninstall system/virtualization/zoneweaver-api
