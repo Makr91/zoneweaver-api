@@ -1340,16 +1340,23 @@ class NetworkCollector {
                 interfaceConfigs = new Map();
             }
 
-            // Get previous statistics for bandwidth calculation
+            // Get previous statistics for bandwidth calculation - properly get previous collection samples
             let previousStatsMap = new Map();
             try {
+                // Calculate minimum age for "previous" records (collection interval - 2 seconds buffer)
+                const collectionInterval = this.hostMonitoringConfig.intervals.network_stats || 10;
+                const minPreviousAge = new Date(Date.now() - ((collectionInterval - 2) * 1000));
+                
                 const previousStats = await NetworkStats.findAll({
-                    where: { host: this.hostname },
+                    where: { 
+                        host: this.hostname,
+                        scan_timestamp: { [Op.lt]: minPreviousAge } // Only get records older than collection interval
+                    },
                     order: [['scan_timestamp', 'DESC']],
-                    limit: interfaceConfigs.size * 2 // Get last 2 entries per interface
+                    limit: interfaceConfigs.size * 3 // Get more records to ensure we have data for all interfaces
                 });
                 
-                // Group by interface and keep only the latest previous entry
+                // Group by interface and keep only the most recent "old" entry per interface
                 const grouped = new Map();
                 previousStats.forEach(stat => {
                     if (!grouped.has(stat.link)) {
@@ -1357,6 +1364,8 @@ class NetworkCollector {
                     }
                 });
                 previousStatsMap = grouped;
+                
+                console.log(`📊 Found ${previousStatsMap.size} previous stat records for ${currentStats.length} current interfaces`);
                 
             } catch (error) {
                 console.warn('⚠️  Could not fetch previous statistics for bandwidth calculation:', error.message);
@@ -1409,18 +1418,19 @@ class NetworkCollector {
                 // Calculate instantaneous bandwidth
                 const bandwidth = this.calculateInstantaneousBandwidth(currentStat, previousStat);
                 
-                // Calculate utilization if we have speed info
+                // Calculate utilization if we have speed info - use delta bytes, not cumulative
                 let rxUtilization = null;
                 let txUtilization = null;
                 
-                if (interfaceConfig && interfaceConfig.speed && bandwidth.time_delta) {
+                if (interfaceConfig && interfaceConfig.speed && bandwidth.time_delta && previousStat) {
+                    // Use delta values instead of cumulative counters for accurate utilization
                     rxUtilization = this.calculateBandwidthUtilization(
-                        currentStat.rbytes, 
+                        deltaValues.rbytes_delta, 
                         interfaceConfig.speed, 
                         bandwidth.time_delta
                     );
                     txUtilization = this.calculateBandwidthUtilization(
-                        currentStat.obytes, 
+                        deltaValues.obytes_delta, 
                         interfaceConfig.speed, 
                         bandwidth.time_delta
                     );
