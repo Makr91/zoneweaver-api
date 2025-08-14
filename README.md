@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/logo192.png" alt="ZoneWeaver API Logo" width="25%">
+  <img src="assets/images/logo192.png" alt="ZoneweaverAPI Logo" width="25%">
 </p>
 
 # Zoneweaver API
@@ -8,7 +8,7 @@
 
 ## Overview
 
-Zoneweaver API is the essential link between your Bhyve hypervisor and the ZoneWeaver frontend. It exposes a rich set of API endpoints that allow for seamless control over virtual machines, detailed system monitoring, and secure, token-based authentication.
+Zoneweaver API is the essential link between your Bhyve hypervisor and the Zoneweaverfrontend. It exposes a rich set of API endpoints that allow for seamless control over virtual machines, detailed system monitoring, and secure, token-based authentication.
 
 ### Key Features
 
@@ -24,7 +24,7 @@ Zoneweaver API is the essential link between your Bhyve hypervisor and the ZoneW
 
 ```mermaid
 graph TD
-    A[ZoneWeaver Frontend] -- HTTPS/HTTP API Calls --> B[Zoneweaver API on OmniOS Host];
+    A[ZoneweaverFrontend] -- HTTPS/HTTP API Calls --> B[Zoneweaver API on OmniOS Host];
     B -- Manages --> C[Bhyve Zones / Virtual Machines];
     B -- Monitors --> D[OmniOS Host System];
 ```
@@ -42,7 +42,7 @@ graph TD
 1.  **Setup**: Follow the detailed instructions in the [Installation Guide](https://zoneweaver-api.startcloud.com/docs/guides/production-installation/) to get your environment ready.
 2.  **Bootstrap**: Generate your first API key using the secure bootstrap endpoint.
 3.  **Configure**: Customize your server settings in `config/config.yaml`.
-4.  **Connect**: Integrate with the ZoneWeaver frontend or start using the API directly.
+4.  **Connect**: Integrate with the Zoneweaverfrontend or start using the API directly.
 
 ## Documentation
 

@@ -8,7 +8,7 @@ permalink: /docs/code-of-conduct/
 # Code of Conduct
 {: .no_toc }
 
-Community guidelines and expected behavior for ZoneWeaver API contributors.
+Community guidelines and expected behavior for ZoneweaverAPI contributors.
 
 ## Table of contents
 {: .no_toc .text-delta }

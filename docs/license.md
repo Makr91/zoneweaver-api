@@ -8,7 +8,7 @@ permalink: /license/
 # License
 {: .no_toc }
 
-ZoneWeaver API is distributed under the GNU General Public License v3.0.
+ZoneweaverAPI is distributed under the GNU General Public License v3.0.
 
 ## Table of contents
 {: .no_toc .text-delta }

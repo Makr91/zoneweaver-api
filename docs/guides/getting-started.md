@@ -9,7 +9,7 @@ permalink: /docs/guides/getting-started/
 # Getting Started
 {: .no_toc }
 
-This guide will walk you through setting up and configuring the ZoneWeaver API for the first time.
+This guide will walk you through setting up and configuring the ZoneweaverAPI for the first time.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -21,7 +21,7 @@ This guide will walk you through setting up and configuring the ZoneWeaver API f
 
 ## Prerequisites
 
-Before installing the ZoneWeaver API, ensure you have:
+Before installing the ZoneweaverAPI, ensure you have:
 
 - OmniOS r151046 or later
 - Node.js 18+ (for development)
@@ -35,10 +35,10 @@ Before installing the ZoneWeaver API, ensure you have:
 Install the pre-built package from the repository:
 
 ```bash
-# Add the ZoneWeaver repository (if not already added)
+# Add the Zoneweaverrepository (if not already added)
 pkg set-publisher -g https://packages.startcloud.com/omnios Makr91
 
-# Install ZoneWeaver API
+# Install ZoneweaverAPI
 pkg install system/virtualization/zoneweaver-api
 ```
 

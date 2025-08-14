@@ -2,14 +2,14 @@
 title: Home
 layout: home
 nav_order: 1
-description: "ZoneWeaver API Documentation - Zone Hypervisor Management Backend"
+description: "ZoneweaverAPI Documentation - Zone Hypervisor Management Backend"
 permalink: /
 ---
 
-# ZoneWeaver API Documentation
+# ZoneweaverAPI Documentation
 {: .fs-9 }
 
-Node.js API backend for ZoneWeaver zone hypervisor management. Provides RESTful API for managing Bhyve virtual machines, networking, storage, and system monitoring on OmniOS/illumos.
+Node.js API backend for Zoneweaverzone hypervisor management. Provides RESTful API for managing Bhyve virtual machines, networking, storage, and system monitoring on OmniOS/illumos.
 {: .fs-6 .fw-300 }
 
 [Get started now](#getting-started){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
@@ -20,7 +20,7 @@ Node.js API backend for ZoneWeaver zone hypervisor management. Provides RESTful 
 
 ## Getting started
 
-ZoneWeaver API is the backend component of the ZoneWeaver zone management system. It provides a comprehensive RESTful API for managing Bhyve virtual machines, networking, storage, and system monitoring on OmniOS/illumos systems.
+ZoneweaverAPI is the backend component of the Zoneweaverzone management system. It provides a comprehensive RESTful API for managing Bhyve virtual machines, networking, storage, and system monitoring on OmniOS/illumos systems.
 
 ### Key Features
 
@@ -36,7 +36,7 @@ ZoneWeaver API is the backend component of the ZoneWeaver zone management system
 
 ```mermaid
 graph TD
-    A[ZoneWeaver Frontend] -- HTTPS/HTTP API Calls --> B[Zoneweaver API on OmniOS Host];
+    A[ZoneweaverFrontend] -- HTTPS/HTTP API Calls --> B[Zoneweaver API on OmniOS Host];
     B -- Manages --> C[Bhyve Zones / Virtual Machines];
     B -- Monitors --> D[OmniOS Host System];
 ```
@@ -50,7 +50,7 @@ graph TD
 
 ### API Documentation
 
-The ZoneWeaver API provides comprehensive OpenAPI 3.0 documentation:
+The ZoneweaverAPI provides comprehensive OpenAPI 3.0 documentation:
 
 - **[Interactive API Reference](docs/api/)** - Complete API reference with examples
 - **[Getting Started Guide](docs/guides/getting-started/)** - Step-by-step setup instructions  
@@ -61,17 +61,17 @@ The ZoneWeaver API provides comprehensive OpenAPI 3.0 documentation:
 
 ## About the project
 
-ZoneWeaver API is &copy; 2025 by the ZoneWeaver Project.
+ZoneweaverAPI is &copy; 2025 by the ZoneweaverProject.
 
 ### License
 
-ZoneWeaver API is distributed by an [GPL-3.0 license](https://github.com/Makr91/zoneweaver-api/blob/main/LICENSE.md).
+ZoneweaverAPI is distributed by an [GPL-3.0 license](https://github.com/Makr91/zoneweaver-api/blob/main/LICENSE.md).
 
 ### Contributing
 
 When contributing to this repository, please first discuss the change you wish to make via issue, email, or any other method with the owners of this repository before making a change. Read more about becoming a contributor in [our GitHub repo](https://github.com/Makr91/zoneweaver-api#contributing).
 
-#### Thank you to the contributors of ZoneWeaver API!
+#### Thank you to the contributors of ZoneweaverAPI!
 
 <ul class="list-style-none">
 {% for contributor in site.github.contributors %}
@@ -83,6 +83,6 @@ When contributing to this repository, please first discuss the change you wish t
 
 ### Code of Conduct
 
-ZoneWeaver API is committed to fostering a welcoming community.
+ZoneweaverAPI is committed to fostering a welcoming community.
 
 [View our Code of Conduct](https://github.com/Makr91/zoneweaver-api/tree/main/CODE_OF_CONDUCT.md) on our GitHub repository.

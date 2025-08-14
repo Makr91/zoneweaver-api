@@ -1,6 +1,6 @@
-# ZoneWeaver API - OmniOS Package
+# ZoneweaverAPI - OmniOS Package
 
-This directory contains the files needed to build an OmniOS IPS package for the ZoneWeaver API.
+This directory contains the files needed to build an OmniOS IPS package for the ZoneweaverAPI.
 
 ## Package Information
 

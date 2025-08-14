@@ -8,7 +8,7 @@ permalink: /docs/support/
 # Support
 {: .no_toc }
 
-Get help and support for ZoneWeaver API.
+Get help and support for ZoneweaverAPI.
 
 ## Table of contents
 {: .no_toc .text-delta }

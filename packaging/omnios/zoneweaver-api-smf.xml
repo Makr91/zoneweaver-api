@@ -1,7 +1,7 @@
 <?xml version='1.0'?>
 <!DOCTYPE service_bundle SYSTEM '/usr/share/lib/xml/dtd/service_bundle.dtd.1'>
 <!--
-    SMF manifest for ZoneWeaver API
+    SMF manifest for ZoneweaverAPI
 -->
 <service_bundle type='manifest' name='zoneweaver-api'>
   <service name='system/virtualization/zoneweaver-api' type='service' version='1'>
@@ -50,18 +50,18 @@
     <!-- Service description -->
     <template>
       <common_name>
-        <loctext xml:lang='C'>ZoneWeaver API</loctext>
+        <loctext xml:lang='C'>ZoneweaverAPI</loctext>
       </common_name>
       <description>
         <loctext xml:lang='C'>
-          Node.js API backend for ZoneWeaver zone hypervisor management.
+          Node.js API backend for Zoneweaverzone hypervisor management.
           Provides RESTful API for managing Bhyve virtual machines, networking,
           storage, and system monitoring on OmniOS/illumos.
         </loctext>
       </description>
       <documentation>
         <manpage title='zoneweaver-api' section='8' />
-        <doc_link name='ZoneWeaver API Project'
+        <doc_link name='ZoneweaverAPI Project'
                   uri='https://github.com/Makr91/zoneweaver-api' />
       </documentation>
     </template>

@@ -1,6 +1,6 @@
 # Getting Support
 
-Thank you for using ZoneWeaver API! This document outlines the various ways you can get help with the project.
+Thank you for using ZoneweaverAPI! This document outlines the various ways you can get help with the project.
 
 ## Available Resources
 
@@ -26,14 +26,14 @@ For general questions and discussions:
 ## Support Expectations
 
 ### Resource Limitations
-Please understand that ZoneWeaver API is maintained with limited development resources:
+Please understand that ZoneweaverAPI is maintained with limited development resources:
 
 - **Response Time**: We aim to respond to issues within a few days, but response times may vary based on current workload and complexity
 - **Priority**: Critical security issues and bugs affecting system stability receive highest priority
 - **Feature Requests**: Evaluated based on community needs and available development resources
 
 ### Community-Driven Support
-The ZoneWeaver API community is encouraged to:
+The ZoneweaverAPI community is encouraged to:
 - **Help each other** in discussions and issue comments
 - **Share solutions** to common problems
 - **Contribute documentation** improvements
@@ -123,4 +123,4 @@ This support document may be updated as the project evolves and resources change
 
 ---
 
-**Remember**: Community involvement directly impacts the level of support available. Your contributions help make ZoneWeaver API better for everyone!
+**Remember**: Community involvement directly impacts the level of support available. Your contributions help make ZoneweaverAPI better for everyone!

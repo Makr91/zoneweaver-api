@@ -8,7 +8,7 @@ permalink: /docs/releases/
 # Releases
 {: .no_toc }
 
-Download the latest version of ZoneWeaver API.
+Download the latest version of ZoneweaverAPI.
 
 ---
 

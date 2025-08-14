@@ -373,7 +373,7 @@ async function generateSSLCertificatesIfNeeded() {
     }
 
     // Generate SSL certificate using OpenSSL
-    const opensslCmd = `openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -subj "/C=US/ST=State/L=City/O=ZoneWeaver/CN=localhost"`;
+    const opensslCmd = `openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -subj "/C=US/ST=State/L=City/O=Zoneweaver/CN=localhost"`;
     
     execSync(opensslCmd, { stdio: 'pipe' });
     

@@ -41,7 +41,7 @@ const { DataTypes } = Sequelize;
  *         created_by:
  *           type: string
  *           description: Entity that created the task
- *           example: "ZoneWeaver-Production"
+ *           example: "Zoneweaver-Production"
  *         depends_on:
  *           type: string
  *           format: uuid

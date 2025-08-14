@@ -1,6 +1,6 @@
 # Basic Jekyll settings
-title: ZoneWeaver API Documentation
-description: Documentation for the ZoneWeaver API - Zone Hypervisor Management Backend
+title: ZoneweaverAPI Documentation
+description: Documentation for the ZoneweaverAPI - Zone Hypervisor Management Backend
 baseurl: "" # Custom domain serves from root
 url: "http://zoneweaver-api.startcloud.com" # Custom domain
 repository: Makr91/zoneweaver-api # for github-metadata
@@ -72,12 +72,12 @@ search_enabled: true # Enable the built-in search
 aux_links:
   "View on GitHub":
     - "https://github.com/Makr91/zoneweaver-api"
-  "ZoneWeaver":
+  "Zoneweaver":
     - "https://zoneweaver.startcloud.com/"
 aux_links_new_tab: true
 
 # Footer content
-footer_content: 'Copyright &copy; 2025 ZoneWeaver Project. Distributed under the GPL-3.0 license.'
+footer_content: 'Copyright &copy; 2025 ZoneweaverProject. Distributed under the GPL-3.0 license.'
 
 # Back to top link
 back_to_top: true

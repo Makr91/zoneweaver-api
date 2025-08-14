@@ -64,12 +64,12 @@ const options = {
             name: {
               type: 'string',
               description: 'Human-readable name for the API key',
-              example: 'ZoneWeaver-Production',
+              example: 'Zoneweaver-Production',
             },
             description: {
               type: 'string',
               description: 'Optional description of the API key purpose',
-              example: 'API key for ZoneWeaver frontend',
+              example: 'API key for Zoneweaverfrontend',
             },
             message: {
               type: 'string',
@@ -89,12 +89,12 @@ const options = {
             name: {
               type: 'string',
               description: 'Entity name',
-              example: 'ZoneWeaver-Production',
+              example: 'Zoneweaver-Production',
             },
             description: {
               type: 'string',
               description: 'Entity description',
-              example: 'API key for ZoneWeaver frontend',
+              example: 'API key for Zoneweaverfrontend',
             },
             is_active: {
               type: 'boolean',

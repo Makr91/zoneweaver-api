@@ -9,7 +9,7 @@ permalink: /docs/guides/authentication/
 # Authentication Guide
 {: .no_toc }
 
-Learn how to set up and manage API keys for secure access to the ZoneWeaver API.
+Learn how to set up and manage API keys for secure access to the ZoneweaverAPI.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -21,11 +21,11 @@ Learn how to set up and manage API keys for secure access to the ZoneWeaver API.
 
 ## Overview
 
-The ZoneWeaver API uses Bearer token authentication with API keys. All requests must include a valid API key in the Authorization header.
+The ZoneweaverAPI uses Bearer token authentication with API keys. All requests must include a valid API key in the Authorization header.
 
 ## API Key Format
 
-ZoneWeaver API keys use the following format:
+ZoneweaverAPI keys use the following format:
 ```
 wh_[random_string]
 ```

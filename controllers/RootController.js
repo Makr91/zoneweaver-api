@@ -5,7 +5,7 @@ import Entities from '../models/EntityModel.js';
  * /:
  *   get:
  *     summary: Root endpoint with links to registered frontends
- *     description: Renders a simple HTML page with a list of all registered ZoneWeaver frontends and a link to the API documentation.
+ *     description: Renders a simple HTML page with a list of all registered Zoneweaverfrontends and a link to the API documentation.
  *     tags: [Root]
  *     security: []
  *     responses:
@@ -46,7 +46,7 @@ export const getRoot = async (req, res) => {
             </head>
             <body>
                 <div class="container">
-                    <h1>Registered ZoneWeaver Instances</h1>
+                    <h1>Registered ZoneweaverInstances</h1>
         `;
 
         if (entities && entities.length > 0) {
@@ -57,7 +57,7 @@ export const getRoot = async (req, res) => {
             });
             html += '</ul>';
         } else {
-            html += '<p class="no-entities">No registered ZoneWeaver instances found.</p>';
+            html += '<p class="no-entities">No registered Zoneweaverinstances found.</p>';
         }
 
         html += `

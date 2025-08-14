@@ -8,7 +8,7 @@ permalink: /docs/configuration/
 # Configuration Reference
 {: .no_toc }
 
-Complete reference for configuring the ZoneWeaver API using the configuration file.
+Complete reference for configuring the ZoneweaverAPI using the configuration file.
 
 ## Table of contents
 {: .no_toc .text-delta }

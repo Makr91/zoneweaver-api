@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# ZoneWeaver API shutdown script for SMF
+# ZoneweaverAPI shutdown script for SMF
 #
 
 set -e
@@ -11,15 +11,15 @@ export PATH="/opt/ooce/bin:/opt/ooce/node-22/bin:/usr/gnu/bin:/usr/bin:/usr/sbin
 # PID file location (in user's home directory since we run as zoneapi user)
 PIDFILE="/var/lib/zoneweaver-api/zoneweaver-api.pid"
 
-echo "Stopping ZoneWeaver API..."
+echo "Stopping ZoneweaverAPI..."
 
 # Check if PID file exists
 if [ ! -f "$PIDFILE" ]; then
-    echo "PID file $PIDFILE not found. ZoneWeaver API may not be running."
+    echo "PID file $PIDFILE not found. ZoneweaverAPI may not be running."
     # Check for any running zoneweaver processes
     PIDS=$(pgrep -f "node.*index.js" 2>/dev/null || true)
     if [ -n "$PIDS" ]; then
-        echo "Found ZoneWeaver API processes: $PIDS"
+        echo "Found ZoneweaverAPI processes: $PIDS"
         echo "Attempting to stop them..."
         for pid in $PIDS; do
             kill $pid 2>/dev/null || true
@@ -46,7 +46,7 @@ if ! kill -0 "$PID" 2>/dev/null; then
     exit 0
 fi
 
-echo "Sending TERM signal to ZoneWeaver API (PID: $PID)..."
+echo "Sending TERM signal to ZoneweaverAPI (PID: $PID)..."
 kill -TERM "$PID"
 
 # Wait for graceful shutdown (up to 15 seconds)
@@ -68,7 +68,7 @@ if kill -0 "$PID" 2>/dev/null; then
     
     # Final check
     if kill -0 "$PID" 2>/dev/null; then
-        echo "Error: Unable to stop ZoneWeaver API process (PID: $PID)" >&2
+        echo "Error: Unable to stop ZoneweaverAPI process (PID: $PID)" >&2
         exit 1
     fi
 fi
@@ -76,5 +76,5 @@ fi
 # Remove PID file
 rm -f "$PIDFILE"
 
-echo "ZoneWeaver API stopped successfully."
+echo "ZoneweaverAPI stopped successfully."
 exit 0

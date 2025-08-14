@@ -4,7 +4,7 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-If you discover a security vulnerability in ZoneWeaver API, please report it responsibly:
+If you discover a security vulnerability in ZoneweaverAPI, please report it responsibly:
 
 ### Preferred Method: Security Advisory
 
@@ -40,9 +40,9 @@ Due to limited development resources, please understand that:
 - **Medium**: Standard timeline (DoS, information disclosure)
 - **Low**: Lower priority (minor information leaks)
 
-## Security Considerations for ZoneWeaver API
+## Security Considerations for ZoneweaverAPI
 
-Given that ZoneWeaver API manages system-level operations on OmniOS, please pay special attention to:
+Given that ZoneweaverAPI manages system-level operations on OmniOS, please pay special attention to:
 
 ### High-Risk Areas
 - **API Key Authentication**: Bypasses or privilege escalation
@@ -69,7 +69,7 @@ To maintain security:
 
 ## Security Features
 
-ZoneWeaver API includes several security features:
+ZoneweaverAPI includes several security features:
 
 - **API Key Authentication**: Bcrypt-hashed keys with configurable rounds
 - **CORS Protection**: Whitelist-based origin validation
@@ -79,7 +79,7 @@ ZoneWeaver API includes several security features:
 
 ## Acknowledgments
 
-We appreciate the security research community's efforts in making ZoneWeaver API more secure. Responsible disclosure helps protect all users.
+We appreciate the security research community's efforts in making ZoneweaverAPI more secure. Responsible disclosure helps protect all users.
 
 ### Hall of Fame
 
@@ -93,4 +93,4 @@ This security policy may be updated as the project evolves. Check back periodica
 
 ---
 
-**Remember**: Security is a shared responsibility. Your vigilance and responsible reporting help keep the entire ZoneWeaver community safe.
+**Remember**: Security is a shared responsibility. Your vigilance and responsible reporting help keep the entire Zoneweavercommunity safe.

@@ -9,7 +9,7 @@ permalink: /docs/guides/development-installation/
 # Development Installation
 {: .no_toc }
 
-Complete guide for setting up ZoneWeaver API for development and testing.
+Complete guide for setting up ZoneweaverAPI for development and testing.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -105,8 +105,8 @@ api_keys:
 
 cors:
   whitelist:
-    - "http://localhost:3000"   # ZoneWeaver frontend dev server
-    - "https://localhost:3001"  # ZoneWeaver frontend dev HTTPS
+    - "http://localhost:3000"   # Zoneweaverfrontend dev server
+    - "https://localhost:3001"  # Zoneweaverfrontend dev HTTPS
     - "http://localhost:8080"   # Alternative dev server
     - "*"  # Allow all origins in development (NOT for production!)
 
@@ -121,7 +121,7 @@ stats:
 mkdir -p ssl
 
 # Generate self-signed development certificates
-openssl req -x509 -newkey rsa:2048 -keyout ssl/dev-server.key -out ssl/dev-server.crt -days 365 -nodes -subj "/C=US/ST=Development/L=Development/O=ZoneWeaver/CN=localhost"
+openssl req -x509 -newkey rsa:2048 -keyout ssl/dev-server.key -out ssl/dev-server.crt -days 365 -nodes -subj "/C=US/ST=Development/L=Development/O=Zoneweaver/CN=localhost"
 
 # Set proper permissions
 chmod 600 ssl/dev-server.key
@@ -147,13 +147,13 @@ NODE_ENV=development CONFIG_PATH=./config/config.dev.yaml npm start
 
 Expected output:
 ```
-🚀 ZoneWeaver API Server starting...
+🚀 ZoneweaverAPI Server starting...
 📊 Database connection established (SQLite: ./dev-database.sqlite)
 🔐 API Key system initialized
 🌐 HTTP Server listening on port 5000
 🔒 HTTPS Server listening on port 5001
 📚 Swagger documentation available at /api-docs
-✅ ZoneWeaver API Server ready!
+✅ ZoneweaverAPI Server ready!
 ```
 
 ### Development Commands
@@ -306,7 +306,7 @@ zoneweaver-api/
 class ExampleController {
     static async getExample(req, res) {
         try {
-            res.json({ message: 'Hello from ZoneWeaver API!' });
+            res.json({ message: 'Hello from ZoneweaverAPI!' });
         } catch (error) {
             res.status(500).json({ msg: error.message });
         }
@@ -419,7 +419,7 @@ rm dev-database.sqlite-wal dev-database.sqlite-shm
 ```bash
 # Regenerate development certificates
 rm ssl/dev-server.*
-openssl req -x509 -newkey rsa:2048 -keyout ssl/dev-server.key -out ssl/dev-server.crt -days 365 -nodes -subj "/C=US/ST=Development/L=Development/O=ZoneWeaver/CN=localhost"
+openssl req -x509 -newkey rsa:2048 -keyout ssl/dev-server.key -out ssl/dev-server.crt -days 365 -nodes -subj "/C=US/ST=Development/L=Development/O=Zoneweaver/CN=localhost"
 ```
 
 #### Node.js Module Issues

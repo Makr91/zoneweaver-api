@@ -62,7 +62,7 @@ mkdir -p "$DESTDIR"
 # /var/log/zoneweaver-api/
 
 build_app() {
-    logmsg "Building ZoneWeaver API"
+    logmsg "Building ZoneweaverAPI"
     
     # Set up environment for OmniOS/Solaris
     export MAKE=gmake
@@ -89,7 +89,7 @@ install_app() {
     pushd opt/zoneweaver-api >/dev/null
 
     # Copy application files
-    logmsg "Installing ZoneWeaver API application files"
+    logmsg "Installing ZoneweaverAPI application files"
     logcmd cp $SRCDIR/index.js .
     logcmd cp $SRCDIR/package.json .
     logcmd cp $SRCDIR/LICENSE.md .
@@ -141,13 +141,13 @@ install_app() {
 }
 
 post_install() {
-    logmsg "--- Setting up ZoneWeaver API staging directory"
+    logmsg "--- Setting up ZoneweaverAPI staging directory"
     
-    logmsg "ZoneWeaver API staging setup completed"
+    logmsg "ZoneweaverAPI staging setup completed"
 }
 
 # Main build process
-logmsg "Starting ZoneWeaver API build process"
+logmsg "Starting ZoneweaverAPI build process"
 build_app
 install_app
 post_install

@@ -64,7 +64,7 @@ function generateSwaggerUI() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZoneWeaver API Reference</title>
+    <title>ZoneweaverAPI Reference</title>
     <link rel="icon" type="image/x-icon" href="/zoneweaver-api/assets/images/favicon.ico">
     <link rel="apple-touch-icon" sizes="192x192" href="/zoneweaver-api/assets/images/logo192.png">
     <link rel="apple-touch-icon" sizes="512x512" href="/zoneweaver-api/assets/images/logo512.png">
@@ -458,7 +458,7 @@ permalink: /docs/api/reference/
   <iframe 
     src="swagger-ui.html" 
     style="width: 100%; height: 100%; border: none; background: white;" 
-    title="ZoneWeaver API Reference">
+    title="ZoneweaverAPI Reference">
     <p>Your browser does not support iframes. 
        <a href="swagger-ui.html">Click here to view the API documentation</a>
     </p>

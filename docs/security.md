@@ -8,7 +8,7 @@ permalink: /docs/security/
 # Security Policy
 {: .no_toc }
 
-Security policy and vulnerability reporting procedures for ZoneWeaver API.
+Security policy and vulnerability reporting procedures for ZoneweaverAPI.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -20,7 +20,7 @@ Security policy and vulnerability reporting procedures for ZoneWeaver API.
 
 ## Supported Versions
 
-ZoneWeaver API follows semantic versioning. Security updates are provided for the latest release and the two most recent prior releases.
+ZoneweaverAPI follows semantic versioning. Security updates are provided for the latest release and the two most recent prior releases.
 
 <div id="supported-versions-content">
 <p>Loading supported versions...</p>

@@ -9,7 +9,7 @@ permalink: /docs/guides/production-installation/
 # Production Installation
 {: .no_toc }
 
-Complete guide for installing ZoneWeaver API in production using the OmniOS package.
+Complete guide for installing ZoneweaverAPI in production using the OmniOS package.
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -42,7 +42,7 @@ The following packages are automatically installed as dependencies:
 
 ### 1. Configure Package Repository
 
-Add the ZoneWeaver package repository:
+Add the Zoneweaverpackage repository:
 
 ```bash
 # Add the repository
@@ -52,7 +52,7 @@ pfexec pkg set-publisher -g https://public.omnios.packages.startcloud.com startc
 pfexec pkg refresh
 ```
 
-### 2. Install ZoneWeaver API Package
+### 2. Install ZoneweaverAPI Package
 
 ```bash
 # Install the package
@@ -242,7 +242,7 @@ cors:
 ### Firewall Configuration
 
 ```bash
-# Allow ZoneWeaver API ports
+# Allow ZoneweaverAPI ports
 pfexec /usr/sbin/svccfg -s network/firewall setprop 'policy/custom_rules' = astring: '{ "direction":"in", "protocol":"tcp", "port":5000, "action":"accept" }'
 pfexec /usr/sbin/svccfg -s network/firewall setprop 'policy/custom_rules' = astring: '{ "direction":"in", "protocol":"tcp", "port":5001, "action":"accept" }'
 pfexec svcadm refresh network/firewall
@@ -344,7 +344,7 @@ pfexec -u zoneapi /opt/zoneweaver-api/node_modules/.bin/node -c /etc/zoneweaver-
 
 ## Uninstallation
 
-**Warning**: This will permanently remove all ZoneWeaver API data.
+**Warning**: This will permanently remove all ZoneweaverAPI data.
 
 ```bash
 # Stop and disable service

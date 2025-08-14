@@ -124,11 +124,11 @@ export const bootstrapFirstApiKey = async(req, res) => {
  *               name:
  *                 type: string
  *                 description: Name for the new API key
- *                 example: "ZoneWeaver-Production"
+ *                 example: "Zoneweaver-Production"
  *               description:
  *                 type: string
  *                 description: Optional description for the API key
- *                 example: "API key for ZoneWeaver frontend"
+ *                 example: "API key for Zoneweaverfrontend"
  *     responses:
  *       200:
  *         description: API key generated successfully

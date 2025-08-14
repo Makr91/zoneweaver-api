@@ -23,7 +23,7 @@ const { DataTypes } = Sequelize;
  *         name:
  *           type: string
  *           description: Human-readable name for the API key
- *           example: "ZoneWeaver-Production"
+ *           example: "Zoneweaver-Production"
  *         api_key_hash:
  *           type: string
  *           description: Bcrypt hash of the API key (never exposed in API responses)
@@ -32,7 +32,7 @@ const { DataTypes } = Sequelize;
  *           type: string
  *           nullable: true
  *           description: Optional description of the API key purpose
- *           example: "API key for ZoneWeaver frontend"
+ *           example: "API key for Zoneweaverfrontend"
  *         is_active:
  *           type: boolean
  *           description: Whether the API key is active and can be used

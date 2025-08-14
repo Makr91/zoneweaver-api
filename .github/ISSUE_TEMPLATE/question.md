@@ -1,6 +1,6 @@
 ---
 name: Question
-about: Ask a question about ZoneWeaver API
+about: Ask a question about ZoneweaverAPI
 title: '[QUESTION] '
 labels: 'question'
 assignees: ''
@@ -8,7 +8,7 @@ assignees: ''
 
 ## Question
 
-What would you like to know about ZoneWeaver API?
+What would you like to know about ZoneweaverAPI?
 
 ## Context
 
@@ -22,7 +22,7 @@ Provide context about what you're trying to achieve:
 **System Information:**
 - OS: [e.g., OmniOS r151048]
 - Node.js Version: [e.g., 22.x]
-- ZoneWeaver API Version: [e.g., 0.0.26]
+- ZoneweaverAPI Version: [e.g., 0.0.26]
 - Installation Method: [package/source]
 
 ## What You've Tried
