@@ -8,6 +8,7 @@
 import { exec, execSync } from "child_process";
 import util from "util";
 import os from "os";
+import { Op } from "sequelize";
 import config from "../config/ConfigLoader.js";
 import PCIDevices from "../models/PCIDeviceModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
@@ -503,11 +504,12 @@ class DeviceCollector {
             const deviceRetentionDate = new Date(now.getTime() - (retentionConfig.storage * 24 * 60 * 60 * 1000));
             const deletedDevices = await PCIDevices.destroy({
                 where: {
-                    scan_timestamp: { [require('sequelize').Op.lt]: deviceRetentionDate }
+                    scan_timestamp: { [Op.lt]: deviceRetentionDate }
                 }
             });
 
             if (deletedDevices > 0) {
+                console.log(`🧹 Device cleanup completed: ${deletedDevices} PCI devices deleted`);
             }
 
         } catch (error) {

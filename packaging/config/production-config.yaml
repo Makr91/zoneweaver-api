@@ -61,6 +61,8 @@ host_monitoring:
     storage: 90
     cpu_stats: 7
     memory_stats: 7
+    system_metrics: 90
+    tasks: 30
   error_handling:
     max_consecutive_errors: 5
     retry_delay: 30

@@ -174,6 +174,8 @@ const sessionManager = new ZloginSessionManager();
 
 export const getZloginCleanupTask = () => {
     return {
+        name: 'zlogin_cleanup',
+        description: 'Clean up closed zlogin sessions',
         model: ZloginSessions,
         where: {
             status: 'closed'

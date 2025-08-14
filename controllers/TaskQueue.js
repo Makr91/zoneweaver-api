@@ -2848,3 +2848,31 @@ const executeRepositoryDisableTask = async (metadataJson) => {
         return { success: false, error: `Repository disable task failed: ${error.message}` };
     }
 };
+
+/**
+ * Clean up old tasks based on retention policies
+ * @description Removes completed, failed, and cancelled tasks older than the configured retention period
+ */
+export const cleanupOldTasks = async () => {
+    try {
+        const hostMonitoringConfig = config.getHostMonitoring();
+        const retentionConfig = hostMonitoringConfig.retention;
+        const now = new Date();
+
+        // Clean up completed, failed, and cancelled tasks
+        const tasksRetentionDate = new Date(now.getTime() - (retentionConfig.tasks * 24 * 60 * 60 * 1000));
+        const deletedTasks = await Tasks.destroy({
+            where: {
+                status: { [Op.in]: ['completed', 'failed', 'cancelled'] },
+                created_at: { [Op.lt]: tasksRetentionDate }
+            }
+        });
+
+        if (deletedTasks > 0) {
+            console.log(`🧹 Tasks cleanup completed: ${deletedTasks} old tasks deleted (older than ${retentionConfig.tasks} days)`);
+        }
+
+    } catch (error) {
+        console.error('❌ Failed to cleanup old tasks:', error.message);
+    }
+};

@@ -8,6 +8,7 @@
 import { exec, execSync } from "child_process";
 import util from "util";
 import os from "os";
+import { Op } from "sequelize";
 import config from "../config/ConfigLoader.js";
 import ZFSPools from "../models/ZFSPoolModel.js";
 import ZFSDatasets from "../models/ZFSDatasetModel.js";
@@ -1328,7 +1329,7 @@ class StorageCollector {
             const poolRetentionDate = new Date(now.getTime() - (retentionConfig.storage * 24 * 60 * 60 * 1000));
             const deletedPools = await ZFSPools.destroy({
                 where: {
-                    scan_timestamp: { [require('sequelize').Op.lt]: poolRetentionDate }
+                    scan_timestamp: { [Op.lt]: poolRetentionDate }
                 }
             });
 
@@ -1336,11 +1337,40 @@ class StorageCollector {
             const datasetRetentionDate = new Date(now.getTime() - (retentionConfig.storage * 24 * 60 * 60 * 1000));
             const deletedDatasets = await ZFSDatasets.destroy({
                 where: {
-                    scan_timestamp: { [require('sequelize').Op.lt]: datasetRetentionDate }
+                    scan_timestamp: { [Op.lt]: datasetRetentionDate }
                 }
             });
 
-            if (deletedPools > 0 || deletedDatasets > 0) {
+            // Clean disk data
+            const deletedDisks = await Disks.destroy({
+                where: {
+                    scan_timestamp: { [Op.lt]: datasetRetentionDate }
+                }
+            });
+
+            // Clean disk I/O stats
+            const deletedDiskIO = await DiskIOStats.destroy({
+                where: {
+                    scan_timestamp: { [Op.lt]: poolRetentionDate }
+                }
+            });
+
+            // Clean pool I/O stats
+            const deletedPoolIO = await PoolIOStats.destroy({
+                where: {
+                    scan_timestamp: { [Op.lt]: poolRetentionDate }
+                }
+            });
+
+            // Clean ARC stats
+            const deletedARC = await ARCStats.destroy({
+                where: {
+                    scan_timestamp: { [Op.lt]: poolRetentionDate }
+                }
+            });
+
+            if (deletedPools > 0 || deletedDatasets > 0 || deletedDisks > 0 || deletedDiskIO > 0 || deletedPoolIO > 0 || deletedARC > 0) {
+                console.log(`🧹 Storage cleanup completed: ${deletedPools} pools, ${deletedDatasets} datasets, ${deletedDisks} disks, ${deletedDiskIO} disk I/O, ${deletedPoolIO} pool I/O, ${deletedARC} ARC stats deleted`);
             }
 
         } catch (error) {

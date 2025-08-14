@@ -8,6 +8,7 @@
 import { exec, execSync } from "child_process";
 import util from "util";
 import os from "os";
+import { Op } from "sequelize";
 import config from "../config/ConfigLoader.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import NetworkStats from "../models/NetworkStatsModel.js";
@@ -347,36 +348,94 @@ class NetworkCollector {
     }
 
     /**
-     * Parse dladm show-link -s output (statistics)
-     * @param {string} output - Command output
+     * Parse dladm show-link -s -p output (parseable statistics)
+     * @param {string} output - Command output from parseable format
      * @returns {Array} Parsed statistics data
      */
     parseStatsOutput(output) {
         const lines = output.trim().split('\n');
         const stats = [];
         
-        // Skip header line
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
             
-            const parts = line.split(/\s+/);
+            // Skip any line that looks like a header (contains non-numeric data in expected numeric fields)
+            if (this.isHeaderLine(trimmed)) continue;
+            
+            const parts = trimmed.split(':');
             if (parts.length >= 7) {
+                // Validate that numeric fields are actually numeric
+                const link = parts[0];
+                const ipackets = parts[1];
+                const rbytes = parts[2];
+                const ierrors = parts[3];
+                const opackets = parts[4];
+                const obytes = parts[5];
+                const oerrors = parts[6];
+                
+                // Skip if any expected numeric field contains non-numeric data
+                if (!this.isValidNumericField(ipackets) || 
+                    !this.isValidNumericField(rbytes) ||
+                    !this.isValidNumericField(ierrors) ||
+                    !this.isValidNumericField(opackets) ||
+                    !this.isValidNumericField(obytes) ||
+                    !this.isValidNumericField(oerrors)) {
+                    continue;
+                }
+                
+                // Skip if link name contains header keywords
+                if (this.isHeaderKeyword(link)) continue;
+                
                 stats.push({
                     host: this.hostname,
-                    link: parts[0],
-                    ipackets: parts[1],
-                    rbytes: parts[2],
-                    ierrors: parts[3],
-                    opackets: parts[4],
-                    obytes: parts[5],
-                    oerrors: parts[6],
+                    link: link,
+                    ipackets: ipackets,
+                    rbytes: rbytes,
+                    ierrors: ierrors,
+                    opackets: opackets,
+                    obytes: obytes,
+                    oerrors: oerrors,
                     scan_timestamp: new Date()
                 });
             }
         }
         
         return stats;
+    }
+
+    /**
+     * Check if a line appears to be a header line
+     * @param {string} line - Line to check
+     * @returns {boolean} True if line appears to be a header
+     */
+    isHeaderLine(line) {
+        const upperLine = line.toUpperCase();
+        const headerKeywords = ['LINK', 'IPACKETS', 'RBYTES', 'IERRORS', 'OPACKETS', 'OBYTES', 'OERRORS'];
+        return headerKeywords.some(keyword => upperLine.includes(keyword));
+    }
+
+    /**
+     * Check if a field contains valid numeric data
+     * @param {string} field - Field to validate
+     * @returns {boolean} True if field is valid numeric
+     */
+    isValidNumericField(field) {
+        if (!field || field === '') return false;
+        // Check if it's a number (including 0)
+        return /^\d+$/.test(field);
+    }
+
+    /**
+     * Check if a string contains header keywords
+     * @param {string} str - String to check
+     * @returns {boolean} True if string contains header keywords
+     */
+    isHeaderKeyword(str) {
+        if (!str) return false;
+        const upperStr = str.toUpperCase();
+        const keywords = ['LINK', 'IPACKETS', 'RBYTES', 'IERRORS', 'OPACKETS', 'OBYTES', 'OERRORS'];
+        return keywords.includes(upperStr);
     }
 
     /**
@@ -952,12 +1011,13 @@ class NetworkCollector {
 
     /**
      * Collect network statistics
-     * @description Gathers traffic statistics from dladm show-link -s
+     * @description Gathers traffic statistics from dladm show-link -s using parseable format
      */
     async collectNetworkStats() {
         try {
             const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
-            const { stdout } = await execProm('dladm show-link -s', { timeout });
+            // Use parseable format to avoid header parsing issues
+            const { stdout } = await execProm('dladm show-link -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors', { timeout });
             
             const statsData = this.parseStatsOutput(stdout);
             
@@ -1245,8 +1305,8 @@ class NetworkCollector {
         try {
             const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
             
-            // Get current link statistics
-            const { stdout } = await execProm('dladm show-link -s', { timeout });
+            // Get current link statistics using parseable format
+            const { stdout } = await execProm('dladm show-link -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors', { timeout });
             const currentStats = this.parseStatsOutput(stdout);
             
             if (currentStats.length === 0) {
@@ -1455,7 +1515,7 @@ class NetworkCollector {
             const statsRetentionDate = new Date(now.getTime() - (retentionConfig.network_stats * 24 * 60 * 60 * 1000));
             const deletedStats = await NetworkStats.destroy({
                 where: {
-                    scan_timestamp: { [require('sequelize').Op.lt]: statsRetentionDate }
+                    scan_timestamp: { [Op.lt]: statsRetentionDate }
                 }
             });
 
@@ -1463,7 +1523,7 @@ class NetworkCollector {
             const usageRetentionDate = new Date(now.getTime() - (retentionConfig.network_usage * 24 * 60 * 60 * 1000));
             const deletedUsage = await NetworkUsage.destroy({
                 where: {
-                    scan_timestamp: { [require('sequelize').Op.lt]: usageRetentionDate }
+                    scan_timestamp: { [Op.lt]: usageRetentionDate }
                 }
             });
 
@@ -1471,11 +1531,26 @@ class NetworkCollector {
             const configRetentionDate = new Date(now.getTime() - (retentionConfig.network_config * 24 * 60 * 60 * 1000));
             const deletedConfig = await NetworkInterfaces.destroy({
                 where: {
-                    scan_timestamp: { [require('sequelize').Op.lt]: configRetentionDate }
+                    scan_timestamp: { [Op.lt]: configRetentionDate }
                 }
             });
 
-            if (deletedStats > 0 || deletedUsage > 0 || deletedConfig > 0) {
+            // Clean IP addresses (using same retention as network config)
+            const deletedIPAddresses = await IPAddresses.destroy({
+                where: {
+                    scan_timestamp: { [Op.lt]: configRetentionDate }
+                }
+            });
+
+            // Clean routing table (using same retention as network config)
+            const deletedRoutes = await Routes.destroy({
+                where: {
+                    scan_timestamp: { [Op.lt]: configRetentionDate }
+                }
+            });
+
+            if (deletedStats > 0 || deletedUsage > 0 || deletedConfig > 0 || deletedIPAddresses > 0 || deletedRoutes > 0) {
+                console.log(`🧹 Network cleanup completed: ${deletedStats} stats, ${deletedUsage} usage, ${deletedConfig} interfaces, ${deletedIPAddresses} IP addresses, ${deletedRoutes} routes deleted`);
             }
 
         } catch (error) {

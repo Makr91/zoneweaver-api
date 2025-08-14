@@ -10,6 +10,8 @@ import NetworkCollector from "./NetworkCollector.js";
 import StorageCollector from "./StorageCollector.js";
 import DeviceCollector from "./DeviceCollector.js";
 import SystemMetricsCollector from "./SystemMetricsCollector.js";
+import { cleanupOldTasks } from "./TaskQueue.js";
+import CleanupService from "./CleanupService.js";
 import HostInfo from "../models/HostInfoModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import NetworkStats from "../models/NetworkStatsModel.js";
@@ -72,6 +74,67 @@ class HostMonitoringService {
             lastSystemMetricsSuccess: null,
             totalErrors: 0
         };
+    }
+
+    /**
+     * Register cleanup tasks with CleanupService
+     * @description Registers all collector cleanup functions with the centralized CleanupService
+     */
+    registerCleanupTasks() {
+        try {
+            // Register network data cleanup
+            CleanupService.registerTask({
+                name: 'network_cleanup',
+                description: 'Clean up old network statistics and usage data',
+                handler: async () => {
+                    await this.networkCollector.cleanupOldData();
+                }
+            });
+
+            // Register storage data cleanup
+            CleanupService.registerTask({
+                name: 'storage_cleanup', 
+                description: 'Clean up old storage and ZFS data',
+                handler: async () => {
+                    await this.storageCollector.cleanupOldData();
+                }
+            });
+
+            // Register device data cleanup
+            CleanupService.registerTask({
+                name: 'device_cleanup',
+                description: 'Clean up old PCI device data',
+                handler: async () => {
+                    await this.deviceCollector.cleanupOldData();
+                }
+            });
+
+            // Register system metrics cleanup
+            CleanupService.registerTask({
+                name: 'system_metrics_cleanup',
+                description: 'Clean up old CPU and memory statistics',
+                handler: async () => {
+                    await this.systemMetricsCollector.cleanupOldData();
+                }
+            });
+
+            // Register task cleanup
+            CleanupService.registerTask({
+                name: 'task_cleanup',
+                description: 'Clean up old completed, failed, and cancelled tasks',
+                handler: async () => {
+                    await cleanupOldTasks();
+                }
+            });
+
+            console.log('📋 Registered all cleanup tasks with CleanupService');
+            
+            // Start CleanupService now that all tasks are registered
+            CleanupService.start();
+            
+        } catch (error) {
+            console.error('❌ Failed to register cleanup tasks:', error.message);
+        }
     }
 
     /**
@@ -138,6 +201,9 @@ class HostMonitoringService {
             this.systemMetricsCollector.collectSystemMetrics().catch(error => {
                 console.error('❌ Initial system metrics collection failed:', error.message);
             });
+
+            // Register cleanup tasks with CleanupService
+            this.registerCleanupTasks();
 
             this.isInitialized = true;
             return true;
@@ -264,18 +330,6 @@ class HostMonitoringService {
                     console.error('❌ Scheduled system metrics collection failed:', error.message);
                 }
             }, intervals.system_metrics * 1000);
-
-            // Data cleanup (daily)
-            this.intervals.cleanup = setInterval(async () => {
-                try {
-                    await this.networkCollector.cleanupOldData();
-                    await this.storageCollector.cleanupOldData();
-                    await this.deviceCollector.cleanupOldData();
-                    await this.systemMetricsCollector.cleanupOldData();
-                } catch (error) {
-                    console.error('❌ Scheduled data cleanup failed:', error.message);
-                }
-            }, 24 * 60 * 60 * 1000); // Daily
 
             this.isRunning = true;
             return true;

@@ -599,7 +599,7 @@ class DatabaseMigrations {
     }
 
     /**
-     * Migrate network_interfaces table to add aggregate-specific fields
+     * Migrate network interfaces table to add aggregate-specific fields
      * @description Adds aggregate configuration columns for comprehensive aggregate data
      * @returns {Promise<boolean>} True if migration successful
      */
@@ -634,6 +634,201 @@ class DatabaseMigrations {
     }
 
     /**
+     * Migrate swap_areas table to add missing columns
+     * @description Adds missing columns that are defined in SwapAreaModel but don't exist in database
+     * @returns {Promise<boolean>} True if migration successful
+     */
+    async migrateSwapAreasTable() {
+        const tableName = 'swap_areas';
+        const columnsToAdd = [
+            { name: 'swapfile', definition: 'TEXT' }, // Make nullable to avoid issues with existing data
+            { name: 'dev', definition: 'TEXT' },
+            { name: 'swaplo', definition: 'BIGINT' },
+            { name: 'blocks', definition: 'BIGINT' },
+            { name: 'free', definition: 'BIGINT' },
+            { name: 'size_bytes', definition: 'BIGINT' },
+            { name: 'used_bytes', definition: 'BIGINT' },
+            { name: 'free_bytes', definition: 'BIGINT' },
+            { name: 'utilization_pct', definition: 'DECIMAL(5, 2)' },
+            { name: 'scan_timestamp', definition: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
+            { name: 'is_active', definition: 'BOOLEAN DEFAULT 1' },
+            { name: 'path', definition: 'TEXT' },
+            { name: 'device_info', definition: 'TEXT' },
+            { name: 'free_blocks', definition: 'BIGINT' },
+            { name: 'pool_assignment', definition: 'TEXT' }
+        ];
+
+        let allSuccessful = true;
+        
+        for (const column of columnsToAdd) {
+            const success = await this.addColumnIfNotExists(tableName, column.name, column.definition);
+            if (!success) {
+                allSuccessful = false;
+            }
+        }
+
+        if (allSuccessful) {
+            console.log('✅ Swap areas table migration completed successfully');
+        } else {
+            console.warn('⚠️  Swap areas table migration completed with some errors');
+        }
+
+        return allSuccessful;
+    }
+
+    /**
+     * Migrate memory_stats table to add missing columns  
+     * @description Adds missing columns that are defined in MemoryStatsModel but don't exist in database
+     * @returns {Promise<boolean>} True if migration successful
+     */
+    async migrateMemoryStatsTable() {
+        const tableName = 'memory_stats';
+        const columnsToAdd = [
+            { name: 'total_memory', definition: 'BIGINT' },
+            { name: 'available_memory', definition: 'BIGINT' },
+            { name: 'used_memory', definition: 'BIGINT' },
+            { name: 'free_memory', definition: 'BIGINT' },
+            { name: 'memory_utilization_pct', definition: 'DECIMAL(5, 2)' },
+            { name: 'swap_total', definition: 'BIGINT' },
+            { name: 'swap_used', definition: 'BIGINT' },
+            { name: 'swap_free', definition: 'BIGINT' },
+            { name: 'swap_utilization_pct', definition: 'DECIMAL(5, 2)' },
+            { name: 'scan_timestamp', definition: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
+            { name: 'total_memory_bytes', definition: 'BIGINT' },
+            { name: 'available_memory_bytes', definition: 'BIGINT' },
+            { name: 'used_memory_bytes', definition: 'BIGINT' },
+            { name: 'free_memory_bytes', definition: 'BIGINT' },
+            { name: 'buffers_bytes', definition: 'BIGINT' },
+            { name: 'cached_bytes', definition: 'BIGINT' },
+            { name: 'swap_total_bytes', definition: 'BIGINT' },
+            { name: 'swap_used_bytes', definition: 'BIGINT' },
+            { name: 'swap_free_bytes', definition: 'BIGINT' },
+            { name: 'arc_size_bytes', definition: 'BIGINT' },
+            { name: 'arc_target_bytes', definition: 'BIGINT' },
+            { name: 'kernel_memory_bytes', definition: 'BIGINT' },
+            { name: 'page_size_bytes', definition: 'INTEGER' },
+            { name: 'pages_total', definition: 'BIGINT' },
+            { name: 'pages_free', definition: 'BIGINT' }
+        ];
+
+        let allSuccessful = true;
+        
+        for (const column of columnsToAdd) {
+            const success = await this.addColumnIfNotExists(tableName, column.name, column.definition);
+            if (!success) {
+                allSuccessful = false;
+            }
+        }
+
+        if (allSuccessful) {
+            console.log('✅ Memory stats table migration completed successfully');
+        } else {
+            console.warn('⚠️  Memory stats table migration completed with some errors');
+        }
+
+        return allSuccessful;
+    }
+
+    /**
+     * Clean up swap_areas table by removing duplicate columns
+     * @description Removes old duplicate columns (path, device_info, swaplow, free_blocks) from swap_areas table
+     * @returns {Promise<boolean>} True if cleanup successful
+     */
+    async cleanupSwapAreasTable() {
+        try {
+            // Check if table exists
+            const tableExists = await this.tableExists('swap_areas');
+            if (!tableExists) {
+                console.log('ℹ️  Swap areas table does not exist, skipping cleanup');
+                return true;
+            }
+
+            // Check if old columns still exist
+            const hasOldColumns = await this.columnExists('swap_areas', 'path') || 
+                                 await this.columnExists('swap_areas', 'device_info') ||
+                                 await this.columnExists('swap_areas', 'swaplow') ||
+                                 await this.columnExists('swap_areas', 'free_blocks');
+
+            if (!hasOldColumns) {
+                console.log('ℹ️  Swap areas table already cleaned up, no duplicate columns found');
+                return true;
+            }
+
+            console.log('🔧 Cleaning up duplicate columns in swap_areas table...');
+
+            // SQLite doesn't support DROP COLUMN, so we need to recreate the table
+            // 1. Create new table with clean schema
+            await db.query(`
+                CREATE TABLE swap_areas_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    host VARCHAR(255) NOT NULL,
+                    swapfile TEXT,
+                    dev TEXT,
+                    swaplo BIGINT,
+                    blocks BIGINT,
+                    free BIGINT,
+                    size_bytes BIGINT,
+                    used_bytes BIGINT,
+                    free_bytes BIGINT,
+                    utilization_pct DECIMAL(5,2),
+                    pool_assignment VARCHAR(255),
+                    is_active TINYINT(1) DEFAULT 1,
+                    priority INTEGER,
+                    scan_timestamp DATETIME,
+                    createdAt DATETIME NOT NULL,
+                    updatedAt DATETIME NOT NULL
+                )
+            `);
+
+            // 2. Copy data from old table to new table, mapping old columns to new ones
+            await db.query(`
+                INSERT INTO swap_areas_new (
+                    id, host, swapfile, dev, swaplo, blocks, free, size_bytes, 
+                    used_bytes, free_bytes, utilization_pct, pool_assignment, 
+                    is_active, priority, scan_timestamp, createdAt, updatedAt
+                )
+                SELECT 
+                    id, 
+                    host,
+                    COALESCE(swapfile, path) as swapfile,
+                    COALESCE(dev, device_info) as dev,
+                    COALESCE(swaplo, swaplow) as swaplo,
+                    blocks,
+                    COALESCE(free, free_blocks) as free,
+                    size_bytes,
+                    used_bytes,
+                    free_bytes,
+                    utilization_pct,
+                    pool_assignment,
+                    is_active,
+                    priority,
+                    scan_timestamp,
+                    createdAt,
+                    updatedAt
+                FROM swap_areas
+            `);
+
+            // 3. Drop old table
+            await db.query(`DROP TABLE swap_areas`);
+
+            // 4. Rename new table
+            await db.query(`ALTER TABLE swap_areas_new RENAME TO swap_areas`);
+
+            // 5. Recreate indexes if needed
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_host_swapfile ON swap_areas(host, swapfile)`);
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_host_timestamp ON swap_areas(host, scan_timestamp)`);
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_active ON swap_areas(is_active)`);
+
+            console.log('✅ Swap areas table cleanup completed successfully - removed duplicate columns');
+            return true;
+
+        } catch (error) {
+            console.error('❌ Failed to cleanup swap_areas table:', error.message);
+            return false;
+        }
+    }
+
+    /**
      * Run all pending migrations
      * @description Executes all necessary database migrations
      * @returns {Promise<boolean>} True if all migrations successful
@@ -646,6 +841,15 @@ class DatabaseMigrations {
             
             // Create new system metrics tables
             await this.createNewSystemMetricsTables();
+            
+            // CRITICAL: Fix missing columns that are causing SQLite errors
+            console.log('🔧 Running critical database schema fixes...');
+            
+            // Fix swap_areas table missing columns (fixes swapfile column error)
+            await this.migrateSwapAreasTable();
+            
+            // Fix memory_stats table missing columns (fixes total_memory column error)
+            await this.migrateMemoryStatsTable();
             
             // Network usage table migration
             await this.migrateNetworkUsageTable();
@@ -677,6 +881,11 @@ class DatabaseMigrations {
             // Network interfaces table migration (add aggregate fields)
             await this.migrateNetworkInterfacesAggregateFields();
             
+            // CLEANUP: Remove duplicate columns to avoid data redundancy
+            console.log('🧹 Running database cleanup...');
+            await this.cleanupSwapAreasTable();
+            
+            console.log('✅ All database migrations completed successfully');
             return true;
             
         } catch (error) {

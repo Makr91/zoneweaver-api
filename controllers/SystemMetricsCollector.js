@@ -464,14 +464,14 @@ class SystemMetricsCollector {
             if (line === '') continue;
             
             // Parse swap -l output format:
-            // swapfile             dev  swaplo blocks   free
-            // /dev/zvol/dsk/rpool/swap 85,1      16 16777200 16777200
+            // swapfile             dev    swaplo   blocks     free
+            // /dev/zvol/dsk/rpool/swap 265,1         8 88080376 88080376
             const parts = line.split(/\s+/);
             
             if (parts.length >= 5) {
-                const path = parts[0];
+                const swapfilePath = parts[0];
                 const deviceInfo = parts[1];
-                const swaplow = parseInt(parts[2]) || 0;
+                const swaplo = parseInt(parts[2]) || 0;
                 const blocks = parseInt(parts[3]) || 0;
                 const freeBlocks = parseInt(parts[4]) || 0;
                 
@@ -482,15 +482,16 @@ class SystemMetricsCollector {
                 const utilizationPct = sizeBytes > 0 ? (usedBytes / sizeBytes) * 100 : 0;
                 
                 // Extract pool assignment from path
-                const poolMatch = path.match(/\/dev\/zvol\/dsk\/([^\/]+)/);
+                const poolMatch = swapfilePath.match(/\/dev\/zvol\/dsk\/([^\/]+)/);
                 const poolAssignment = poolMatch ? poolMatch[1] : null;
                 
+                // Use clean SwapAreaModel field names (after cleanup migration)
                 swapAreas.push({
-                    path,
-                    device_info: deviceInfo,
-                    swaplow,
-                    blocks,
-                    free_blocks: freeBlocks,
+                    swapfile: swapfilePath,        // SwapAreaModel expects 'swapfile'
+                    dev: deviceInfo,               // SwapAreaModel expects 'dev'
+                    swaplo: swaplo,               // SwapAreaModel expects 'swaplo'
+                    blocks: blocks,               // SwapAreaModel expects 'blocks'
+                    free: freeBlocks,             // SwapAreaModel expects 'free'
                     size_bytes: sizeBytes,
                     free_bytes: freeBytes,
                     used_bytes: usedBytes,
@@ -602,7 +603,16 @@ class SystemMetricsCollector {
                 }
             });
 
-            if (deletedCPU > 0 || deletedMemory > 0) {
+            // Clean swap areas data
+            const swapRetentionDate = new Date(now.getTime() - (retentionConfig.system_metrics * 24 * 60 * 60 * 1000));
+            const deletedSwapAreas = await SwapArea.destroy({
+                where: {
+                    scan_timestamp: { [Op.lt]: swapRetentionDate }
+                }
+            });
+
+            if (deletedCPU > 0 || deletedMemory > 0 || deletedSwapAreas > 0) {
+                console.log(`🧹 System metrics cleanup completed: ${deletedCPU} CPU stats, ${deletedMemory} memory stats, ${deletedSwapAreas} swap areas deleted`);
             }
 
         } catch (error) {
