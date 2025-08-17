@@ -242,8 +242,11 @@ setInterval(cleanupInactiveSessions, 10 * 60 * 1000);
  *         description: Failed to start terminal session.
  */
 export const startTerminalSession = async (req, res) => {
+    const startTime = Date.now();
     try {
         const { zone_name, terminal_cookie } = req.body;
+        
+        console.log(`[${new Date().toISOString()}] 🆕 TERMINAL CREATE: Starting request for cookie ${terminal_cookie}`);
         
         if (!terminal_cookie) {
             return res.status(400).json({ 
@@ -253,6 +256,9 @@ export const startTerminalSession = async (req, res) => {
         }
         
         // Check for existing healthy active session
+        const dbLookupStart = Date.now();
+        console.log(`[${new Date().toISOString()}] 🔍 DB LOOKUP: Searching for existing active session...`);
+        
         const existingSession = await TerminalSessions.findOne({
             where: { 
                 terminal_cookie, 
@@ -260,50 +266,76 @@ export const startTerminalSession = async (req, res) => {
             }
         });
         
-        if (existingSession && await isSessionHealthy(existingSession.id)) {
-            await existingSession.update({ 
-                last_activity: new Date(),
-                last_accessed: new Date()
-            });
+        const dbLookupTime = Date.now() - dbLookupStart;
+        console.log(`[${new Date().toISOString()}] ✅ DB LOOKUP: Completed in ${dbLookupTime}ms (found: ${!!existingSession})`);
+        
+        if (existingSession) {
+            const healthCheckStart = Date.now();
+            const isHealthy = await isSessionHealthy(existingSession.id);
+            const healthCheckTime = Date.now() - healthCheckStart;
+            console.log(`[${new Date().toISOString()}] 🏥 HEALTH CHECK: Completed in ${healthCheckTime}ms (healthy: ${isHealthy})`);
             
-            console.log(`⚡ TERMINAL REUSE: Returning existing session for cookie ${terminal_cookie}`);
-            
-            return res.json({
-                success: true,
-                data: {
-                    id: existingSession.terminal_cookie,
-                    websocket_url: `/term/${existingSession.id}`,
-                    reused: true,
-                    created_at: existingSession.created_at,
-                    buffer: existingSession.session_buffer || '',
-                    status: 'active'
-                }
-            });
+            if (isHealthy) {
+                const updateStart = Date.now();
+                await existingSession.update({ 
+                    last_activity: new Date(),
+                    last_accessed: new Date()
+                });
+                const updateTime = Date.now() - updateStart;
+                const totalTime = Date.now() - startTime;
+                
+                console.log(`[${new Date().toISOString()}] 📝 DB UPDATE: Completed in ${updateTime}ms`);
+                console.log(`[${new Date().toISOString()}] ⚡ TERMINAL REUSE: Returning existing session (total: ${totalTime}ms)`);
+                
+                return res.json({
+                    success: true,
+                    data: {
+                        id: existingSession.terminal_cookie,
+                        websocket_url: `/term/${existingSession.id}`,
+                        reused: true,
+                        created_at: existingSession.created_at,
+                        buffer: existingSession.session_buffer || '',
+                        status: 'active'
+                    }
+                });
+            }
         }
         
         // Clean up any existing unhealthy session
         if (existingSession) {
+            const cleanupStart = Date.now();
             const ptyProcess = activePtyProcesses.get(existingSession.id);
             if (ptyProcess) {
                 ptyProcess.kill();
                 activePtyProcesses.delete(existingSession.id);
             }
             await existingSession.destroy();
-            console.log(`🧹 Cleaned up unhealthy session for cookie ${terminal_cookie}`);
+            const cleanupTime = Date.now() - cleanupStart;
+            console.log(`[${new Date().toISOString()}] 🧹 DB CLEANUP: Destroyed unhealthy session in ${cleanupTime}ms`);
         }
         
         // Create new session with async PTY spawning
-        console.log(`🆕 TERMINAL CREATE: Creating new session for cookie ${terminal_cookie}`);
-        
         let session;
         
         try {
+            const createStart = Date.now();
+            console.log(`[${new Date().toISOString()}] 🔄 DB CREATE: Creating new session record...`);
+            
             session = await createSessionRecord(zone_name, terminal_cookie);
+            
+            const createTime = Date.now() - createStart;
+            console.log(`[${new Date().toISOString()}] ✅ DB CREATE: Record created in ${createTime}ms`);
         } catch (error) {
             // Handle race condition if another request created the same cookie
             if (error.name === 'SequelizeUniqueConstraintError') {
-                console.log(`🔄 TERMINAL COLLISION: Cookie ${terminal_cookie} exists, finding existing...`);
+                const collisionStart = Date.now();
+                console.log(`[${new Date().toISOString()}] 🔄 TERMINAL COLLISION: Cookie ${terminal_cookie} exists, finding existing...`);
+                
                 session = await TerminalSessions.findOne({ where: { terminal_cookie } });
+                
+                const collisionTime = Date.now() - collisionStart;
+                console.log(`[${new Date().toISOString()}] 🔍 DB COLLISION LOOKUP: Completed in ${collisionTime}ms`);
+                
                 if (!session) {
                     throw new Error('Uniqueness error but session not found');
                 }
@@ -314,11 +346,13 @@ export const startTerminalSession = async (req, res) => {
         
         // Start PTY asynchronously - DON'T AWAIT (key optimization!)
         spawnPtyProcessAsync(session).catch(error => {
-            console.error(`❌ Failed to spawn PTY for session ${session.id}:`, error);
+            console.error(`[${new Date().toISOString()}] ❌ Failed to spawn PTY for session ${session.id}:`, error);
         });
         
         // Return immediately (should be ~100ms)
-        console.log(`⚡ TERMINAL FAST: Returning immediate response for cookie ${terminal_cookie}`);
+        const totalTime = Date.now() - startTime;
+        console.log(`[${new Date().toISOString()}] ⚡ TERMINAL FAST: Returning immediate response (total: ${totalTime}ms)`);
+        
         res.json({
             success: true,
             data: {
@@ -331,7 +365,8 @@ export const startTerminalSession = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error starting terminal session:', error);
+        const totalTime = Date.now() - startTime;
+        console.error(`[${new Date().toISOString()}] ❌ TERMINAL ERROR: Failed after ${totalTime}ms:`, error);
         res.status(500).json({ 
             success: false, 
             error: 'Failed to start terminal session' 
