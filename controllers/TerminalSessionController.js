@@ -252,7 +252,7 @@ export const startTerminalSession = async (req, res) => {
             });
         }
         
-        // Check for existing healthy session with same terminal_cookie
+        // Check for existing healthy active session
         const existingSession = await TerminalSessions.findOne({
             where: { 
                 terminal_cookie, 
@@ -261,7 +261,6 @@ export const startTerminalSession = async (req, res) => {
         });
         
         if (existingSession && await isSessionHealthy(existingSession.id)) {
-            // Update activity timestamp and return existing session
             await existingSession.update({ 
                 last_activity: new Date(),
                 last_accessed: new Date()
@@ -274,46 +273,61 @@ export const startTerminalSession = async (req, res) => {
                 data: {
                     id: existingSession.terminal_cookie,
                     websocket_url: `/term/${existingSession.id}`,
-                    reused: true,  // Frontend expects this flag
+                    reused: true,
                     created_at: existingSession.created_at,
-                    buffer: existingSession.session_buffer || ''
+                    buffer: existingSession.session_buffer || '',
+                    status: 'active'
                 }
             });
         }
         
-        // Clean up unhealthy session if it exists
+        // Clean up any existing unhealthy session
         if (existingSession) {
             const ptyProcess = activePtyProcesses.get(existingSession.id);
             if (ptyProcess) {
                 ptyProcess.kill();
                 activePtyProcesses.delete(existingSession.id);
             }
-            await existingSession.update({ status: 'closed' });
+            await existingSession.destroy();
             console.log(`🧹 Cleaned up unhealthy session for cookie ${terminal_cookie}`);
         }
         
-        // Create new session - ASYNC OPTIMIZATION: Fast response, PTY spawns in background
+        // Create new session with async PTY spawning
         console.log(`🆕 TERMINAL CREATE: Creating new session for cookie ${terminal_cookie}`);
         
-        // Step 1: Create database record immediately (fast ~10-50ms)
-        const session = await createSessionRecord(zone_name, terminal_cookie);
+        let session;
         
-        // Step 2: Start PTY process in background - DON'T AWAIT (async)
+        try {
+            session = await createSessionRecord(zone_name, terminal_cookie);
+        } catch (error) {
+            // Handle race condition if another request created the same cookie
+            if (error.name === 'SequelizeUniqueConstraintError') {
+                console.log(`🔄 TERMINAL COLLISION: Cookie ${terminal_cookie} exists, finding existing...`);
+                session = await TerminalSessions.findOne({ where: { terminal_cookie } });
+                if (!session) {
+                    throw new Error('Uniqueness error but session not found');
+                }
+            } else {
+                throw error;
+            }
+        }
+        
+        // Start PTY asynchronously - DON'T AWAIT (key optimization!)
         spawnPtyProcessAsync(session).catch(error => {
             console.error(`❌ Failed to spawn PTY for session ${session.id}:`, error);
         });
         
-        // Step 3: Return response immediately (total ~100ms)
+        // Return immediately (should be ~100ms)
         console.log(`⚡ TERMINAL FAST: Returning immediate response for cookie ${terminal_cookie}`);
         res.json({
             success: true,
             data: {
                 id: session.terminal_cookie,
                 websocket_url: `/term/${session.id}`,
-                reused: false,  // New session created
+                reused: false,
                 created_at: session.created_at,
                 buffer: '',
-                status: 'connecting' // PTY spawning in background
+                status: 'connecting'
             }
         });
     } catch (error) {
