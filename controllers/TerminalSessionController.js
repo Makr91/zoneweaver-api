@@ -1,5 +1,6 @@
 import os from 'os';
 import pty from 'node-pty';
+import { Op } from 'sequelize';
 import TerminalSessions from '../models/TerminalSessionModel.js';
 
 /**
@@ -9,6 +10,9 @@ import TerminalSessions from '../models/TerminalSessionModel.js';
 
 const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
+// Configurable session timeout (default 30 minutes)
+const SESSION_TIMEOUT_MINUTES = parseInt(process.env.TERMINAL_SESSION_TIMEOUT) || 30;
+
 /**
  * In-memory store for active pty processes.
  * @type {Map<string, import('node-pty').IPty>}
@@ -16,10 +20,39 @@ const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 const activePtyProcesses = new Map();
 
 /**
+ * Checks if a session is healthy by verifying the process is still running.
+ * @param {string} sessionId - The UUID of the terminal session.
+ * @returns {Promise<boolean>} True if session is healthy, false otherwise.
+ */
+const isSessionHealthy = async (sessionId) => {
+    try {
+        const ptyProcess = activePtyProcesses.get(sessionId);
+        if (!ptyProcess) {
+            return false;
+        }
+        
+        // Check if process ID still exists
+        try {
+            process.kill(ptyProcess.pid, 0); // Signal 0 checks if process exists without killing
+            return true;
+        } catch (error) {
+            // Process doesn't exist
+            activePtyProcesses.delete(sessionId);
+            return false;
+        }
+    } catch (error) {
+        console.error('Error checking session health:', error);
+        return false;
+    }
+};
+
+/**
  * Spawns a new pty process and stores it.
+ * @param {string} zoneName - The zone name for this terminal session.
+ * @param {string} terminalCookie - Frontend-generated session identifier.
  * @returns {{session: import('../models/TerminalSessionModel.js').default, ptyProcess: import('node-pty').IPty}}
  */
-const spawnPtyProcess = async () => {
+const spawnPtyProcess = async (zoneName = null, terminalCookie) => {
     // Use simpler configuration matching the working reference
     const ptyProcess = pty.spawn(shell, [], {
         name: 'xterm-color',
@@ -29,14 +62,16 @@ const spawnPtyProcess = async () => {
     });
 
     const session = await TerminalSessions.create({
+        terminal_cookie: terminalCookie,
         pid: ptyProcess.pid,
+        zone_name: zoneName,
     });
 
     activePtyProcesses.set(session.id, ptyProcess);
 
     // Use same event handler as working reference
     ptyProcess.on('exit', (code, signal) => {
-        console.log(`Terminal session ${session.id} exited with code ${code}, signal ${signal}`);
+        console.log(`Terminal session ${session.id} (cookie: ${terminalCookie}) exited with code ${code}, signal ${signal}`);
         activePtyProcesses.delete(session.id);
         session.update({ status: 'closed' });
     });
@@ -45,31 +80,257 @@ const spawnPtyProcess = async () => {
 };
 
 /**
+ * Cleans up inactive terminal sessions based on configurable timeout.
+ * @returns {Promise<number>} Number of sessions cleaned up.
+ */
+const cleanupInactiveSessions = async () => {
+    const timeoutAgo = new Date(Date.now() - SESSION_TIMEOUT_MINUTES * 60 * 1000);
+    
+    try {
+        const inactiveSessions = await TerminalSessions.findAll({
+            where: {
+                status: 'active',
+                last_activity: { [Op.lt]: timeoutAgo }
+            }
+        });
+
+        let cleanedCount = 0;
+        for (const session of inactiveSessions) {
+            const ptyProcess = activePtyProcesses.get(session.id);
+            if (ptyProcess) {
+                ptyProcess.kill();
+                activePtyProcesses.delete(session.id);
+            }
+            
+            await session.update({ status: 'closed' });
+            console.log(`🧹 Cleaned up inactive terminal session: ${session.terminal_cookie} (inactive for ${SESSION_TIMEOUT_MINUTES}+ minutes)`);
+            cleanedCount++;
+        }
+
+        if (cleanedCount > 0) {
+            console.log(`🧹 Terminal cleanup completed: ${cleanedCount} sessions cleaned up`);
+        }
+
+        return cleanedCount;
+    } catch (error) {
+        console.error('Error during terminal session cleanup:', error);
+        return 0;
+    }
+};
+
+// Run cleanup every 10 minutes
+setInterval(cleanupInactiveSessions, 10 * 60 * 1000);
+
+/**
  * @swagger
  * /terminal/start:
  *   post:
- *     summary: Start a new terminal session
- *     description: Creates a new pseudo-terminal session and returns its session ID.
+ *     summary: Start or reuse a terminal session
+ *     description: Creates a new pseudo-terminal session or reuses an existing healthy session based on terminal_cookie.
  *     tags: [Terminal]
  *     security:
  *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - terminal_cookie
+ *             properties:
+ *               terminal_cookie:
+ *                 type: string
+ *                 description: Frontend-generated session identifier
+ *                 example: "terminal_host1_5001_browser123_1234567890"
+ *               zone_name:
+ *                 type: string
+ *                 description: Zone name for this terminal session
+ *                 example: "myzone"
  *     responses:
  *       200:
- *         description: Terminal session started successfully.
+ *         description: Terminal session started or reused successfully.
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/TerminalSession'
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       description: Terminal cookie (same as sent)
+ *                       example: "terminal_host1_5001_browser123_1234567890"
+ *                     websocket_url:
+ *                       type: string
+ *                       description: WebSocket endpoint for terminal connection
+ *                       example: "/term/uuid-session-id"
+ *                     reused:
+ *                       type: boolean
+ *                       description: True if existing session was reused
+ *                     created_at:
+ *                       type: string
+ *                       format: date-time
+ *                     buffer:
+ *                       type: string
+ *                       description: Terminal history for reconnection
+ *       400:
+ *         description: Missing required terminal_cookie parameter.
  *       500:
  *         description: Failed to start terminal session.
  */
 export const startTerminalSession = async (req, res) => {
     try {
-        const { session } = await spawnPtyProcess();
-        res.json(session);
+        const { zone_name, terminal_cookie } = req.body;
+        
+        if (!terminal_cookie) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'terminal_cookie is required' 
+            });
+        }
+        
+        // Check for existing healthy session with same terminal_cookie
+        const existingSession = await TerminalSessions.findOne({
+            where: { 
+                terminal_cookie, 
+                status: 'active' 
+            }
+        });
+        
+        if (existingSession && await isSessionHealthy(existingSession.id)) {
+            // Update activity timestamp and return existing session
+            await existingSession.update({ 
+                last_activity: new Date(),
+                last_accessed: new Date()
+            });
+            
+            console.log(`⚡ TERMINAL REUSE: Returning existing session for cookie ${terminal_cookie}`);
+            
+            return res.json({
+                success: true,
+                data: {
+                    id: existingSession.terminal_cookie,
+                    websocket_url: `/term/${existingSession.id}`,
+                    reused: true,  // Frontend expects this flag
+                    created_at: existingSession.created_at,
+                    buffer: existingSession.session_buffer || ''
+                }
+            });
+        }
+        
+        // Clean up unhealthy session if it exists
+        if (existingSession) {
+            const ptyProcess = activePtyProcesses.get(existingSession.id);
+            if (ptyProcess) {
+                ptyProcess.kill();
+                activePtyProcesses.delete(existingSession.id);
+            }
+            await existingSession.update({ status: 'closed' });
+            console.log(`🧹 Cleaned up unhealthy session for cookie ${terminal_cookie}`);
+        }
+        
+        // Create new session
+        console.log(`🆕 TERMINAL CREATE: Creating new session for cookie ${terminal_cookie}`);
+        const { session } = await spawnPtyProcess(zone_name, terminal_cookie);
+        
+        res.json({
+            success: true,
+            data: {
+                id: session.terminal_cookie,
+                websocket_url: `/term/${session.id}`,
+                reused: false,  // New session created
+                created_at: session.created_at,
+                buffer: ''
+            }
+        });
     } catch (error) {
         console.error('Error starting terminal session:', error);
-        res.status(500).json({ error: 'Failed to start terminal session' });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to start terminal session' 
+        });
+    }
+};
+
+/**
+ * @swagger
+ * /terminal/sessions/{terminal_cookie}/health:
+ *   get:
+ *     summary: Check terminal session health
+ *     description: Validates if a terminal session identified by terminal_cookie is still healthy and active.
+ *     tags: [Terminal]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: terminal_cookie
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Frontend-generated session identifier
+ *         example: "terminal_host1_5001_browser123_1234567890"
+ *     responses:
+ *       200:
+ *         description: Session health status.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 healthy:
+ *                   type: boolean
+ *                   description: True if session is healthy and active
+ *                 uptime:
+ *                   type: integer
+ *                   description: Session uptime in seconds
+ *                 last_activity:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Last activity timestamp
+ *                 reason:
+ *                   type: string
+ *                   description: Reason for unhealthy status (if healthy=false)
+ *       500:
+ *         description: Failed to check session health.
+ */
+export const checkSessionHealth = async (req, res) => {
+    try {
+        const { terminal_cookie } = req.params;
+        
+        const session = await TerminalSessions.findOne({
+            where: { 
+                terminal_cookie, 
+                status: 'active' 
+            }
+        });
+        
+        if (!session) {
+            return res.json({ 
+                healthy: false, 
+                reason: 'Session not found' 
+            });
+        }
+        
+        const healthy = await isSessionHealthy(session.id);
+        const uptime = Math.floor((Date.now() - new Date(session.created_at)) / 1000);
+        
+        res.json({ 
+            healthy, 
+            uptime,
+            last_activity: session.last_activity,
+            ...(healthy ? {} : { reason: 'Process not running' })
+        });
+    } catch (error) {
+        console.error('Error checking session health:', error);
+        res.status(500).json({ 
+            healthy: false, 
+            error: 'Failed to check session health' 
+        });
     }
 };
 

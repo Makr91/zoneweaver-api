@@ -83,7 +83,8 @@ import {
     startTerminalSession,
     stopTerminalSession,
     getTerminalSessionInfo,
-    listTerminalSessions
+    listTerminalSessions,
+    checkSessionHealth
 } from "../controllers/TerminalSessionController.js";
 import {
     startZloginSession,
@@ -280,6 +281,7 @@ router.post('/server/restart', verifyApiKey, restartServer);                  //
 // Terminal Routes
 router.post('/terminal/start', verifyApiKey, startTerminalSession);
 router.get('/terminal/sessions', verifyApiKey, listTerminalSessions);
+router.get('/terminal/sessions/:terminal_cookie/health', verifyApiKey, checkSessionHealth);
 router.get('/terminal/sessions/:sessionId', verifyApiKey, getTerminalSessionInfo);
 router.delete('/terminal/sessions/:sessionId/stop', verifyApiKey, stopTerminalSession);
 

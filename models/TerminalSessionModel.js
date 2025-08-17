@@ -46,15 +46,29 @@ const TerminalSessions = db.define('terminal_sessions', {
         primaryKey: true,
         comment: 'Unique session identifier'
     },
+    terminal_cookie: {
+        type: DataTypes.STRING,
+        unique: true,
+        allowNull: false,
+        comment: 'Frontend-generated session identifier'
+    },
     pid: {
         type: DataTypes.INTEGER,
         allowNull: false,
         comment: 'Process ID of the node-pty process'
     },
+    zone_name: {
+        type: DataTypes.STRING,
+        comment: 'Zone this terminal session is for'
+    },
     status: {
         type: DataTypes.STRING,
         defaultValue: 'active',
         comment: 'Session status (active, closed)'
+    },
+    session_buffer: {
+        type: DataTypes.TEXT,
+        comment: 'Last 1000 lines of terminal output for reconnection'
     },
     created_at: {
         type: DataTypes.DATE,
@@ -65,6 +79,11 @@ const TerminalSessions = db.define('terminal_sessions', {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,
         comment: 'Timestamp when session was last accessed'
+    },
+    last_activity: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
+        comment: 'Last time session had activity (input/output)'
     }
 }, {
     freezeTableName: true,
