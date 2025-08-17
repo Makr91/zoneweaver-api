@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.14](https://github.com/Makr91/zoneweaver-api/compare/v0.1.13...v0.1.14) (2025-08-14)
+
+
+### Bug Fixes
+
+* network accounting bugs ([ba8a311](https://github.com/Makr91/zoneweaver-api/commit/ba8a31132fc2b4ecc2af9ca10a002768038fe8b8))
+* swap space ([e864775](https://github.com/Makr91/zoneweaver-api/commit/e864775e925ed521f206469020f32ba29dcbad0d))
+
 ## [0.1.13](https://github.com/Makr91/zoneweaver-api/compare/v0.1.12...v0.1.13) (2025-08-14)
 
 
