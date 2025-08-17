@@ -292,14 +292,96 @@ export const startTerminalSession = async (req, res) => {
             console.log(`🧹 Cleaned up unhealthy session for cookie ${terminal_cookie}`);
         }
         
-        // Create new session with async PTY spawning for fast response
+        // Create new session with graceful handling of duplicate cookies
         console.log(`🆕 TERMINAL CREATE: Creating new session for cookie ${terminal_cookie}`);
-        const session = await createSessionRecord(zone_name, terminal_cookie);
         
-        // Spawn PTY asynchronously in background (don't wait for it)
-        spawnPtyProcessAsync(session).catch(error => {
-            console.error(`Failed to spawn PTY for session ${session.id}:`, error);
-        });
+        let session;
+        let isReused = false;
+        
+        try {
+            // Try to create new session record
+            session = await createSessionRecord(zone_name, terminal_cookie);
+        } catch (error) {
+            // Handle uniqueness constraint error gracefully
+            if (error.name === 'SequelizeUniqueConstraintError' && error.fields?.includes('terminal_cookie')) {
+                console.log(`🔄 TERMINAL COLLISION: Cookie ${terminal_cookie} already exists, handling gracefully...`);
+                
+                // Find the existing session
+                const existingSession = await TerminalSessions.findOne({
+                    where: { terminal_cookie }
+                });
+                
+                if (!existingSession) {
+                    throw new Error('Uniqueness error but session not found - database inconsistency');
+                }
+                
+                // Handle based on existing session status
+                switch (existingSession.status) {
+                    case 'connecting':
+                        // Session is already being created, return it
+                        console.log(`⚡ TERMINAL CONNECTING: Returning existing connecting session for cookie ${terminal_cookie}`);
+                        session = existingSession;
+                        isReused = true;
+                        break;
+                        
+                    case 'active':
+                        // Check if the active session is healthy
+                        const isHealthy = await isSessionHealthy(existingSession.id);
+                        if (isHealthy) {
+                            console.log(`⚡ TERMINAL REUSE: Returning existing healthy session for cookie ${terminal_cookie}`);
+                            await existingSession.update({ 
+                                last_activity: new Date(),
+                                last_accessed: new Date()
+                            });
+                            session = existingSession;
+                            isReused = true;
+                        } else {
+                            // Clean up unhealthy session and create new one
+                            console.log(`🧹 TERMINAL REPLACE: Cleaning up unhealthy session for cookie ${terminal_cookie}`);
+                            const ptyProcess = activePtyProcesses.get(existingSession.id);
+                            if (ptyProcess) {
+                                ptyProcess.kill();
+                                activePtyProcesses.delete(existingSession.id);
+                            }
+                            await existingSession.update({ status: 'closed' });
+                            await existingSession.destroy();
+                            
+                            // Create new session
+                            session = await createSessionRecord(zone_name, terminal_cookie);
+                        }
+                        break;
+                        
+                    case 'failed':
+                    case 'closed':
+                        // Clean up failed/closed session and create new one
+                        console.log(`🧹 TERMINAL CLEANUP: Removing ${existingSession.status} session for cookie ${terminal_cookie}`);
+                        const ptyProcess = activePtyProcesses.get(existingSession.id);
+                        if (ptyProcess) {
+                            ptyProcess.kill();
+                            activePtyProcesses.delete(existingSession.id);
+                        }
+                        await existingSession.destroy();
+                        
+                        // Create new session
+                        session = await createSessionRecord(zone_name, terminal_cookie);
+                        break;
+                        
+                    default:
+                        throw new Error(`Unknown session status: ${existingSession.status}`);
+                }
+            } else {
+                // Re-throw other database errors
+                throw error;
+            }
+        }
+        
+        // Only spawn PTY if this is a new connecting session (not reused active session)
+        if (!isReused || session.status === 'connecting') {
+            // Spawn PTY asynchronously in background (don't wait for it)
+            spawnPtyProcessAsync(session).catch(error => {
+                console.error(`Failed to spawn PTY for session ${session.id}:`, error);
+            });
+        }
         
         // Return response immediately (fast ~100ms response)
         res.json({
@@ -307,10 +389,10 @@ export const startTerminalSession = async (req, res) => {
             data: {
                 id: session.terminal_cookie,
                 websocket_url: `/term/${session.id}`,
-                reused: false,  // New session created
+                reused: isReused,  // True if existing session was reused
                 created_at: session.created_at,
-                buffer: '',
-                status: 'connecting' // Frontend knows PTY is still starting
+                buffer: session.session_buffer || '',
+                status: session.status === 'active' ? 'active' : 'connecting'
             }
         });
     } catch (error) {
