@@ -47,13 +47,73 @@ const isSessionHealthy = async (sessionId) => {
 };
 
 /**
- * Spawns a new pty process and stores it.
+ * Creates a terminal session database record immediately.
+ * @param {string} zoneName - The zone name for this terminal session.
+ * @param {string} terminalCookie - Frontend-generated session identifier.
+ * @returns {Promise<import('../models/TerminalSessionModel.js').default>} The session record
+ */
+const createSessionRecord = async (zoneName = null, terminalCookie) => {
+    const session = await TerminalSessions.create({
+        terminal_cookie: terminalCookie,
+        pid: 0, // Temporary PID, will be updated when PTY spawns
+        zone_name: zoneName,
+        status: 'connecting' // Session is being created
+    });
+    
+    console.log(`🔄 TERMINAL SESSION: Created database record for cookie ${terminalCookie}, spawning PTY...`);
+    return session;
+};
+
+/**
+ * Spawns a PTY process asynchronously and updates the session record.
+ * @param {import('../models/TerminalSessionModel.js').default} session - The session record to update
+ * @returns {Promise<void>}
+ */
+const spawnPtyProcessAsync = async (session) => {
+    try {
+        // Use simpler configuration matching the working reference
+        const ptyProcess = pty.spawn(shell, [], {
+            name: 'xterm-color',
+            cols: 80,
+            rows: 30,
+            env: process.env
+        });
+
+        // Update session record with actual PID and active status
+        await session.update({
+            pid: ptyProcess.pid,
+            status: 'active'
+        });
+
+        activePtyProcesses.set(session.id, ptyProcess);
+
+        console.log(`✅ TERMINAL SESSION: PTY spawned for cookie ${session.terminal_cookie}, PID: ${ptyProcess.pid}`);
+
+        // Use same event handler as working reference
+        ptyProcess.on('exit', (code, signal) => {
+            console.log(`Terminal session ${session.id} (cookie: ${session.terminal_cookie}) exited with code ${code}, signal ${signal}`);
+            activePtyProcesses.delete(session.id);
+            session.update({ status: 'closed' });
+        });
+
+    } catch (error) {
+        console.error(`❌ TERMINAL SESSION: Failed to spawn PTY for cookie ${session.terminal_cookie}:`, error);
+        // Mark session as failed
+        await session.update({ status: 'failed' });
+    }
+};
+
+/**
+ * Legacy function for backward compatibility - creates session and spawns PTY synchronously.
  * @param {string} zoneName - The zone name for this terminal session.
  * @param {string} terminalCookie - Frontend-generated session identifier.
  * @returns {{session: import('../models/TerminalSessionModel.js').default, ptyProcess: import('node-pty').IPty}}
+ * @deprecated Use createSessionRecord + spawnPtyProcessAsync for better performance
  */
 const spawnPtyProcess = async (zoneName = null, terminalCookie) => {
-    // Use simpler configuration matching the working reference
+    const session = await createSessionRecord(zoneName, terminalCookie);
+    
+    // Spawn PTY synchronously for backward compatibility
     const ptyProcess = pty.spawn(shell, [], {
         name: 'xterm-color',
         cols: 80,
@@ -61,15 +121,13 @@ const spawnPtyProcess = async (zoneName = null, terminalCookie) => {
         env: process.env
     });
 
-    const session = await TerminalSessions.create({
-        terminal_cookie: terminalCookie,
+    await session.update({
         pid: ptyProcess.pid,
-        zone_name: zoneName,
+        status: 'active'
     });
 
     activePtyProcesses.set(session.id, ptyProcess);
 
-    // Use same event handler as working reference
     ptyProcess.on('exit', (code, signal) => {
         console.log(`Terminal session ${session.id} (cookie: ${terminalCookie}) exited with code ${code}, signal ${signal}`);
         activePtyProcesses.delete(session.id);
@@ -234,10 +292,16 @@ export const startTerminalSession = async (req, res) => {
             console.log(`🧹 Cleaned up unhealthy session for cookie ${terminal_cookie}`);
         }
         
-        // Create new session
+        // Create new session with async PTY spawning for fast response
         console.log(`🆕 TERMINAL CREATE: Creating new session for cookie ${terminal_cookie}`);
-        const { session } = await spawnPtyProcess(zone_name, terminal_cookie);
+        const session = await createSessionRecord(zone_name, terminal_cookie);
         
+        // Spawn PTY asynchronously in background (don't wait for it)
+        spawnPtyProcessAsync(session).catch(error => {
+            console.error(`Failed to spawn PTY for session ${session.id}:`, error);
+        });
+        
+        // Return response immediately (fast ~100ms response)
         res.json({
             success: true,
             data: {
@@ -245,7 +309,8 @@ export const startTerminalSession = async (req, res) => {
                 websocket_url: `/term/${session.id}`,
                 reused: false,  // New session created
                 created_at: session.created_at,
-                buffer: ''
+                buffer: '',
+                status: 'connecting' // Frontend knows PTY is still starting
             }
         });
     } catch (error) {
@@ -305,7 +370,7 @@ export const checkSessionHealth = async (req, res) => {
         const session = await TerminalSessions.findOne({
             where: { 
                 terminal_cookie, 
-                status: 'active' 
+                status: ['active', 'connecting'] // Include both statuses
             }
         });
         
@@ -316,11 +381,24 @@ export const checkSessionHealth = async (req, res) => {
             });
         }
         
+        // Handle different session statuses
+        if (session.status === 'connecting') {
+            const uptime = Math.floor((Date.now() - new Date(session.created_at)) / 1000);
+            return res.json({ 
+                healthy: true, 
+                status: 'connecting',
+                uptime,
+                last_activity: session.last_activity,
+                reason: 'PTY process still starting'
+            });
+        }
+        
         const healthy = await isSessionHealthy(session.id);
         const uptime = Math.floor((Date.now() - new Date(session.created_at)) / 1000);
         
         res.json({ 
             healthy, 
+            status: session.status,
             uptime,
             last_activity: session.last_activity,
             ...(healthy ? {} : { reason: 'Process not running' })
