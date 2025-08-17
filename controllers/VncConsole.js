@@ -13,6 +13,71 @@ import path from 'path';
  */
 
 /**
+ * WebSocket connection tracking for smart cleanup
+ */
+class VncConnectionTracker {
+    constructor() {
+        this.connections = new Map(); // zoneName -> Set of connection IDs
+    }
+    
+    /**
+     * Add a client connection for a zone
+     * @param {string} zoneName - Zone name
+     * @param {string} connectionId - Unique connection ID
+     */
+    addConnection(zoneName, connectionId) {
+        if (!this.connections.has(zoneName)) {
+            this.connections.set(zoneName, new Set());
+        }
+        this.connections.get(zoneName).add(connectionId);
+        console.log(`📊 Added connection ${connectionId} for ${zoneName}. Total: ${this.connections.get(zoneName).size}`);
+    }
+    
+    /**
+     * Remove a client connection for a zone
+     * @param {string} zoneName - Zone name
+     * @param {string} connectionId - Unique connection ID
+     * @returns {boolean} - True if this was the last connection
+     */
+    removeConnection(zoneName, connectionId) {
+        if (!this.connections.has(zoneName)) {
+            return false;
+        }
+        
+        const zoneConnections = this.connections.get(zoneName);
+        zoneConnections.delete(connectionId);
+        
+        const remainingConnections = zoneConnections.size;
+        console.log(`📊 Removed connection ${connectionId} for ${zoneName}. Remaining: ${remainingConnections}`);
+        
+        if (remainingConnections === 0) {
+            this.connections.delete(zoneName);
+            console.log(`📊 Last client disconnected from ${zoneName} - eligible for smart cleanup`);
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Get connection count for a zone
+     * @param {string} zoneName - Zone name
+     * @returns {number} - Number of active connections
+     */
+    getConnectionCount(zoneName) {
+        return this.connections.has(zoneName) ? this.connections.get(zoneName).size : 0;
+    }
+    
+    /**
+     * Get all zones with active connections
+     * @returns {Array<string>} - Array of zone names
+     */
+    getActiveZones() {
+        return Array.from(this.connections.keys());
+    }
+}
+
+/**
  * VNC port range configuration
  * Using 8000-8100 range to avoid browser port restrictions
  */
@@ -26,201 +91,8 @@ const VNC_PORT_RANGE = {
  */
 const VNC_SESSION_TIMEOUT = 30 * 60 * 1000;
 
-/**
- * Simple in-memory cache for VNC static assets
- * @description Caches frequently requested assets like CSS, JS, images to avoid repeated proxy calls
- */
-class VncAssetCache {
-    constructor() {
-        this.cache = new Map();
-        this.maxSize = 50; // Cache up to 50 assets
-        this.maxAge = 5 * 60 * 1000; // 5 minutes cache
-    }
-    
-    get(key) {
-        const item = this.cache.get(key);
-        if (!item) return null;
-        
-        // Check if expired
-        if (Date.now() - item.timestamp > this.maxAge) {
-            this.cache.delete(key);
-            return null;
-        }
-        
-        return item;
-    }
-    
-    set(key, data, contentType) {
-        // If cache is full, remove oldest item
-        if (this.cache.size >= this.maxSize) {
-            const firstKey = this.cache.keys().next().value;
-            this.cache.delete(firstKey);
-        }
-        
-        this.cache.set(key, {
-            data,
-            contentType,
-            timestamp: Date.now()
-        });
-    }
-    
-    clear() {
-        this.cache.clear();
-    }
-    
-    getStats() {
-        return {
-            size: this.cache.size,
-            maxSize: this.maxSize,
-            keys: Array.from(this.cache.keys())
-        };
-    }
-}
-
-/**
- * Global VNC asset cache instance
- */
-const vncAssetCache = new VncAssetCache();
-
-/**
- * Common noVNC assets to preload for instant cache hits
- * This list covers the most frequently requested assets
- */
-const COMMON_VNC_ASSETS = [
-    'app/styles/base.css',
-    'app/styles/input.css',
-    'app/ui.js',
-    'app/error-handler.js',
-    'app/localization.js',
-    'app/webutil.js',
-    'core/util/logging.js',
-    'core/util/browser.js',
-    'core/util/events.js',
-    'core/util/int.js',
-    'core/util/strings.js',
-    'core/util/element.js',
-    'core/util/eventtarget.js',
-    'core/util/cursor.js',
-    'core/input/keysym.js',
-    'core/input/keysymdef.js',
-    'core/input/keyboard.js',
-    'core/input/util.js',
-    'core/input/xtscancodes.js',
-    'core/input/gesturehandler.js',
-    'core/input/vkeys.js',
-    'core/input/fixedkeys.js',
-    'core/input/domkeytable.js',
-    'core/rfb.js',
-    'core/display.js',
-    'core/websock.js',
-    'core/inflator.js',
-    'core/deflator.js',
-    'core/encodings.js',
-    'core/ra2.js',
-    'core/base64.js',
-    'core/crypto/crypto.js',
-    'core/crypto/aes.js',
-    'core/crypto/des.js',
-    'core/crypto/rsa.js',
-    'core/crypto/dh.js',
-    'core/crypto/md5.js',
-    'core/crypto/bigint.js',
-    'core/decoders/raw.js',
-    'core/decoders/copyrect.js',
-    'core/decoders/rre.js',
-    'core/decoders/hextile.js',
-    'core/decoders/tight.js',
-    'core/decoders/tightpng.js',
-    'core/decoders/zrle.js',
-    'core/decoders/jpeg.js',
-    'vendor/pako/lib/zlib/inflate.js',
-    'vendor/pako/lib/zlib/deflate.js',
-    'vendor/pako/lib/zlib/zstream.js',
-    'vendor/pako/lib/utils/common.js',
-    'vendor/pako/lib/zlib/adler32.js',
-    'vendor/pako/lib/zlib/crc32.js',
-    'vendor/pako/lib/zlib/inffast.js',
-    'vendor/pako/lib/zlib/inftrees.js',
-    'vendor/pako/lib/zlib/trees.js',
-    'vendor/pako/lib/zlib/messages.js',
-    // Common images
-    'app/images/connect.svg',
-    'app/images/disconnect.svg',
-    'app/images/settings.svg',
-    'app/images/fullscreen.svg',
-    'app/images/clipboard.svg',
-    'app/images/keyboard.svg',
-    'app/images/power.svg',
-    'app/images/ctrl.svg',
-    'app/images/alt.svg',
-    'app/images/windows.svg',
-    'app/images/tab.svg',
-    'app/images/esc.svg',
-    'app/images/ctrlaltdel.svg',
-    'app/images/toggleextrakeys.svg',
-    'app/images/expander.svg',
-    'app/images/drag.svg',
-    'app/images/handle.svg',
-    'app/images/handle_bg.svg',
-    'app/images/info.svg',
-    'app/images/warning.svg',
-    'app/images/error.svg'
-];
-
-/**
- * Warm the cache by preloading common VNC assets in parallel
- * @param {number} port - VNC server port
- * @returns {Promise<number>} - Number of assets successfully cached
- */
-const warmVncAssetCache = async (port) => {
-    console.log(`🔥 WARMING VNC CACHE: Preloading ${COMMON_VNC_ASSETS.length} common assets on port ${port}...`);
-    
-    const startTime = Date.now();
-    let cachedCount = 0;
-    
-    // Create parallel fetch promises for all assets
-    const fetchPromises = COMMON_VNC_ASSETS.map(async (assetPath) => {
-        try {
-            // Skip if already cached
-            if (vncAssetCache.get(assetPath)) {
-                return false;
-            }
-            
-            const vncUrl = `http://127.0.0.1:${port}/${assetPath}`;
-            const response = await fetch(vncUrl);
-            
-            if (!response.ok) {
-                return false; // Asset doesn't exist or failed to load
-            }
-            
-            const contentType = response.headers.get('content-type') || 'application/octet-stream';
-            const contentLength = response.headers.get('content-length');
-            
-            // Only cache if it's a reasonable size (under 1MB)
-            if (contentLength && parseInt(contentLength) < 1024 * 1024) {
-                const buffer = Buffer.from(await response.arrayBuffer());
-                vncAssetCache.set(assetPath, buffer, contentType);
-                console.log(`🔥 WARMED: ${assetPath} (${buffer.length} bytes)`);
-                return true;
-            }
-            
-            return false;
-            
-        } catch (error) {
-            // Silently ignore errors during cache warming
-            return false;
-        }
-    });
-    
-    // Wait for all parallel fetches to complete
-    const results = await Promise.all(fetchPromises);
-    cachedCount = results.filter(success => success).length;
-    
-    const elapsed = Date.now() - startTime;
-    console.log(`🔥 CACHE WARMING COMPLETE: ${cachedCount}/${COMMON_VNC_ASSETS.length} assets cached in ${elapsed}ms`);
-    
-    return cachedCount;
-};
+// NOTE: Asset caching system removed - frontend now uses react-vnc with direct websockify calls
+// No longer need to cache noVNC HTML assets since they're bypassed entirely
 
 
 /**
@@ -495,14 +367,143 @@ class VncSessionManager {
 }
 
 /**
- * Global session manager instance
+ * Global session manager and connection tracker instances
  */
 const sessionManager = new VncSessionManager();
+const connectionTracker = new VncConnectionTracker();
 
 /**
- * Export session manager for use in WebSocket upgrade handler
+ * Check if zone has VNC enabled at boot (from zadm configuration)
+ * @param {string} zoneName - Zone name
+ * @returns {Promise<boolean>} - True if VNC is enabled at boot
  */
-export { sessionManager };
+const isVncEnabledAtBoot = async (zoneName) => {
+    try {
+        console.log(`🔍 Checking VNC boot configuration for zone: ${zoneName}`);
+        
+        // Get zone configuration using zadm show
+        const configResult = await new Promise((resolve) => {
+            const child = spawn('sh', ['-c', `pfexec zadm show ${zoneName}`], {
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+            
+            let stdout = '';
+            let stderr = '';
+            let completed = false;
+            
+            const timeoutId = setTimeout(() => {
+                if (!completed) {
+                    completed = true;
+                    child.kill('SIGTERM');
+                    resolve({ success: false, error: 'Timeout' });
+                }
+            }, 10000);
+            
+            child.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+            
+            child.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+            
+            child.on('close', (code) => {
+                if (!completed) {
+                    completed = true;
+                    clearTimeout(timeoutId);
+                    
+                    if (code === 0) {
+                        resolve({ success: true, output: stdout });
+                    } else {
+                        resolve({ success: false, error: stderr || `Exit code ${code}` });
+                    }
+                }
+            });
+            
+            child.on('error', (error) => {
+                if (!completed) {
+                    completed = true;
+                    clearTimeout(timeoutId);
+                    resolve({ success: false, error: error.message });
+                }
+            });
+        });
+        
+        if (!configResult.success) {
+            console.warn(`Failed to get zone configuration for ${zoneName}: ${configResult.error}`);
+            return false;
+        }
+        
+        // Parse the JSON configuration
+        const config = JSON.parse(configResult.output);
+        
+        // Check if VNC is enabled: config.vnc.enabled === "on"
+        const vncEnabled = config.vnc && config.vnc.enabled === "on";
+        
+        console.log(`🔍 Zone ${zoneName} VNC boot setting: ${vncEnabled ? 'ENABLED' : 'DISABLED'}`);
+        return vncEnabled;
+        
+    } catch (error) {
+        console.warn(`Error checking VNC boot configuration for ${zoneName}:`, error.message);
+        return false; // Default to false if we can't determine
+    }
+};
+
+/**
+ * Smart cleanup logic - only cleanup VNC sessions when appropriate
+ * @param {string} zoneName - Zone name
+ * @param {boolean} isLastClient - Whether this was the last client to disconnect
+ */
+const performSmartCleanup = async (zoneName, isLastClient) => {
+    if (!isLastClient) {
+        console.log(`📊 Other clients still connected to ${zoneName} - no cleanup needed`);
+        return;
+    }
+    
+    console.log(`📊 Last client disconnected from ${zoneName} - checking cleanup eligibility`);
+    
+    // Check if zone has VNC enabled at boot
+    const vncEnabledAtBoot = await isVncEnabledAtBoot(zoneName);
+    
+    if (vncEnabledAtBoot) {
+        console.log(`🔧 Zone ${zoneName} has VNC enabled at boot - KEEPING session alive for future connections`);
+        return; // Don't cleanup - keep the session running
+    }
+    
+    console.log(`🧹 Zone ${zoneName} does NOT have VNC enabled at boot - performing cleanup after delay`);
+    
+    // Wait 10 minutes before cleanup to allow reasonable re-access while still freeing resources
+    setTimeout(async () => {
+        // Double-check that no new clients have connected in the meantime
+        const currentConnections = connectionTracker.getConnectionCount(zoneName);
+        
+        if (currentConnections === 0) {
+            console.log(`🧹 Performing smart cleanup for ${zoneName} - no boot VNC and no active clients`);
+            
+            const killed = await sessionManager.killSession(zoneName);
+            
+            if (killed) {
+                // Update database
+                try {
+                    await VncSessions.update(
+                        { status: 'stopped' },
+                        { where: { zone_name: zoneName, status: 'active' } }
+                    );
+                    console.log(`✅ Smart cleanup completed for ${zoneName}`);
+                } catch (dbError) {
+                    console.warn(`Failed to update database during cleanup for ${zoneName}:`, dbError.message);
+                }
+            }
+        } else {
+            console.log(`📊 New clients connected to ${zoneName} during cleanup delay - canceling cleanup`);
+        }
+    }, 10 * 60 * 1000); // 10 minute delay for reasonable re-access
+};
+
+/**
+ * Export session manager and connection tracker for use in WebSocket upgrade handler
+ */
+export { sessionManager, connectionTracker, performSmartCleanup };
 
 /**
  * Validate zone name for security
@@ -669,30 +670,56 @@ export const startVncSession = async (req, res) => {
             });
         }
         
-        // First, clean up any existing dead sessions for this zone
+        // CHECK FOR EXISTING HEALTHY SESSION FIRST (PERFORMANCE OPTIMIZATION)
+        console.log(`🔍 CHECKING FOR EXISTING HEALTHY SESSION: ${zoneName}`);
         const existingSessionInfo = await sessionManager.getSessionInfo(zoneName);
+        
         if (existingSessionInfo) {
-            console.log(`✅ EXISTING ACTIVE SESSION: ${zoneName} (PID: ${existingSessionInfo.pid}, port: ${existingSessionInfo.port})`);
+            console.log(`📋 Found existing session for ${zoneName} (PID: ${existingSessionInfo.pid}, port: ${existingSessionInfo.port})`);
             
-            // Get the actual host IP for direct VNC access
-            const hostIP = req.get('host').split(':')[0];
+            // Test if the session is healthy before killing it
+            console.log(`🩺 Testing VNC connection health on port ${existingSessionInfo.port}...`);
+            const isHealthy = await testVncConnection(existingSessionInfo.port, 3); // Quick 3-retry test
             
-            return res.json({
-                success: true,
-                zone_name: zoneName,
-                console_url: `http://${hostIP}:${existingSessionInfo.port}/`,
-                proxy_url: `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`,
-                session_id: existingSessionInfo.pid, // Use PID as session ID
-                status: 'active',
-                web_port: existingSessionInfo.port,
-                message: 'VNC session already active',
-                direct_access: true,
-                started_at: existingSessionInfo.timestamp
-            });
+            if (isHealthy) {
+                console.log(`✅ HEALTHY SESSION FOUND: Reusing existing VNC session for ${zoneName}`);
+                
+                // Update database last_accessed time for healthy session
+                try {
+                    await VncSessions.update(
+                        { last_accessed: new Date() }, 
+                        { where: { zone_name: zoneName, status: 'active' } }
+                    );
+                } catch (dbError) {
+                    console.warn(`Failed to update database for ${zoneName}:`, dbError.message);
+                }
+                
+                // Get the actual host IP for direct VNC access
+                const hostIP = req.get('host').split(':')[0];
+                
+                // Return existing healthy session immediately - NO SESSION KILLING!
+                return res.json({
+                    success: true,
+                    zone_name: zoneName,
+                    console_url: `http://${hostIP}:${existingSessionInfo.port}/`,
+                    proxy_url: `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`,
+                    session_id: existingSessionInfo.pid,
+                    status: 'active',
+                    web_port: existingSessionInfo.port,
+                    message: 'Healthy VNC session reused - instant access!',
+                    direct_access: true,
+                    started_at: existingSessionInfo.timestamp,
+                    reused_session: true
+                });
+            } else {
+                console.log(`🔧 UNHEALTHY SESSION DETECTED: Session exists but not responding, will clean up and create new one`);
+            }
+        } else {
+            console.log(`📋 No existing session found for ${zoneName}, will create new one`);
         }
         
-        // CRITICAL: Kill ALL existing VNC processes for this zone (VM can only have one VNC session)
-        console.log(`🧹 ENFORCING ONE-VNC-PER-ZONE: Killing ALL existing VNC processes for ${zoneName}...`);
+        // ONLY KILL IF SESSION IS UNHEALTHY OR MISSING
+        console.log(`🧹 CLEANING UP UNHEALTHY/MISSING SESSIONS: Killing any unhealthy VNC processes for ${zoneName}...`);
         await new Promise((resolve) => {
             const ps = spawn('ps', ['auxww'], { stdio: ['ignore', 'pipe', 'ignore'] });
             let output = '';
@@ -711,11 +738,11 @@ export const startVncSession = async (req, res) => {
                 });
                 
                 if (existingProcesses.length > 0) {
-                    console.log(`🔫 FOUND ${existingProcesses.length} EXISTING VNC PROCESSES FOR ${zoneName} - KILLING ALL:`);
+                    console.log(`🔫 FOUND ${existingProcesses.length} UNHEALTHY VNC PROCESSES FOR ${zoneName} - KILLING:`);
                     existingProcesses.forEach(proc => {
                         const parts = proc.trim().split(/\s+/);
                         const pid = parseInt(parts[1]);
-                        console.log(`  💀 Killing PID ${pid}: ${proc.trim()}`);
+                        console.log(`  💀 Killing unhealthy PID ${pid}: ${proc.trim()}`);
                         try {
                             // Use pfexec to kill root processes
                             const killProcess = spawn('pfexec', ['kill', '-9', pid.toString()], {
@@ -723,21 +750,21 @@ export const startVncSession = async (req, res) => {
                             });
                             killProcess.on('exit', (code) => {
                                 if (code === 0) {
-                                    console.log(`✅ Successfully killed VNC process ${pid} using pfexec`);
+                                    console.log(`✅ Successfully killed unhealthy VNC process ${pid} using pfexec`);
                                 } else {
-                                    console.warn(`❌ Failed to kill VNC process ${pid} with pfexec (exit code: ${code})`);
+                                    console.warn(`❌ Failed to kill unhealthy VNC process ${pid} with pfexec (exit code: ${code})`);
                                 }
                             });
                         } catch (error) {
-                            console.warn(`Failed to kill VNC process ${pid}:`, error.message);
+                            console.warn(`Failed to kill unhealthy VNC process ${pid}:`, error.message);
                         }
                     });
                     
-                    // Wait longer for all processes to die completely
-                    console.log(`⏳ Waiting 5 seconds for all VNC processes to terminate...`);
+                    // Wait for unhealthy processes to die completely
+                    console.log(`⏳ Waiting 5 seconds for unhealthy VNC processes to terminate...`);
                     setTimeout(resolve, 5000);
                 } else {
-                    console.log(`✅ No existing VNC processes found for ${zoneName} - safe to start new session`);
+                    console.log(`✅ No unhealthy VNC processes found for ${zoneName} - safe to start new session`);
                     resolve();
                 }
             });
@@ -847,12 +874,7 @@ export const startVncSession = async (req, res) => {
         
         console.log(`✅ FINAL VALIDATION PASSED: Process ${vncProcess.pid} is still running and serving on port ${webPort}`);
         
-        // CACHE WARMING: Preload common assets in parallel for instant loading
-        console.log(`🔥 Starting cache warming for instant asset loading...`);
-        // Don't await - let cache warming happen in background while we respond to user
-        warmVncAssetCache(webPort).catch(error => {
-            console.warn(`Cache warming failed but VNC session is still working:`, error.message);
-        });
+        // NOTE: Cache warming removed - frontend now uses react-vnc with direct websockify calls
         
         // Clean up any existing database entries for this zone first
         try {
@@ -1545,65 +1567,21 @@ export const proxyVncContent = async (req, res) => {
             return res.status(400).json({ error: 'Invalid zone name' });
         }
         
-        // Check cache first for static assets (ULTIMATE SPEED OPTIMIZATION)
-        // Cache hits bypass ALL validation and process checks for maximum speed
-        const cacheKey = assetPath;
-        const cachedItem = vncAssetCache.get(cacheKey);
-        
-        if (cachedItem) {
-            console.log(`💾 VNC ASSET CACHED: ${zoneName} → ${assetPath} (${cachedItem.data.length} bytes)`);
-            
-            res.set({
-                'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
-                'Pragma': 'no-cache',
-                'Expires': '0',
-                'Content-Type': cachedItem.contentType
-            });
-            
-            return res.send(cachedItem.data);
-        }
-        
         console.log(`📁 VNC ASSET REQUEST: ${zoneName} → ${assetPath}`);
         
-        // SPEED OPTIMIZATION: For asset requests, do lightweight session check
-        // Skip expensive process validation that times out - if PID file exists and port is known, use it
-        const pidFile = sessionManager.getPidFilePath(zoneName);
-        let sessionInfo = null;
-        
-        if (fs.existsSync(pidFile)) {
-            try {
-                const lines = fs.readFileSync(pidFile, 'utf8').trim().split('\n');
-                if (lines.length >= 5) {
-                    const [pid, command, timestamp, vmname, netport] = lines;
-                    sessionInfo = {
-                        pid: parseInt(pid),
-                        command,
-                        timestamp,
-                        vmname,
-                        netport,
-                        port: parseInt(netport.split(':')[1])
-                    };
-                    console.log(`⚡ FAST ASSET LOOKUP: ${zoneName} → port ${sessionInfo.port} (skipped process validation)`);
-                }
-            } catch (error) {
-                console.warn(`Error reading PID file for asset request:`, error.message);
-            }
-        }
-        
-        // Fallback to full session check if fast lookup failed
+        // NOTE: Simplified asset proxy - no caching since react-vnc bypasses most asset requests
+        // Get active VNC session info
+        const sessionInfo = await sessionManager.getSessionInfo(zoneName);
         if (!sessionInfo) {
-            sessionInfo = await sessionManager.getSessionInfo(zoneName);
-            if (!sessionInfo) {
-                console.log(`❌ No active VNC session found for asset request: ${zoneName}`);
-                return res.status(404).json({ 
-                    error: 'No active VNC session found',
-                    zone_name: zoneName,
-                    asset_path: assetPath
-                });
-            }
+            console.log(`❌ No active VNC session found for asset request: ${zoneName}`);
+            return res.status(404).json({ 
+                error: 'No active VNC session found',
+                zone_name: zoneName,
+                asset_path: assetPath
+            });
         }
         
-        // Build VNC server asset URL
+        // Build VNC server asset URL and proxy directly
         const vncUrl = `http://127.0.0.1:${sessionInfo.port}/${assetPath}`;
         console.log(`🔗 Proxying VNC asset from: ${vncUrl}`);
         
@@ -1621,54 +1599,19 @@ export const proxyVncContent = async (req, res) => {
             }
             
             const contentType = response.headers.get('content-type') || 'application/octet-stream';
-            const contentLength = response.headers.get('content-length');
             
-            // For cacheable static assets, buffer and cache them
-            const isCacheable = contentType.includes('javascript') || 
-                               contentType.includes('css') || 
-                               contentType.includes('image/') ||
-                               contentType.includes('font/') ||
-                               assetPath.endsWith('.js') ||
-                               assetPath.endsWith('.css') ||
-                               assetPath.endsWith('.svg') ||
-                               assetPath.endsWith('.png') ||
-                               assetPath.endsWith('.jpg') ||
-                               assetPath.endsWith('.ico');
+            // Stream asset directly without caching
+            res.set({
+                'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+                'Content-Type': contentType
+            });
             
-            if (isCacheable && contentLength && parseInt(contentLength) < 1024 * 1024) { // Cache files under 1MB
-                // Buffer the response for caching
-                const buffer = Buffer.from(await response.arrayBuffer());
-                
-                // Cache the asset
-                vncAssetCache.set(cacheKey, buffer, contentType);
-                
-                console.log(`💾 VNC ASSET CACHED: ${assetPath} (${buffer.length} bytes, ${contentType})`);
-                
-                // Send response
-                res.set({
-                    'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                    'Content-Type': contentType
-                });
-                
-                res.send(buffer);
-            } else {
-                // Stream large or non-cacheable assets directly
-                console.log(`🔗 VNC ASSET STREAMING: ${assetPath} (${contentLength || 'unknown size'} bytes, ${contentType})`);
-                
-                res.set({
-                    'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                    'Content-Type': contentType
-                });
-                
-                // Convert Web ReadableStream to Node.js stream and pipe
-                const { Readable } = await import('stream');
-                const nodeStream = Readable.fromWeb(response.body);
-                nodeStream.pipe(res);
-            }
+            // Convert Web ReadableStream to Node.js stream and pipe
+            const { Readable } = await import('stream');
+            const nodeStream = Readable.fromWeb(response.body);
+            nodeStream.pipe(res);
             
         } catch (fetchError) {
             console.error(`❌ Failed to fetch VNC asset from ${vncUrl}:`, fetchError.message);

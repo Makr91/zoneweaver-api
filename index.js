@@ -263,8 +263,8 @@ const handleWebSocketUpgrade = async (request, socket, head) => {
       }
     }
     
-    // Get session info to find the VNC port
-    const { sessionManager } = await import('./controllers/VncConsole.js');
+    // Get session info to find the VNC port and connection tracking
+    const { sessionManager, connectionTracker, performSmartCleanup } = await import('./controllers/VncConsole.js');
     const sessionInfo = await sessionManager.getSessionInfo(zoneName);
     
     if (!sessionInfo) {
@@ -276,6 +276,12 @@ const handleWebSocketUpgrade = async (request, socket, head) => {
     // Use proper WebSocket server upgrade
     wss.handleUpgrade(request, socket, head, (ws) => {
       console.log(`✅ WebSocket client connected for zone: ${zoneName}`);
+      
+      // Generate unique connection ID for tracking
+      const connectionId = crypto.randomUUID();
+      
+      // Track this connection
+      connectionTracker.addConnection(zoneName, connectionId);
       
       // Create connection to VNC server
       const backendUrl = `ws://127.0.0.1:${sessionInfo.port}/websockify`;
@@ -299,15 +305,29 @@ const handleWebSocketUpgrade = async (request, socket, head) => {
           }
         });
         
-        // Handle connection cleanup
+        // Handle connection cleanup with smart cleanup logic
+        const handleConnectionClose = () => {
+          console.log(`🔌 Client WebSocket closed for zone ${zoneName} (connection: ${connectionId})`);
+          
+          // Remove this connection from tracking
+          const isLastClient = connectionTracker.removeConnection(zoneName, connectionId);
+          
+          // Perform smart cleanup if this was the last client
+          performSmartCleanup(zoneName, isLastClient);
+          
+          // Close backend connection
+          if (backendWs.readyState === WebSocket.OPEN) {
+            backendWs.close();
+          }
+        };
+        
         ws.on('close', (code, reason) => {
-          console.log(`🔌 Client WebSocket closed for zone ${zoneName} (code: ${code})`);
-          backendWs.close();
+          handleConnectionClose();
         });
         
         ws.on('error', (err) => {
           console.error(`❌ Client WebSocket error for zone ${zoneName}:`, err.message);
-          backendWs.close();
+          handleConnectionClose();
         });
         
         backendWs.on('close', (code, reason) => {
@@ -327,6 +347,11 @@ const handleWebSocketUpgrade = async (request, socket, head) => {
       
       backendWs.on('error', (err) => {
         console.error(`❌ Failed to connect to VNC server for zone ${zoneName}:`, err.message);
+        
+        // Remove connection tracking on error
+        const isLastClient = connectionTracker.removeConnection(zoneName, connectionId);
+        performSmartCleanup(zoneName, isLastClient);
+        
         if (ws.readyState === WebSocket.OPEN) {
           ws.close(1002, 'VNC server connection failed');
         }
