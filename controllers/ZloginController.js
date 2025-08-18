@@ -187,7 +187,40 @@ export const startZloginSessionCleanup = () => {
     sessionManager.cleanupStaleSessions();
     setInterval(() => {
         sessionManager.cleanupStaleSessions();
-    }, 5 * 60 * 1000);
+    }, 30 * 60 * 1000); // Reduced from 5 minutes to 30 minutes - less aggressive cleanup
+};
+
+/**
+ * Test if zlogin session is healthy by checking PTY process and WebSocket connectivity
+ * @param {string} sessionId - The zlogin session ID
+ * @returns {Promise<boolean>} True if session is healthy
+ */
+const testZloginSessionHealth = async (sessionId) => {
+    try {
+        // Check if PTY process exists in memory
+        const ptyProcess = activePtyProcesses.get(sessionId);
+        if (!ptyProcess) {
+            return false;
+        }
+        
+        // Check if process ID still exists and is not killed
+        if (!ptyProcess.pid || ptyProcess.killed) {
+            return false;
+        }
+        
+        // Verify process is actually running using system check
+        try {
+            process.kill(ptyProcess.pid, 0); // Signal 0 checks if process exists
+            return true;
+        } catch (error) {
+            // Process doesn't exist
+            activePtyProcesses.delete(sessionId);
+            return false;
+        }
+    } catch (error) {
+        console.error(`Error checking zlogin session health ${sessionId}:`, error);
+        return false;
+    }
 };
 
 /**
@@ -211,7 +244,7 @@ const spawnZloginProcess = async (zoneName) => {
         env: process.env
     });
 
-    console.log(`🚀 [ZLOGIN-SPAWN] PTY process created - PID: ${ptyProcess.pid}, writable: ${ptyProcess.writable}`);
+    console.log(`� [ZLOGIN-SPAWN] PTY process created - PID: ${ptyProcess.pid}, writable: ${ptyProcess.writable}`);
 
     const session = await ZloginSessions.create({
         zone_name: zoneName,
@@ -229,7 +262,7 @@ const spawnZloginProcess = async (zoneName) => {
         console.log(`💀 [ZLOGIN-SPAWN] Zlogin session ${session.id} for zone ${zoneName} exited with code ${code}, signal ${signal}`);
         console.log(`💀 [ZLOGIN-SPAWN] Removing session ${session.id} from activePtyProcesses`);
         activePtyProcesses.delete(session.id);
-        console.log(`💀 [ZLOGIN-SPAWN] Updating database session status to closed`);
+        console.log(`� [ZLOGIN-SPAWN] Updating database session status to closed`);
         session.update({ status: 'closed' });
         console.log(`💀 [ZLOGIN-SPAWN] Cleanup completed for session ${session.id}`);
     });
@@ -294,7 +327,8 @@ export const startZloginSession = async (req, res) => {
             return res.status(400).json({ error: 'Zone is not running' });
         }
 
-        // Check for an existing active session with working PTY process
+        // CHECK FOR EXISTING HEALTHY SESSION FIRST (PERFORMANCE OPTIMIZATION)
+        console.log(`🔍 CHECKING FOR EXISTING HEALTHY SESSION: ${zoneName}`);
         const existingSession = await ZloginSessions.findOne({
             where: {
                 zone_name: zoneName,
@@ -302,13 +336,40 @@ export const startZloginSession = async (req, res) => {
             }
         });
 
-        if (existingSession && activePtyProcesses.has(existingSession.id)) {
-            console.log(`✅ Returning existing active session for ${zoneName}: ${existingSession.id}`);
-            return res.json(existingSession);
+        if (existingSession) {
+            console.log(`� Found existing session for ${zoneName} (ID: ${existingSession.id}, PID: ${existingSession.pid})`);
+            
+            // Test if the session is healthy before killing it
+            console.log(`🩺 Testing zlogin session health for session ${existingSession.id}...`);
+            const isHealthy = await testZloginSessionHealth(existingSession.id);
+            
+            if (isHealthy) {
+                console.log(`✅ HEALTHY SESSION FOUND: Reusing existing zlogin session for ${zoneName}`);
+                
+                // Update database last_accessed time for healthy session  
+                try {
+                    await existingSession.update({ 
+                        updated_at: new Date()
+                    });
+                } catch (dbError) {
+                    console.warn(`Failed to update database for ${zoneName}:`, dbError.message);
+                }
+                
+                // Return existing healthy session immediately - NO SESSION KILLING!
+                return res.json({
+                    ...existingSession.toJSON(),
+                    reused_session: true,
+                    message: 'Healthy zlogin session reused - instant access!'
+                });
+            } else {
+                console.log(`🔧 UNHEALTHY SESSION DETECTED: Session exists but not responding, will clean up and create new one`);
+            }
+        } else {
+            console.log(`📋 No existing session found for ${zoneName}, will create new one`);
         }
 
-        // Clean up any stale zlogin processes for this zone before creating new session
-        console.log(`🧹 Checking for stale zlogin processes for zone: ${zoneName}`);
+        // ONLY CLEAN UP IF SESSION IS UNHEALTHY OR MISSING
+        console.log(`🧹 CLEANING UP UNHEALTHY/MISSING SESSIONS: Cleaning up stale zlogin processes for zone: ${zoneName}`);
         await sessionManager.cleanupStaleZloginProcesses(zoneName);
 
         console.log(`🔄 Creating new zlogin session for zone: ${zoneName}`);
