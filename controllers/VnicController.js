@@ -355,7 +355,12 @@ export const createVNIC = async (req, res) => {
         console.log('🔧 VNIC Controller - Creating task with metadata:');
         console.log('   Raw metadata object:', metadataObject);
         
-        const metadataJson = await yj.stringifyAsync(metadataObject);
+        const metadataJson = await new Promise((resolve, reject) => {
+            yj.stringifyAsync(metadataObject, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
         console.log('   Stringified metadata:', metadataJson);
         console.log('   Metadata JSON length:', metadataJson.length);
 
@@ -477,9 +482,14 @@ export const deleteVNIC = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                vnic: vnic,
-                temporary: temporary === 'true' || temporary === true
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    vnic: vnic,
+                    temporary: temporary === 'true' || temporary === true
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -776,10 +786,15 @@ export const setVNICProperties = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                vnic: vnic,
-                properties: properties,
-                temporary: temporary
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    vnic: vnic,
+                    properties: properties,
+                    temporary: temporary
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

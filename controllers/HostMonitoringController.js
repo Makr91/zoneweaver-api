@@ -1340,7 +1340,12 @@ export const getCPUStats = async (req, res) => {
             for (const row of rows) {
                 if (row.per_core_data) {
                     try {
-                        row.dataValues.per_core_parsed = await yj.parseAsync(row.per_core_data);
+                        row.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
+                            yj.parseAsync(row.per_core_data, (err, result) => {
+                                if (err) reject(err);
+                                else resolve(result);
+                            });
+                        });
                     } catch (error) {
                         console.warn('Failed to parse per-core data:', error.message);
                         row.dataValues.per_core_parsed = null;

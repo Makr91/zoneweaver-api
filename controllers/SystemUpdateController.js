@@ -330,12 +330,17 @@ export const installUpdates = async (req, res) => {
             priority: TaskPriority.HIGH,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                packages: packages,
-                accept_licenses: accept_licenses,
-                be_name: be_name,
-                backup_be: backup_be,
-                reject_packages: reject_packages
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    packages: packages,
+                    accept_licenses: accept_licenses,
+                    be_name: be_name,
+                    backup_be: backup_be,
+                    reject_packages: reject_packages
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -518,9 +523,14 @@ export const refreshMetadata = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                full: full,
-                publishers: publishers
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    full: full,
+                    publishers: publishers
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

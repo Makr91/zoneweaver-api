@@ -280,9 +280,14 @@ export const createEtherstub = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                temporary: temporary
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    temporary: temporary
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -414,10 +419,15 @@ export const deleteEtherstub = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                etherstub: etherstub,
-                temporary: temporary === 'true' || temporary === true,
-                force: forceParam
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    etherstub: etherstub,
+                    temporary: temporary === 'true' || temporary === true,
+                    force: forceParam
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

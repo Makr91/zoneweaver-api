@@ -197,9 +197,14 @@ export const setHostname = async (req, res) => {
             priority: TaskPriority.HIGH,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                hostname: hostname,
-                apply_immediately: apply_immediately
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    hostname: hostname,
+                    apply_immediately: apply_immediately
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -490,15 +495,20 @@ export const createIPAddress = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                interface: iface,
-                type: type,
-                addrobj: addrobj,
-                address: address,
-                primary: primary,
-                wait: wait,
-                temporary: temporary,
-                down: down
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    interface: iface,
+                    type: type,
+                    addrobj: addrobj,
+                    address: address,
+                    primary: primary,
+                    wait: wait,
+                    temporary: temporary,
+                    down: down
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -606,9 +616,14 @@ export const deleteIPAddress = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                addrobj: addrobj,
-                release: release === 'true' || release === true
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    addrobj: addrobj,
+                    release: release === 'true' || release === true
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -674,8 +689,13 @@ export const enableIPAddress = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                addrobj: addrobj
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    addrobj: addrobj
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -730,8 +750,13 @@ export const disableIPAddress = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                addrobj: addrobj
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    addrobj: addrobj
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

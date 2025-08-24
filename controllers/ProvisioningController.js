@@ -48,10 +48,15 @@ const installPackage = async (packageName) => {
             priority: TaskPriority.NORMAL,
             created_by: 'provisioning_service',
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                packages: [packageName],
-                accept_licenses: true,
-                dry_run: false
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    packages: [packageName],
+                    accept_licenses: true,
+                    dry_run: false
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

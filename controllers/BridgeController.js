@@ -545,15 +545,20 @@ export const createBridge = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                protection: protection,
-                priority: priority,
-                max_age: max_age,
-                hello_time: hello_time,
-                forward_delay: forward_delay,
-                force_protocol: force_protocol,
-                links: links
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    protection: protection,
+                    priority: priority,
+                    max_age: max_age,
+                    hello_time: hello_time,
+                    forward_delay: forward_delay,
+                    force_protocol: force_protocol,
+                    links: links
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -679,9 +684,14 @@ export const deleteBridge = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                bridge: bridge,
-                force: forceParam
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    bridge: bridge,
+                    force: forceParam
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -807,10 +817,15 @@ export const modifyBridgeLinks = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                bridge: bridge,
-                operation: operation,
-                links: links
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    bridge: bridge,
+                    operation: operation,
+                    links: links
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

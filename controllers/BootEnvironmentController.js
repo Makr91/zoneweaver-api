@@ -399,14 +399,19 @@ export const createBootEnvironment = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                description: description,
-                source_be: source_be,
-                snapshot: snapshot,
-                activate: activate,
-                zpool: zpool,
-                properties: properties
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    description: description,
+                    source_be: source_be,
+                    snapshot: snapshot,
+                    activate: activate,
+                    zpool: zpool,
+                    properties: properties
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -494,10 +499,15 @@ export const deleteBootEnvironment = async (req, res) => {
             priority: TaskPriority.HIGH,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                force: force === 'true' || force === true,
-                snapshots: snapshots === 'true' || snapshots === true
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    force: force === 'true' || force === true,
+                    snapshots: snapshots === 'true' || snapshots === true
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -589,9 +599,14 @@ export const activateBootEnvironment = async (req, res) => {
             priority: TaskPriority.HIGH,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                temporary: temporary
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    temporary: temporary
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -680,10 +695,15 @@ export const mountBootEnvironment = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                mountpoint: mountpoint,
-                shared_mode: shared_mode
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    mountpoint: mountpoint,
+                    shared_mode: shared_mode
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -761,9 +781,14 @@ export const unmountBootEnvironment = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                force: force
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    force: force
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

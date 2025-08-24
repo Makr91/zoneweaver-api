@@ -832,7 +832,12 @@ class NetworkCollector {
 
                         // Store detailed LACP info as JSON
                         if (lacpInfo.length > 0) {
-                            aggr.lacp_detail = await yj.stringifyAsync(lacpInfo);
+                            aggr.lacp_detail = await new Promise((resolve, reject) => {
+                                yj.stringifyAsync(lacpInfo, (err, result) => {
+                                    if (err) reject(err);
+                                    else resolve(result);
+                                });
+                            });
                         }
                     } catch (lacpError) {
                         console.warn(`⚠️  Failed to get LACP info for ${aggr.link}:`, lacpError.message);
@@ -846,7 +851,12 @@ class NetworkCollector {
                     
                     // Store port details as JSON
                     if (ports.length > 0) {
-                        aggr.ports_detail = await yj.stringifyAsync(ports);
+                        aggr.ports_detail = await new Promise((resolve, reject) => {
+                            yj.stringifyAsync(ports, (err, result) => {
+                                if (err) reject(err);
+                                else resolve(result);
+                            });
+                        });
                     }
 
                 } catch (detailError) {

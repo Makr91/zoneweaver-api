@@ -394,12 +394,17 @@ export const createVlan = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                vid: vid,
-                link: link,
-                name: vlanName,
-                force: force,
-                temporary: temporary
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    vid: vid,
+                    link: link,
+                    name: vlanName,
+                    force: force,
+                    temporary: temporary
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -507,9 +512,14 @@ export const deleteVlan = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                vlan: vlan,
-                temporary: temporary === 'true' || temporary === true
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    vlan: vlan,
+                    temporary: temporary === 'true' || temporary === true
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

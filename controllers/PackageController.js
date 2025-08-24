@@ -545,11 +545,16 @@ export const installPackages = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                packages: packages,
-                accept_licenses: accept_licenses,
-                dry_run: dry_run,
-                be_name: be_name
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    packages: packages,
+                    accept_licenses: accept_licenses,
+                    dry_run: dry_run,
+                    be_name: be_name
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -634,10 +639,15 @@ export const uninstallPackages = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                packages: packages,
-                dry_run: dry_run,
-                be_name: be_name
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    packages: packages,
+                    dry_run: dry_run,
+                    be_name: be_name
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

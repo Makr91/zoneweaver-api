@@ -378,14 +378,19 @@ export const createAggregate = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                links: links,
-                policy: policy,
-                lacp_mode: lacp_mode,
-                lacp_timer: lacp_timer,
-                unicast_address: unicast_address,
-                temporary: temporary
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    links: links,
+                    policy: policy,
+                    lacp_mode: lacp_mode,
+                    lacp_timer: lacp_timer,
+                    unicast_address: unicast_address,
+                    temporary: temporary
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -492,9 +497,14 @@ export const deleteAggregate = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                aggregate: aggregate,
-                temporary: temporary === 'true' || temporary === true
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    aggregate: aggregate,
+                    temporary: temporary === 'true' || temporary === true
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -624,11 +634,16 @@ export const modifyAggregateLinks = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                aggregate: aggregate,
-                operation: operation,
-                links: links,
-                temporary: temporary
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    aggregate: aggregate,
+                    operation: operation,
+                    links: links,
+                    temporary: temporary
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

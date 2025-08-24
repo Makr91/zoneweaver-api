@@ -171,7 +171,12 @@ const handleWebSocketUpgrade = async (request, socket, head) => {
     if (zloginMatch) {
         const sessionId = zloginMatch[1];
         console.log(`🔌 [ZLOGIN-UPGRADE] Zlogin WebSocket upgrade request for session: ${sessionId}`);
-        console.log(`🔌 [ZLOGIN-UPGRADE] Request headers:`, await yj.stringifyAsync(request.headers));
+        console.log(`🔌 [ZLOGIN-UPGRADE] Request headers:`, await new Promise((resolve, reject) => {
+            yj.stringifyAsync(request.headers, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        }));
         console.log(`🔌 [ZLOGIN-UPGRADE] URL pathname: ${url.pathname}`);
         
         try {

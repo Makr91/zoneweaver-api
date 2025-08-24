@@ -401,19 +401,24 @@ export const addRepository = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                origin: origin,
-                mirrors: mirrors,
-                ssl_cert: ssl_cert,
-                ssl_key: ssl_key,
-                enabled: enabled,
-                sticky: sticky,
-                search_first: search_first,
-                search_before: search_before,
-                search_after: search_after,
-                properties: properties,
-                proxy: proxy
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    origin: origin,
+                    mirrors: mirrors,
+                    ssl_cert: ssl_cert,
+                    ssl_key: ssl_key,
+                    enabled: enabled,
+                    sticky: sticky,
+                    search_first: search_first,
+                    search_before: search_before,
+                    search_after: search_after,
+                    properties: properties,
+                    proxy: proxy
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -489,8 +494,13 @@ export const removeRepository = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -641,24 +651,29 @@ export const modifyRepository = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name,
-                origins_to_add: origins_to_add,
-                origins_to_remove: origins_to_remove,
-                mirrors_to_add: mirrors_to_add,
-                mirrors_to_remove: mirrors_to_remove,
-                ssl_cert: ssl_cert,
-                ssl_key: ssl_key,
-                enabled: enabled,
-                sticky: sticky,
-                search_first: search_first,
-                search_before: search_before,
-                search_after: search_after,
-                properties_to_set: properties_to_set,
-                properties_to_unset: properties_to_unset,
-                proxy: proxy,
-                reset_uuid: reset_uuid,
-                refresh: refresh
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name,
+                    origins_to_add: origins_to_add,
+                    origins_to_remove: origins_to_remove,
+                    mirrors_to_add: mirrors_to_add,
+                    mirrors_to_remove: mirrors_to_remove,
+                    ssl_cert: ssl_cert,
+                    ssl_key: ssl_key,
+                    enabled: enabled,
+                    sticky: sticky,
+                    search_first: search_first,
+                    search_before: search_before,
+                    search_after: search_after,
+                    properties_to_set: properties_to_set,
+                    properties_to_unset: properties_to_unset,
+                    proxy: proxy,
+                    reset_uuid: reset_uuid,
+                    refresh: refresh
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -731,8 +746,13 @@ export const enableRepository = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 
@@ -805,8 +825,13 @@ export const disableRepository = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: await yj.stringifyAsync({
-                name: name
+            metadata: await new Promise((resolve, reject) => {
+                yj.stringifyAsync({
+                    name: name
+                }, (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                });
             })
         });
 

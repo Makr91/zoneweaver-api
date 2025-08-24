@@ -436,7 +436,12 @@ const isVncEnabledAtBoot = async (zoneName) => {
         }
         
         // Parse the JSON configuration
-        const config = await yj.parseAsync(configResult.output);
+        const config = await new Promise((resolve, reject) => {
+            yj.parseAsync(configResult.output, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
         
         // Check if VNC is enabled: config.vnc.enabled === "on"
         const vncEnabled = config.vnc && config.vnc.enabled === "on";
