@@ -110,16 +110,18 @@ export const getVNICs = async (req, res) => {
         if (zone) whereClause.zone = zone;
         if (state) whereClause.state = state;
 
-        const { count, rows } = await NetworkInterfaces.findAndCountAll({
+        // Optimize: Remove expensive COUNT query, frontend doesn't need it
+        const rows = await NetworkInterfaces.findAll({
             where: whereClause,
+            attributes: ['id', 'link', 'class', 'state', 'zone', 'over', 'speed', 'duplex', 'scan_timestamp'], // Selective fetching
             limit: parseInt(limit),
             order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
         });
 
         res.json({
             vnics: rows,
-            total: count,
-            source: 'database'
+            source: 'database',
+            returned: rows.length
         });
 
     } catch (error) {

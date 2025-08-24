@@ -109,49 +109,18 @@ export const getAggregates = async (req, res) => {
         
         if (state) whereClause.state = state;
 
-        // Get distinct aggregates by getting the latest scan_timestamp for each link
-        const latestAggregates = await NetworkInterfaces.findAll({
-            attributes: [
-                'link',
-                [NetworkInterfaces.sequelize.fn('MAX', NetworkInterfaces.sequelize.col('scan_timestamp')), 'latest_scan']
-            ],
-            where: whereClause,
-            group: ['link'],
-            raw: true
-        });
-
-        if (latestAggregates.length === 0) {
-            return res.json({
-                aggregates: [],
-                total: 0,
-                source: 'database'
-            });
-        }
-
-        // Get the actual records for the latest timestamps
-        const linkTimestampPairs = latestAggregates.map(aggr => ({
-            link: aggr.link,
-            scan_timestamp: aggr.latest_scan
-        }));
-
+        // Optimize: Simple query with selective fetching, no expensive COUNT or complex OR queries
         const rows = await NetworkInterfaces.findAll({
-            where: {
-                ...whereClause,
-                [Op.or]: linkTimestampPairs.map(pair => ({
-                    link: pair.link,
-                    scan_timestamp: pair.scan_timestamp
-                }))
-            },
+            where: whereClause,
+            attributes: ['id', 'link', 'class', 'state', 'policy', 'scan_timestamp'], // Selective fetching
             limit: parseInt(limit),
-            order: [['link', 'ASC']]
+            order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
         });
-
-        const count = rows.length;
 
         res.json({
             aggregates: rows,
-            total: count,
-            source: 'database'
+            source: 'database',
+            returned: rows.length
         });
 
     } catch (error) {

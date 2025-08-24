@@ -24,10 +24,11 @@ let sequelizeOptions = {
     } : false,
     benchmark: true, // Enable query timing
     pool: {
-        max: 10,      // Increase from default 5 for better concurrency
-        min: 2,       // Always keep some connections ready
+        max: 25,      // Support 5+ concurrent users without saturation
+        min: 5,       // Keep more connections ready
         acquire: 30000, // 30s timeout to acquire connection
         idle: 10000,    // 10s timeout for idle connections
+        evict: 1000,    // Check for idle connections every 1s
     }
 };
 

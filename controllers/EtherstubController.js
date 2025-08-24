@@ -95,16 +95,18 @@ export const getEtherstubs = async (req, res) => {
         
         if (name) whereClause.link = name;
 
-        const { count, rows } = await NetworkInterfaces.findAndCountAll({
+        // Optimize: Remove expensive COUNT query, frontend doesn't need it
+        const rows = await NetworkInterfaces.findAll({
             where: whereClause,
+            attributes: ['id', 'link', 'class', 'state', 'scan_timestamp'], // Selective fetching
             limit: parseInt(limit),
             order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
         });
 
         res.json({
             etherstubs: rows,
-            total: count,
-            source: 'database'
+            source: 'database',
+            returned: rows.length
         });
 
     } catch (error) {

@@ -421,17 +421,104 @@ export const getNetworkUsage = async (req, res) => {
             console.log(`📊 Processing ${interfaceNames.length} interfaces in parallel...`);
             const parallelQuery = Date.now();
             
-            const samplesPerInterface = Math.max(1, Math.ceil(requestedLimit / interfaceNames.length));
-            
-            // Apply Promise.all pattern from research - parallel instead of sequential
+            // Apply Promise.all pattern - parallel instead of sequential
+            // Each interface gets UP TO the full requestedLimit (not divided across interfaces)
             const interfaceResults = await Promise.all(
                 interfaceNames.map(async (interfaceName) => {
-                    return NetworkUsage.findAll({
-                        where: { ...whereClause, link: interfaceName },
-                        attributes: selectedAttributes, // Selective fetching optimization
-                        order: [['scan_timestamp', 'DESC']], // Use index efficiently  
-                        limit: samplesPerInterface
-                    });
+                    const interfaceWhereClause = { ...whereClause, link: interfaceName };
+                    
+                    // Count records for this specific interface
+                    const interfaceCount = await NetworkUsage.count({ where: interfaceWhereClause });
+                    
+                    if (interfaceCount <= requestedLimit) {
+                        // No sampling needed - return all records for this interface
+                        return await NetworkUsage.findAll({
+                            where: interfaceWhereClause,
+                            attributes: selectedAttributes,
+                            order: [['scan_timestamp', 'ASC']]
+                        });
+                    } else {
+                        // Apply time-bucket sampling for this interface
+                        // Get time range for this interface
+                        const [oldestRecord, newestRecord] = await Promise.all([
+                            NetworkUsage.findOne({
+                                where: interfaceWhereClause,
+                                order: [['scan_timestamp', 'ASC']],
+                                attributes: ['scan_timestamp']
+                            }),
+                            NetworkUsage.findOne({
+                                where: interfaceWhereClause,
+                                order: [['scan_timestamp', 'DESC']],
+                                attributes: ['scan_timestamp']
+                            })
+                        ]);
+
+                        if (!oldestRecord || !newestRecord) {
+                            // Fallback for this interface
+                            return await NetworkUsage.findAll({
+                                where: interfaceWhereClause,
+                                attributes: selectedAttributes,
+                                order: [['scan_timestamp', 'ASC']],
+                                limit: requestedLimit
+                            });
+                        }
+
+                        // Calculate time buckets for this interface
+                        const startTime = new Date(oldestRecord.scan_timestamp);
+                        const endTime = new Date(newestRecord.scan_timestamp);
+                        const timeSpan = endTime.getTime() - startTime.getTime();
+                        const bucketDuration = timeSpan / requestedLimit;
+                        
+                        // Collect samples from time buckets for this interface
+                        const bucketPromises = [];
+                        for (let i = 0; i < requestedLimit; i++) {
+                            const bucketStart = new Date(startTime.getTime() + (i * bucketDuration));
+                            const bucketEnd = new Date(startTime.getTime() + ((i + 1) * bucketDuration));
+                            
+                            const bucketPromise = NetworkUsage.findOne({
+                                where: {
+                                    ...interfaceWhereClause,
+                                    scan_timestamp: {
+                                        [Op.gte]: bucketStart,
+                                        [Op.lt]: bucketEnd
+                                    }
+                                },
+                                attributes: selectedAttributes,
+                                order: [['scan_timestamp', 'ASC']]
+                            });
+                            
+                            bucketPromises.push(bucketPromise);
+                        }
+                        
+                        const bucketResults = await Promise.all(bucketPromises);
+                        
+                        // Filter out null results and sort by timestamp
+                        let interfaceRows = bucketResults
+                            .filter(record => record !== null)
+                            .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
+                        
+                        // Fill gaps if needed for this interface
+                        if (interfaceRows.length < requestedLimit * 0.7) {
+                            const existingTimestamps = new Set(interfaceRows.map(r => r.scan_timestamp.getTime()));
+                            const additionalNeeded = requestedLimit - interfaceRows.length;
+                            
+                            const additionalRecords = await NetworkUsage.findAll({
+                                where: interfaceWhereClause,
+                                attributes: selectedAttributes,
+                                order: [['scan_timestamp', 'ASC']],
+                                limit: additionalNeeded * 2
+                            });
+                            
+                            const additionalFiltered = additionalRecords.filter(record => 
+                                !existingTimestamps.has(record.scan_timestamp.getTime())
+                            ).slice(0, additionalNeeded);
+                            
+                            interfaceRows = [...interfaceRows, ...additionalFiltered]
+                                .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
+                        }
+                        
+                        return interfaceRows;
+                    }
                 })
             );
             
@@ -476,7 +563,7 @@ export const getNetworkUsage = async (req, res) => {
                 sampling: {
                     applied: true,
                     interfaceCount: interfaceNames.length,
-                    samplesPerInterface: samplesPerInterface,
+                    maxSamplesPerInterface: requestedLimit,
                     strategy: "optimized-parallel-sampling"
                 },
                 metadata: {
@@ -918,8 +1005,10 @@ export const getIPAddresses = async (req, res) => {
         if (ip_version) whereClause.ip_version = ip_version;
         if (state) whereClause.state = state;
 
-        const { count, rows } = await IPAddresses.findAndCountAll({
+        // Optimize: Remove expensive COUNT query, frontend doesn't need it
+        const rows = await IPAddresses.findAll({
             where: whereClause,
+            attributes: ['id', 'interface', 'address_object', 'ip_address', 'ip_version', 'state', 'scan_timestamp'], // Selective fetching
             limit: parseInt(limit),
             offset: parseInt(offset),
             order: [['scan_timestamp', 'DESC'], ['ip_version', 'ASC'], ['interface', 'ASC']]
@@ -927,11 +1016,10 @@ export const getIPAddresses = async (req, res) => {
 
         res.json({
             addresses: rows,
-            totalCount: count,
+            returned: rows.length,
             pagination: {
                 limit: parseInt(limit),
-                offset: parseInt(offset),
-                hasMore: count > (parseInt(offset) + parseInt(limit))
+                offset: parseInt(offset)
             }
         });
     } catch (error) {
@@ -1014,8 +1102,10 @@ export const getRoutes = async (req, res) => {
         if (is_default !== undefined) whereClause.is_default = is_default === 'true';
         if (destination) whereClause.destination = { [Op.like]: `%${destination}%` };
 
-        const { count, rows } = await Routes.findAndCountAll({
+        // Optimize: Remove expensive COUNT query, frontend doesn't need it
+        const rows = await Routes.findAll({
             where: whereClause,
+            attributes: ['id', 'destination', 'gateway', 'interface', 'ip_version', 'is_default', 'flags', 'scan_timestamp'], // Selective fetching
             limit: parseInt(limit),
             offset: parseInt(offset),
             order: [['scan_timestamp', 'DESC'], ['ip_version', 'ASC'], ['is_default', 'DESC'], ['destination', 'ASC']]
@@ -1023,11 +1113,10 @@ export const getRoutes = async (req, res) => {
 
         res.json({
             routes: rows,
-            totalCount: count,
+            returned: rows.length,
             pagination: {
                 limit: parseInt(limit),
-                offset: parseInt(offset),
-                hasMore: count > (parseInt(offset) + parseInt(limit))
+                offset: parseInt(offset)
             }
         });
     } catch (error) {
