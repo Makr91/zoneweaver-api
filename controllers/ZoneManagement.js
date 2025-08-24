@@ -268,7 +268,7 @@ export const getZoneDetails = async (req, res) => {
             
             if (configResult.success && configResult.output) {
                 try {
-                    const configData = await yj.parseAsync(configResult.output);
+                    const configData = JSON.parse(configResult.output);
                     
                     // For single zone requests, zadm returns the config directly (not wrapped)
                     if (configData && typeof configData === 'object' && configData.zonename === zoneName) {
@@ -447,7 +447,7 @@ export const getZoneConfig = async (req, res) => {
             }
         }
         
-        const config = await yj.parseAsync(configResult.output);
+        const config = JSON.parse(configResult.output);
         
         res.json({
             zone_name: zoneName,

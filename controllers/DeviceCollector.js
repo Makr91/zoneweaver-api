@@ -276,7 +276,7 @@ class DeviceCollector {
         const pptDevices = [];
         
         try {
-            const data = await yj.parseAsync(output);
+            const data = JSON.parse(output);
             if (data.devices && Array.isArray(data.devices)) {
                 data.devices.forEach(device => {
                     pptDevices.push({

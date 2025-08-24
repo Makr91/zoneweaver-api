@@ -318,7 +318,7 @@ class SystemMetricsCollector {
             const cpuUtilization = 100 - vmstatStats.cpu.idle_pct;
 
             // Serialize per-core data using non-blocking JSON
-            const perCoreDataJson = perCoreData.length > 0 ? await yj.stringifyAsync(perCoreData) : null;
+            const perCoreDataJson = perCoreData.length > 0 ? JSON.stringify(perCoreData) : null;
 
             const cpuData = {
                 host: this.hostname,
