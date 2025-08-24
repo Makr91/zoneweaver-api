@@ -5,7 +5,8 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { Op } from "sequelize";
+import { Op, Sequelize } from "sequelize";
+import sequelize from "../config/Database.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import NetworkStats from "../models/NetworkStatsModel.js";
 import NetworkUsage from "../models/NetworkUsageModel.js";
@@ -418,12 +419,11 @@ export const getNetworkUsage = async (req, res) => {
                 });
             }
 
-            // Step 2: Parallel sampling per interface - PERFORMANCE CRITICAL
-            console.log(`📊 Processing ${interfaceNames.length} interfaces in parallel...`);
+            // Step 2: Efficient modulo sampling per interface - PERFORMANCE OPTIMIZED
+            console.log(`📊 Processing ${interfaceNames.length} interfaces with modulo sampling...`);
             const parallelQuery = Date.now();
             
-            // Apply Promise.all pattern - parallel instead of sequential
-            // Each interface gets UP TO the full requestedLimit (not divided across interfaces)
+            // Apply efficient modulo sampling - one query per interface
             const interfaceResults = await Promise.all(
                 interfaceNames.map(async (interfaceName) => {
                     const interfaceWhereClause = { ...whereClause, link: interfaceName };
@@ -436,89 +436,23 @@ export const getNetworkUsage = async (req, res) => {
                         return await NetworkUsage.findAll({
                             where: interfaceWhereClause,
                             attributes: selectedAttributes,
-                            order: [['scan_timestamp', 'ASC']]
+                            order: [['scan_timestamp', 'DESC']]
                         });
                     } else {
-                        // Apply time-bucket sampling for this interface
-                        // Get time range for this interface
-                        const [oldestRecord, newestRecord] = await Promise.all([
-                            NetworkUsage.findOne({
-                                where: interfaceWhereClause,
-                                order: [['scan_timestamp', 'ASC']],
-                                attributes: ['scan_timestamp']
-                            }),
-                            NetworkUsage.findOne({
-                                where: interfaceWhereClause,
-                                order: [['scan_timestamp', 'DESC']],
-                                attributes: ['scan_timestamp']
-                            })
-                        ]);
-
-                        if (!oldestRecord || !newestRecord) {
-                            // Fallback for this interface
-                            return await NetworkUsage.findAll({
-                                where: interfaceWhereClause,
-                                attributes: selectedAttributes,
-                                order: [['scan_timestamp', 'ASC']],
-                                limit: requestedLimit
-                            });
-                        }
-
-                        // Calculate time buckets for this interface
-                        const startTime = new Date(oldestRecord.scan_timestamp);
-                        const endTime = new Date(newestRecord.scan_timestamp);
-                        const timeSpan = endTime.getTime() - startTime.getTime();
-                        const bucketDuration = timeSpan / requestedLimit;
+                        // Apply efficient modulo sampling for representative distribution
+                        const modulo = Math.max(1, Math.floor(interfaceCount / requestedLimit));
                         
-                        // Collect samples from time buckets for this interface
-                        const bucketPromises = [];
-                        for (let i = 0; i < requestedLimit; i++) {
-                            const bucketStart = new Date(startTime.getTime() + (i * bucketDuration));
-                            const bucketEnd = new Date(startTime.getTime() + ((i + 1) * bucketDuration));
-                            
-                            const bucketPromise = NetworkUsage.findOne({
-                                where: {
-                                    ...interfaceWhereClause,
-                                    scan_timestamp: {
-                                        [Op.gte]: bucketStart,
-                                        [Op.lt]: bucketEnd
-                                    }
-                                },
-                                attributes: selectedAttributes,
-                                order: [['scan_timestamp', 'ASC']]
-                            });
-                            
-                            bucketPromises.push(bucketPromise);
-                        }
-                        
-                        const bucketResults = await Promise.all(bucketPromises);
-                        
-                        // Filter out null results and sort by timestamp
-                        let interfaceRows = bucketResults
-                            .filter(record => record !== null)
-                            .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
-                        
-                        // Fill gaps if needed for this interface
-                        if (interfaceRows.length < requestedLimit * 0.7) {
-                            const existingTimestamps = new Set(interfaceRows.map(r => r.scan_timestamp.getTime()));
-                            const additionalNeeded = requestedLimit - interfaceRows.length;
-                            
-                            const additionalRecords = await NetworkUsage.findAll({
-                                where: interfaceWhereClause,
-                                attributes: selectedAttributes,
-                                order: [['scan_timestamp', 'ASC']],
-                                limit: additionalNeeded * 2
-                            });
-                            
-                            const additionalFiltered = additionalRecords.filter(record => 
-                                !existingTimestamps.has(record.scan_timestamp.getTime())
-                            ).slice(0, additionalNeeded);
-                            
-                            interfaceRows = [...interfaceRows, ...additionalFiltered]
-                                .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
-                        }
-                        
-                        return interfaceRows;
+                        return await NetworkUsage.findAll({
+                            where: {
+                                ...interfaceWhereClause,
+                                [Op.and]: [
+                                    sequelize.literal(`(id % ${modulo}) = 0`)
+                                ]
+                            },
+                            attributes: selectedAttributes,
+                            order: [['scan_timestamp', 'DESC']],
+                            limit: requestedLimit
+                        });
                     }
                 })
             );
