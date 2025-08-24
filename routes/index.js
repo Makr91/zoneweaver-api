@@ -287,7 +287,7 @@ router.post('/terminal/start', verifyApiKey, startTerminalSession);
 router.get('/terminal/sessions', verifyApiKey, listTerminalSessions);
 router.get('/terminal/sessions/:terminal_cookie/health', verifyApiKey, checkSessionHealth);
 router.get('/terminal/sessions/:sessionId', verifyApiKey, getTerminalSessionInfo);
-router.delete('/terminal/sessions/:sessionId/stop', verifyApiKey, stop2TerminalSession);
+router.delete('/terminal/sessions/:sessionId/stop', verifyApiKey, stopTerminalSession);
 
 // Zlogin Routes
 router.post('/zones/:zoneName/zlogin/start', verifyApiKey, startZloginSession);
