@@ -376,20 +376,158 @@ export const getNetworkUsage = async (req, res) => {
     try {
         const { limit = 100, since, link, host } = req.query;
         const hostname = host || os.hostname();
+        const requestedLimit = parseInt(limit);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
         if (link) whereClause.link = { [Op.like]: `%${link}%` };
 
-        const { count, rows } = await NetworkUsage.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['bandwidth_mbps', 'DESC']]
-        });
+        // Step 1: Count total records to determine if we need sampling
+        const totalCount = await NetworkUsage.count({ where: whereClause });
+        
+        let rows = [];
+        let samplingApplied = false;
+        let samplingRatio = 1;
+
+        if (totalCount <= requestedLimit) {
+            // No sampling needed - return all records
+            rows = await NetworkUsage.findAll({
+                where: whereClause,
+                order: [['scan_timestamp', 'ASC']] // Chronological for better charting
+            });
+        } else {
+            // Step 2: Apply hybrid sampling for large datasets
+            samplingRatio = Math.ceil(totalCount / requestedLimit);
+            samplingApplied = true;
+            
+            console.log(`📊 Network Usage Sampling: ${totalCount} records → ${requestedLimit} samples (step: ${samplingRatio})`);
+            
+            // Use time-bucket sampling approach with pure Sequelize
+            console.log(`📊 Applying time-bucket sampling for better distribution`);
+            
+            // Get first and last timestamps to calculate time buckets
+            const [oldestRecord, newestRecord] = await Promise.all([
+                NetworkUsage.findOne({
+                    where: whereClause,
+                    order: [['scan_timestamp', 'ASC']],
+                    attributes: ['scan_timestamp']
+                }),
+                NetworkUsage.findOne({
+                    where: whereClause,
+                    order: [['scan_timestamp', 'DESC']],
+                    attributes: ['scan_timestamp']
+                })
+            ]);
+
+            if (!oldestRecord || !newestRecord) {
+                // Fallback to simple query if we can't determine time range
+                rows = await NetworkUsage.findAll({
+                    where: whereClause,
+                    order: [['scan_timestamp', 'ASC']],
+                    limit: requestedLimit
+                });
+            } else {
+                // Calculate time buckets for even distribution
+                const startTime = new Date(oldestRecord.scan_timestamp);
+                const endTime = new Date(newestRecord.scan_timestamp);
+                const timeSpan = endTime.getTime() - startTime.getTime();
+                const bucketDuration = timeSpan / requestedLimit; // ms per bucket
+                
+                console.log(`🗓️  Time range: ${timeSpan / 1000 / 60} minutes, ${requestedLimit} buckets of ${bucketDuration / 1000} seconds each`);
+                
+                // Collect one sample from each time bucket
+                const bucketPromises = [];
+                for (let i = 0; i < requestedLimit; i++) {
+                    const bucketStart = new Date(startTime.getTime() + (i * bucketDuration));
+                    const bucketEnd = new Date(startTime.getTime() + ((i + 1) * bucketDuration));
+                    
+                    // Get one record from this time bucket
+                    const bucketPromise = NetworkUsage.findOne({
+                        where: {
+                            ...whereClause,
+                            scan_timestamp: {
+                                [Op.gte]: bucketStart,
+                                [Op.lt]: bucketEnd
+                            }
+                        },
+                        order: [['scan_timestamp', 'ASC']] // Get earliest in bucket for consistent sampling
+                    });
+                    
+                    bucketPromises.push(bucketPromise);
+                }
+                
+                // Execute all bucket queries in parallel
+                const bucketResults = await Promise.all(bucketPromises);
+                
+                // Filter out null results and sort by timestamp
+                rows = bucketResults
+                    .filter(record => record !== null)
+                    .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
+                
+                console.log(`✅ Time-bucket sampling: ${rows.length} records from ${requestedLimit} time buckets`);
+                
+                // If we didn't get enough samples, fill in with additional records
+                if (rows.length < requestedLimit * 0.7) {
+                    console.log(`⚠️  Got ${rows.length} from time buckets, filling gaps with additional samples`);
+                    
+                    // Get existing timestamps to avoid duplicates
+                    const existingTimestamps = new Set(rows.map(r => r.scan_timestamp.getTime()));
+                    
+                    // Get additional records to fill the gaps
+                    const additionalNeeded = requestedLimit - rows.length;
+                    const additionalRecords = await NetworkUsage.findAll({
+                        where: whereClause,
+                        order: [['scan_timestamp', 'ASC']],
+                        limit: additionalNeeded * 2 // Get extra to account for duplicates
+                    });
+                    
+                    // Add non-duplicate records
+                    const additionalFiltered = additionalRecords.filter(record => 
+                        !existingTimestamps.has(record.scan_timestamp.getTime())
+                    ).slice(0, additionalNeeded);
+                    
+                    rows = [...rows, ...additionalFiltered]
+                        .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
+                }
+            }
+        }
+
+        // Calculate time span for metadata
+        let timeSpan = null;
+        if (rows.length > 1) {
+            const firstRecord = new Date(rows[0].scan_timestamp);
+            const lastRecord = new Date(rows[rows.length - 1].scan_timestamp);
+            timeSpan = {
+                start: firstRecord.toISOString(),
+                end: lastRecord.toISOString(),
+                durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60))
+            };
+        }
+
+        // Add some useful metadata about active interfaces
+        const activeInterfaces = rows.reduce((acc, row) => {
+            if (row.rx_mbps > 0 || row.tx_mbps > 0) {
+                acc.add(row.link);
+            }
+            return acc;
+        }, new Set()).size;
 
         res.json({
             usage: rows,
-            totalCount: count
+            totalCount: totalCount,
+            returnedCount: rows.length,
+            sampling: {
+                applied: samplingApplied,
+                originalCount: totalCount,
+                requestedLimit: requestedLimit,
+                samplingRatio: samplingRatio,
+                timeDistributed: samplingApplied
+            },
+            metadata: {
+                timeSpan: timeSpan,
+                activeInterfacesCount: activeInterfaces,
+                queryOptimized: true
+            }
         });
     } catch (error) {
         console.error('Error getting network usage:', error);

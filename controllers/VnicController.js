@@ -96,54 +96,10 @@ export const getVNICs = async (req, res) => {
             over, 
             zone, 
             state, 
-            limit = 100, 
-            live = false 
+            limit = 100
         } = req.query;
 
-        if (live === 'true' || live === true) {
-            // Get live data directly from dladm
-            const result = await executeCommand('pfexec dladm show-vnic -p -o link,over,speed,macaddress,macaddrtype,vid,zone');
-            
-            if (!result.success) {
-                return res.status(500).json({
-                    error: 'Failed to get live VNIC data',
-                    details: result.error
-                });
-            }
-
-            const vnics = result.output.split('\n')
-                .filter(line => line.trim())
-                .map(line => {
-                    const [link, overLink, speed, macaddress, macaddrtype, vid, vnicZone] = line.split(':');
-                    
-                    return {
-                        link,
-                        class: 'vnic',
-                        over: overLink,
-                        speed: speed ? parseInt(speed) : null,
-                        macaddress,
-                        macaddrtype,
-                        vid: vid ? parseInt(vid) : null,
-                        zone: vnicZone,
-                        source: 'live'
-                    };
-                })
-                .filter(vnic => {
-                    if (over && vnic.over !== over) return false;
-                    if (zone && vnic.zone !== zone) return false;
-                    // Note: live query doesn't include state, would need separate command
-                    return true;
-                })
-                .slice(0, parseInt(limit));
-
-            return res.json({
-                vnics,
-                total: vnics.length,
-                source: 'live'
-            });
-        }
-
-        // Get data from database (monitoring data)
+        // Always get data from database (monitoring data)
         const hostname = os.hostname();
         const whereClause = { 
             host: hostname,
@@ -212,37 +168,8 @@ export const getVNICs = async (req, res) => {
 export const getVNICDetails = async (req, res) => {
     try {
         const { vnic } = req.params;
-        const { live = false } = req.query;
 
-        if (live === 'true' || live === true) {
-            // Get live data directly from dladm
-            const result = await executeCommand(`pfexec dladm show-vnic ${vnic} -p -o link,over,speed,macaddress,macaddrtype,vid,zone`);
-            
-            if (!result.success) {
-                return res.status(404).json({
-                    error: `VNIC ${vnic} not found`,
-                    details: result.error
-                });
-            }
-
-            const [link, over, speed, macaddress, macaddrtype, vid, zone] = result.output.split(':');
-            
-            const vnicDetails = {
-                link,
-                class: 'vnic',
-                over,
-                speed: speed ? parseInt(speed) : null,
-                macaddress,
-                macaddrtype,
-                vid: vid ? parseInt(vid) : null,
-                zone,
-                source: 'live'
-            };
-
-            return res.json(vnicDetails);
-        }
-
-        // Get data from database
+        // Always get data from database
         const hostname = os.hostname();
         const vnicData = await NetworkInterfaces.findOne({
             where: {

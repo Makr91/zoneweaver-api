@@ -83,46 +83,10 @@ export const getEtherstubs = async (req, res) => {
     try {
         const { 
             name, 
-            limit = 100, 
-            live = false 
+            limit = 100
         } = req.query;
 
-        if (live === 'true' || live === true) {
-            // Get live data directly from dladm
-            let command = 'pfexec dladm show-etherstub -p';
-            if (name) {
-                command += ` ${name}`;
-            }
-
-            const result = await executeCommand(command);
-            
-            if (!result.success) {
-                return res.status(500).json({
-                    error: 'Failed to get live etherstub data',
-                    details: result.error
-                });
-            }
-
-            const etherstubs = result.output ? result.output.split('\n')
-                .filter(line => line.trim())
-                .map(line => {
-                    // etherstub output format is just the name
-                    return {
-                        link: line.trim(),
-                        class: 'etherstub',
-                        source: 'live'
-                    };
-                })
-                .slice(0, parseInt(limit)) : [];
-
-            return res.json({
-                etherstubs,
-                total: etherstubs.length,
-                source: 'live'
-            });
-        }
-
-        // Get data from database (monitoring data)
+        // Always get data from database (monitoring data)
         const hostname = os.hostname();
         const whereClause = { 
             host: hostname,
@@ -195,51 +159,8 @@ export const getEtherstubs = async (req, res) => {
 export const getEtherstubDetails = async (req, res) => {
     try {
         const { etherstub } = req.params;
-        const { live = false, show_vnics = false } = req.query;
 
-        if (live === 'true' || live === true) {
-            // Check if etherstub exists
-            const stubResult = await executeCommand(`pfexec dladm show-etherstub ${etherstub}`);
-            
-            if (!stubResult.success) {
-                return res.status(404).json({
-                    error: `Etherstub ${etherstub} not found`,
-                    details: stubResult.error
-                });
-            }
-
-            const etherstubDetails = {
-                link: etherstub,
-                class: 'etherstub',
-                source: 'live'
-            };
-
-            // Get VNICs on this etherstub if requested
-            if (show_vnics === 'true' || show_vnics === true) {
-                const vnicResult = await executeCommand(`pfexec dladm show-vnic -l ${etherstub} -p -o link,over,macaddress,vid,zone`);
-                
-                if (vnicResult.success && vnicResult.output) {
-                    const vnics = vnicResult.output.split('\n')
-                        .filter(line => line.trim())
-                        .map(line => {
-                            const [link, over, macaddress, vid, zone] = line.split(':');
-                            return {
-                                link,
-                                over,
-                                macaddress,
-                                vid: vid || null,
-                                zone: zone || null
-                            };
-                        });
-                    
-                    etherstubDetails.vnics = vnics;
-                }
-            }
-
-            return res.json(etherstubDetails);
-        }
-
-        // Get data from database
+        // Always get data from database
         const hostname = os.hostname();
         const etherstubData = await NetworkInterfaces.findOne({
             where: {
