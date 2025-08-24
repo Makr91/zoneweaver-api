@@ -1100,30 +1100,110 @@ export const getRoutes = async (req, res) => {
  *         description: Failed to get disk I/O statistics
  */
 export const getDiskIOStats = async (req, res) => {
+    const startTime = Date.now();
+    console.log('🚀 Disk I/O query started:', { limit: req.query.limit, per_device: req.query.per_device });
+    
     try {
-        const { limit = 100, since, pool, device, host } = req.query;
+        const { limit = 100, since, pool, device, host, per_device = 'true' } = req.query;
         const hostname = host || os.hostname();
+        const requestedLimit = parseInt(limit);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
         if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
         if (device) whereClause.device_name = { [Op.like]: `%${device}%` };
 
-        const { count, rows } = await DiskIOStats.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['pool', 'ASC'], ['device_name', 'ASC']]
-        });
+        // Performance optimization: Use selective attribute fetching
+        const selectedAttributes = [
+            'id', 'device_name', 'pool', 'scan_timestamp', 'read_ops', 'write_ops',
+            'read_bandwidth', 'write_bandwidth', 'read_bandwidth_bytes', 'write_bandwidth_bytes',
+            'read_ops_per_sec', 'write_ops_per_sec', 'alloc', 'free'
+        ];
 
-        res.json({
-            diskio: rows,
-            totalCount: count
-        });
+        if (per_device === 'true') {
+            console.log('📊 Using optimized per-device sampling...');
+            
+            // Step 1: Get distinct devices efficiently
+            const deviceQuery = Date.now();
+            const distinctDevices = await DiskIOStats.findAll({
+                where: whereClause,
+                attributes: ['device_name'],
+                group: ['device_name'],
+                raw: true
+            });
+            console.log(`📊 Device discovery: ${Date.now() - deviceQuery}ms`);
+
+            const deviceNames = distinctDevices.map(row => row.device_name);
+            
+            if (deviceNames.length === 0) {
+                return res.json({
+                    diskio: [],
+                    queryTime: `${Date.now() - startTime}ms`
+                });
+            }
+
+            // Step 2: Efficient parallel sampling per device
+            console.log(`📊 Processing ${deviceNames.length} devices with parallel sampling...`);
+            const parallelQuery = Date.now();
+            
+            // Fetch records directly for each device - one query per device
+            const deviceResults = await Promise.all(
+                deviceNames.map(async (deviceName) => {
+                    const deviceWhereClause = { ...whereClause, device_name: deviceName };
+                    
+                    // Fetch the most recent records for this device
+                    return await DiskIOStats.findAll({
+                        where: deviceWhereClause,
+                        attributes: selectedAttributes,
+                        limit: requestedLimit,
+                        order: [['scan_timestamp', 'DESC']]
+                    });
+                })
+            );
+            
+            console.log(`📊 Parallel device queries: ${Date.now() - parallelQuery}ms`);
+
+            // Step 3: Combine and sort results
+            const allRows = deviceResults
+                .flat()
+                .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
+
+            const queryTime = Date.now() - startTime;
+            console.log(`✅ Per-device query completed in ${queryTime}ms: ${allRows.length} records from ${deviceNames.length} devices`);
+
+            res.json({
+                diskio: allRows,
+                queryTime: `${queryTime}ms`
+            });
+
+        } else {
+            // Simple non-per-device query for comparison/fallback
+            console.log('📊 Using simple query approach...');
+            
+            const simpleQuery = Date.now();
+            const rows = await DiskIOStats.findAll({
+                where: whereClause,
+                attributes: selectedAttributes,
+                limit: requestedLimit,
+                order: [['scan_timestamp', 'DESC'], ['pool', 'ASC'], ['device_name', 'ASC']]
+            });
+            console.log(`📊 Simple query: ${Date.now() - simpleQuery}ms`);
+
+            const queryTime = Date.now() - startTime;
+            console.log(`✅ Simple query completed in ${queryTime}ms: ${rows.length} records`);
+
+            res.json({
+                diskio: rows,
+                queryTime: `${queryTime}ms`
+            });
+        }
     } catch (error) {
-        console.error('Error getting disk I/O statistics:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Disk I/O query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get disk I/O statistics',
-            details: error.message 
+            details: error.message,
+            queryTime: `${queryTime}ms`
         });
     }
 };
@@ -1326,32 +1406,56 @@ export const getPoolIOStats = async (req, res) => {
  *         description: Failed to get ARC statistics
  */
 export const getARCStats = async (req, res) => {
+    const startTime = Date.now();
+    console.log('🚀 ARC stats query started:', { limit: req.query.limit });
+    
     try {
         const { limit = 100, since, host } = req.query;
         const hostname = host || os.hostname();
+        const requestedLimit = parseInt(limit);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
 
-        const { count, rows } = await ARCStats.findAndCountAll({
+        // Performance optimization: Use selective attribute fetching
+        const selectedAttributes = [
+            'id', 'scan_timestamp', 'arc_size', 'arc_target_size', 'arc_min_size', 'arc_max_size',
+            'arc_meta_used', 'arc_meta_limit', 'mru_size', 'mfu_size', 'data_size', 'metadata_size',
+            'hits', 'misses', 'demand_data_hits', 'demand_data_misses', 'hit_ratio', 
+            'data_demand_efficiency', 'data_prefetch_efficiency', 'l2_hits', 'l2_misses', 'l2_size'
+        ];
+
+        // Simple optimized query (no grouping needed for system-wide ARC stats)
+        console.log('📊 Using optimized ARC query...');
+        const simpleQuery = Date.now();
+        
+        const rows = await ARCStats.findAll({
             where: whereClause,
-            limit: parseInt(limit),
+            attributes: selectedAttributes,
+            limit: requestedLimit,
             order: [['scan_timestamp', 'DESC']]
         });
+        
+        console.log(`📊 ARC query: ${Date.now() - simpleQuery}ms`);
 
         // Get the latest ARC stats for quick reference
         const latest = rows.length > 0 ? rows[0] : null;
 
+        const queryTime = Date.now() - startTime;
+        console.log(`✅ ARC query completed in ${queryTime}ms: ${rows.length} records`);
+
         res.json({
             arc: rows,
-            totalCount: count,
-            latest: latest
+            latest: latest,
+            queryTime: `${queryTime}ms`
         });
     } catch (error) {
-        console.error('Error getting ARC statistics:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ ARC stats query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get ARC statistics',
-            details: error.message 
+            details: error.message,
+            queryTime: `${queryTime}ms`
         });
     }
 };
