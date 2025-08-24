@@ -9,6 +9,7 @@ import { exec, execSync } from "child_process";
 import util from "util";
 import os from "os";
 import { Op } from "sequelize";
+import yj from "yieldable-json";
 import config from "../config/ConfigLoader.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import NetworkStats from "../models/NetworkStatsModel.js";
@@ -831,7 +832,7 @@ class NetworkCollector {
 
                         // Store detailed LACP info as JSON
                         if (lacpInfo.length > 0) {
-                            aggr.lacp_detail = JSON.stringify(lacpInfo);
+                            aggr.lacp_detail = await yj.stringifyAsync(lacpInfo);
                         }
                     } catch (lacpError) {
                         console.warn(`⚠️  Failed to get LACP info for ${aggr.link}:`, lacpError.message);
@@ -845,7 +846,7 @@ class NetworkCollector {
                     
                     // Store port details as JSON
                     if (ports.length > 0) {
-                        aggr.ports_detail = JSON.stringify(ports);
+                        aggr.ports_detail = await yj.stringifyAsync(ports);
                     }
 
                 } catch (detailError) {
