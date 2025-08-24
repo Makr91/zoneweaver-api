@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.1.15](https://github.com/Makr91/zoneweaver-api/compare/v0.1.14...v0.1.15) (2025-08-24)
+
+
+### Bug Fixes
+
+* disk io sampling ([6046b53](https://github.com/Makr91/zoneweaver-api/commit/6046b53a024d86cc712a981f462a6e03223d4e09))
+* disk io sampling v2 arc diskio ([dca723e](https://github.com/Makr91/zoneweaver-api/commit/dca723ea8d959e700ca4d6b7fe24f54535f2101e))
+* disk io sampling v2 arc diskio cpu and memory ([51ce841](https://github.com/Makr91/zoneweaver-api/commit/51ce841d331ed051c670f3fadfe603ebd2c74fa8))
+* disk io sampling v4 arc diskio cpu and memory ([b756635](https://github.com/Makr91/zoneweaver-api/commit/b75663590c7f16236d41124ac95265ba0d3cdc54))
+* disk io sampling v5 arc diskio cpu and memory ([d7ec71d](https://github.com/Makr91/zoneweaver-api/commit/d7ec71dfe3af594bc47ed22900b063026a6f882d))
+* disk io sampling v6 arc diskio cpu and memory ([5ddd013](https://github.com/Makr91/zoneweaver-api/commit/5ddd0132cfe73f911fbe0ee1bbccd672da1c1220))
+* host terminal session management ([4426991](https://github.com/Makr91/zoneweaver-api/commit/4426991c7d7b89ba33fd3e135d0463bf74ef4966))
+* host terminal session management ([5208a0e](https://github.com/Makr91/zoneweaver-api/commit/5208a0ec19817b2294164f27546081b913eb35ee))
+* host terminal session management v2 ([55a53c5](https://github.com/Makr91/zoneweaver-api/commit/55a53c590431fba202d9772063759b7e276106c8))
+* host terminal session management v3 ([d64f2c7](https://github.com/Makr91/zoneweaver-api/commit/d64f2c747f4c1497ad625f53469905ab6f9443a9))
+* host terminal session management v4 ([e9b87ad](https://github.com/Makr91/zoneweaver-api/commit/e9b87ad1bee6d9ed70cc24e28057de21f85f1c62))
+* host terminal session management v4 ([0e18c56](https://github.com/Makr91/zoneweaver-api/commit/0e18c56b27dfe4ba6f3f6f2891e5c65eb7b36d7f))
+* host terminal session management v5 ([02c67af](https://github.com/Makr91/zoneweaver-api/commit/02c67af137904afaa6eb2d7ebf6f96b846037e00))
+* host terminal session management v6 ([a775cdb](https://github.com/Makr91/zoneweaver-api/commit/a775cdbe7809267cefceaa138e4103598f91a26d))
+* networking usage sampling and disable live query results ([cd09bb8](https://github.com/Makr91/zoneweaver-api/commit/cd09bb8d49a24a0f5ff28f2398db1094d1fdab27))
+* networking usage sampling and disable live query results v10 ([6a1c21a](https://github.com/Makr91/zoneweaver-api/commit/6a1c21a48a38a7432188c15a4d717f8ae58d94df))
+* networking usage sampling and disable live query results v11 ([bef64ac](https://github.com/Makr91/zoneweaver-api/commit/bef64ac9987a58fc2cbc554b26e1496b7e2ffb19))
+* networking usage sampling and disable live query results v12 ([9a6608b](https://github.com/Makr91/zoneweaver-api/commit/9a6608bf1ae5e6504780a58feff595948c5f6132))
+* networking usage sampling and disable live query results v13 ([cfc7fc7](https://github.com/Makr91/zoneweaver-api/commit/cfc7fc78da0cb2d6354943a2f549472d09552b06))
+* networking usage sampling and disable live query results v14 ([328f090](https://github.com/Makr91/zoneweaver-api/commit/328f090bf622045dd0cb687d15a68d1196762a47))
+* networking usage sampling and disable live query results v15 ([4caa72d](https://github.com/Makr91/zoneweaver-api/commit/4caa72d9364cbf9b07aa20251f8e2b4d1cfe6371))
+* networking usage sampling and disable live query results v16 ([8c42284](https://github.com/Makr91/zoneweaver-api/commit/8c42284582a69b792a23d7818f59fb3b4565496c))
+* networking usage sampling and disable live query results v17 ([d0d2044](https://github.com/Makr91/zoneweaver-api/commit/d0d2044d90c799e2a4e183107c1278fdf9f60ad1))
+* networking usage sampling and disable live query results v18 ([e8e0745](https://github.com/Makr91/zoneweaver-api/commit/e8e07450820d6e052ec91ec99777ef1f464131cf))
+* networking usage sampling and disable live query results v2 ([1e07a2c](https://github.com/Makr91/zoneweaver-api/commit/1e07a2c7a487f100b749cb0a603882349465f8a9))
+* networking usage sampling and disable live query results v20 -- async json parse stringify ([aedb459](https://github.com/Makr91/zoneweaver-api/commit/aedb45935f3931a0526fb72084881186705d954c))
+* networking usage sampling and disable live query results v21-- async json parse stringify ([6c302d7](https://github.com/Makr91/zoneweaver-api/commit/6c302d77db6b4b287bbbdddfe45d8b3a4b7da5a8))
+* networking usage sampling and disable live query results v22-- async json parse stringify ([1d95954](https://github.com/Makr91/zoneweaver-api/commit/1d959545296ce7a2e72dcafcfc77b1f9ada04f91))
+* networking usage sampling and disable live query results v22-- async json parse stringify v2 ([1129ff6](https://github.com/Makr91/zoneweaver-api/commit/1129ff697cac4003b757bd6476ba4fcaf2806142))
+* networking usage sampling and disable live query results v24-- async json parse stringify ([27a38bc](https://github.com/Makr91/zoneweaver-api/commit/27a38bcc57155a3435fb0f748fa85f974167436e))
+* networking usage sampling and disable live query results v3 ([7e19291](https://github.com/Makr91/zoneweaver-api/commit/7e1929160e59941c4176b5cc5f815d3f0e99ad91))
+* networking usage sampling and disable live query results v4 ([80e9ff8](https://github.com/Makr91/zoneweaver-api/commit/80e9ff8f055eee63b97072f58e871d292dcd9e03))
+* networking usage sampling and disable live query results v5 ([9b801a0](https://github.com/Makr91/zoneweaver-api/commit/9b801a05a9fb29b274185d2d32bb24a168ccde27))
+* networking usage sampling and disable live query results v6 ([d65f39e](https://github.com/Makr91/zoneweaver-api/commit/d65f39ed8228425c94283671fba5bc5eaf21255f))
+* networking usage sampling and disable live query results v7 ([c897eb8](https://github.com/Makr91/zoneweaver-api/commit/c897eb8ee1c7911e08e5f9ea48cc3f45bb503ab7))
+* networking usage sampling and disable live query results v8 ([9c9684e](https://github.com/Makr91/zoneweaver-api/commit/9c9684e2219907434820592682cf6751304308a6))
+* networking usage sampling and disable live query results v9 ([09bf180](https://github.com/Makr91/zoneweaver-api/commit/09bf18026aeeb366e0a8651e824787f9ea8a4d4c))
+* vnc session management ([9a0ae71](https://github.com/Makr91/zoneweaver-api/commit/9a0ae71d04d054456ee1b054aa106bb17ca23a5e))
+
 ## [0.1.14](https://github.com/Makr91/zoneweaver-api/compare/v0.1.13...v0.1.14) (2025-08-14)
 
 
