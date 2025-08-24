@@ -9,6 +9,7 @@ import { execSync } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
+import yj from "yieldable-json";
 import os from "os";
 
 /**
@@ -279,7 +280,7 @@ export const createEtherstub = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 temporary: temporary
             })
@@ -413,7 +414,7 @@ export const deleteEtherstub = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 etherstub: etherstub,
                 temporary: temporary === 'true' || temporary === true,
                 force: forceParam

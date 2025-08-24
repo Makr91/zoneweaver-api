@@ -7,6 +7,7 @@
 
 import { execSync, spawn } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
+import yj from "yieldable-json";
 import os from "os";
 
 /**
@@ -544,7 +545,7 @@ export const installPackages = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 packages: packages,
                 accept_licenses: accept_licenses,
                 dry_run: dry_run,
@@ -633,7 +634,7 @@ export const uninstallPackages = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 packages: packages,
                 dry_run: dry_run,
                 be_name: be_name

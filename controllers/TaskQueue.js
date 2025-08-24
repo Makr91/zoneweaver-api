@@ -1477,7 +1477,7 @@ const executeDeleteVNICTask = async (metadataJson) => {
  */
 const executeSetVNICPropertiesTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { vnic, properties, temporary } = metadata;
 
         let command = `pfexec dladm set-linkprop`;
@@ -1522,7 +1522,7 @@ const executeSetVNICPropertiesTask = async (metadataJson) => {
  */
 const executeCreateAggregateTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, links, policy, lacp_mode, lacp_timer, unicast_address, temporary } = metadata;
 
         let command = `pfexec dladm create-aggr`;
@@ -1586,7 +1586,7 @@ const executeDeleteAggregateTask = async (metadataJson) => {
     console.log('🔧 === AGGREGATE DELETION TASK STARTING ===');
     
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { aggregate, temporary } = metadata;
 
         console.log('📋 Aggregate deletion task parameters:');
@@ -1682,7 +1682,7 @@ const executeDeleteAggregateTask = async (metadataJson) => {
  */
 const executeModifyAggregateLinksTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { aggregate, operation, links, temporary } = metadata;
 
         let command = `pfexec dladm ${operation}-aggr`;
@@ -1722,7 +1722,7 @@ const executeModifyAggregateLinksTask = async (metadataJson) => {
  */
 const executeCreateEtherstubTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, temporary } = metadata;
 
         let command = `pfexec dladm create-etherstub`;
@@ -1757,7 +1757,7 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
     console.log('🔧 === ETHERSTUB DELETION TASK STARTING ===');
     
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { etherstub, temporary, force } = metadata;
 
         console.log('📋 Etherstub deletion task parameters:');
@@ -1870,7 +1870,7 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
  */
 const executeCreateVlanTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { vid, link, name, force, temporary } = metadata;
 
         let command = `pfexec dladm create-vlan`;
@@ -1905,7 +1905,7 @@ const executeCreateVlanTask = async (metadataJson) => {
  */
 const executeDeleteVlanTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { vlan, temporary } = metadata;
 
         let command = `pfexec dladm delete-vlan`;
@@ -1943,7 +1943,7 @@ const executeDeleteVlanTask = async (metadataJson) => {
  */
 const executeCreateBridgeTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, protection, priority, max_age, hello_time, forward_delay, force_protocol, links } = metadata;
 
         let command = `pfexec dladm create-bridge`;
@@ -2012,7 +2012,7 @@ const executeDeleteBridgeTask = async (metadataJson) => {
     console.log('🔧 === BRIDGE DELETION TASK STARTING ===');
     
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { bridge, force } = metadata;
 
         console.log('📋 Bridge deletion task parameters:');
@@ -2119,7 +2119,7 @@ const executeDeleteBridgeTask = async (metadataJson) => {
  */
 const executeModifyBridgeLinksTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { bridge, operation, links } = metadata;
 
         let command = `pfexec dladm ${operation}-bridge`;
@@ -2158,7 +2158,7 @@ const executeModifyBridgeLinksTask = async (metadataJson) => {
  */
 const executePkgInstallTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { packages, accept_licenses, dry_run, be_name } = metadata;
 
         let command = `pfexec pkg install`;
@@ -2204,7 +2204,7 @@ const executePkgInstallTask = async (metadataJson) => {
  */
 const executePkgUninstallTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { packages, dry_run, be_name } = metadata;
 
         let command = `pfexec pkg uninstall`;
@@ -2246,7 +2246,7 @@ const executePkgUninstallTask = async (metadataJson) => {
  */
 const executePkgUpdateTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { packages, accept_licenses, be_name, backup_be, reject_packages } = metadata;
 
         let command = `pfexec pkg update`;
@@ -2303,7 +2303,7 @@ const executePkgUpdateTask = async (metadataJson) => {
  */
 const executePkgRefreshTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { full, publishers } = metadata;
 
         let command = `pfexec pkg refresh`;
@@ -2345,7 +2345,7 @@ const executePkgRefreshTask = async (metadataJson) => {
  */
 const executeBeadmCreateTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, description, source_be, snapshot, activate, zpool, properties } = metadata;
 
         let command = `pfexec beadm create`;
@@ -2404,7 +2404,7 @@ const executeBeadmCreateTask = async (metadataJson) => {
  */
 const executeBeadmDeleteTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, force, snapshots } = metadata;
 
         let command = `pfexec beadm destroy`;
@@ -2446,7 +2446,7 @@ const executeBeadmDeleteTask = async (metadataJson) => {
  */
 const executeBeadmActivateTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, temporary } = metadata;
 
         let command = `pfexec beadm activate`;
@@ -2484,7 +2484,7 @@ const executeBeadmActivateTask = async (metadataJson) => {
  */
 const executeBeadmMountTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, mountpoint, shared_mode } = metadata;
 
         let command = `pfexec beadm mount`;
@@ -2522,7 +2522,7 @@ const executeBeadmMountTask = async (metadataJson) => {
  */
 const executeBeadmUnmountTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, force } = metadata;
 
         let command = `pfexec beadm unmount`;
@@ -2560,7 +2560,7 @@ const executeBeadmUnmountTask = async (metadataJson) => {
  */
 const executeRepositoryAddTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, origin, mirrors, ssl_cert, ssl_key, enabled, sticky, search_first, search_before, search_after, properties, proxy } = metadata;
 
         let command = `pfexec pkg set-publisher`;
@@ -2646,7 +2646,7 @@ const executeRepositoryAddTask = async (metadataJson) => {
  */
 const executeRepositoryRemoveTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name } = metadata;
 
         const command = `pfexec pkg unset-publisher ${name}`;
@@ -2677,7 +2677,7 @@ const executeRepositoryRemoveTask = async (metadataJson) => {
  */
 const executeRepositoryModifyTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name, origins_to_add, origins_to_remove, mirrors_to_add, mirrors_to_remove, ssl_cert, ssl_key, enabled, sticky, search_first, search_before, search_after, properties_to_set, properties_to_unset, proxy, reset_uuid, refresh } = metadata;
 
         let command = `pfexec pkg set-publisher`;
@@ -2795,7 +2795,7 @@ const executeRepositoryModifyTask = async (metadataJson) => {
  */
 const executeRepositoryEnableTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name } = metadata;
 
         const command = `pfexec pkg set-publisher --enable ${name}`;
@@ -2826,7 +2826,7 @@ const executeRepositoryEnableTask = async (metadataJson) => {
  */
 const executeRepositoryDisableTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { name } = metadata;
 
         const command = `pfexec pkg set-publisher --disable ${name}`;

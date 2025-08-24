@@ -9,6 +9,7 @@ import { execSync } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
+import yj from "yieldable-json";
 import os from "os";
 
 /**
@@ -544,7 +545,7 @@ export const createBridge = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 protection: protection,
                 priority: priority,
@@ -678,7 +679,7 @@ export const deleteBridge = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 bridge: bridge,
                 force: forceParam
             })
@@ -806,7 +807,7 @@ export const modifyBridgeLinks = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 bridge: bridge,
                 operation: operation,
                 links: links

@@ -2,6 +2,7 @@ import { exec } from 'child_process';
 import util from 'util';
 import config from '../config/ConfigLoader.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import yj from 'yieldable-json';
 
 const execAsync = util.promisify(exec);
 
@@ -47,7 +48,7 @@ const installPackage = async (packageName) => {
             priority: TaskPriority.NORMAL,
             created_by: 'provisioning_service',
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 packages: [packageName],
                 accept_licenses: true,
                 dry_run: false

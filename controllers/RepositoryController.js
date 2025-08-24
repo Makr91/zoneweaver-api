@@ -7,6 +7,7 @@
 
 import { spawn } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
+import yj from "yieldable-json";
 import os from "os";
 
 /**
@@ -400,7 +401,7 @@ export const addRepository = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 origin: origin,
                 mirrors: mirrors,
@@ -488,7 +489,7 @@ export const removeRepository = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name
             })
         });
@@ -640,7 +641,7 @@ export const modifyRepository = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 origins_to_add: origins_to_add,
                 origins_to_remove: origins_to_remove,
@@ -730,7 +731,7 @@ export const enableRepository = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name
             })
         });
@@ -804,7 +805,7 @@ export const disableRepository = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name
             })
         });

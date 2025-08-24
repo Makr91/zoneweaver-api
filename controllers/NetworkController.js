@@ -10,6 +10,7 @@ import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import IPAddresses from "../models/IPAddressModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
+import yj from "yieldable-json";
 import os from "os";
 import fs from "fs";
 
@@ -196,7 +197,7 @@ export const setHostname = async (req, res) => {
             priority: TaskPriority.HIGH,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 hostname: hostname,
                 apply_immediately: apply_immediately
             })
@@ -489,7 +490,7 @@ export const createIPAddress = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 interface: iface,
                 type: type,
                 addrobj: addrobj,
@@ -605,7 +606,7 @@ export const deleteIPAddress = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 addrobj: addrobj,
                 release: release === 'true' || release === true
             })
@@ -673,7 +674,7 @@ export const enableIPAddress = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 addrobj: addrobj
             })
         });
@@ -729,7 +730,7 @@ export const disableIPAddress = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 addrobj: addrobj
             })
         });

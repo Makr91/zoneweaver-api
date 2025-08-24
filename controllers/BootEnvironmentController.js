@@ -7,6 +7,7 @@
 
 import { spawn } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
+import yj from "yieldable-json";
 import os from "os";
 
 /**
@@ -398,7 +399,7 @@ export const createBootEnvironment = async (req, res) => {
             priority: TaskPriority.MEDIUM,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 description: description,
                 source_be: source_be,
@@ -493,7 +494,7 @@ export const deleteBootEnvironment = async (req, res) => {
             priority: TaskPriority.HIGH,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 force: force === 'true' || force === true,
                 snapshots: snapshots === 'true' || snapshots === true
@@ -588,7 +589,7 @@ export const activateBootEnvironment = async (req, res) => {
             priority: TaskPriority.HIGH,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 temporary: temporary
             })
@@ -679,7 +680,7 @@ export const mountBootEnvironment = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 mountpoint: mountpoint,
                 shared_mode: shared_mode
@@ -760,7 +761,7 @@ export const unmountBootEnvironment = async (req, res) => {
             priority: TaskPriority.LOW,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 name: name,
                 force: force
             })

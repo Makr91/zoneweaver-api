@@ -9,6 +9,7 @@ import { execSync } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
+import yj from "yieldable-json";
 import os from "os";
 
 /**
@@ -354,7 +355,7 @@ export const createVNIC = async (req, res) => {
         console.log('🔧 VNIC Controller - Creating task with metadata:');
         console.log('   Raw metadata object:', metadataObject);
         
-        const metadataJson = JSON.stringify(metadataObject);
+        const metadataJson = await yj.stringifyAsync(metadataObject);
         console.log('   Stringified metadata:', metadataJson);
         console.log('   Metadata JSON length:', metadataJson.length);
 
@@ -476,7 +477,7 @@ export const deleteVNIC = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 vnic: vnic,
                 temporary: temporary === 'true' || temporary === true
             })
@@ -775,7 +776,7 @@ export const setVNICProperties = async (req, res) => {
             priority: TaskPriority.NORMAL,
             created_by: created_by,
             status: 'pending',
-            metadata: JSON.stringify({
+            metadata: await yj.stringifyAsync({
                 vnic: vnic,
                 properties: properties,
                 temporary: temporary
