@@ -1512,10 +1512,9 @@ export const getCPUStats = async (req, res) => {
     
     try {
         const { limit = 100, since, include_cores = false } = req.query;
-        const hostname = os.hostname();
         const requestedLimit = parseInt(limit);
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
 
         // Performance optimization: Use selective attribute fetching (actual column names)
@@ -1632,16 +1631,15 @@ export const getMemoryStats = async (req, res) => {
     
     try {
         const { limit = 100, since } = req.query;
-        const hostname = os.hostname();
         const requestedLimit = parseInt(limit);
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
 
-        // Performance optimization: Use selective attribute fetching (actual column names)
+        // Performance optimization: Use selective attribute fetching (correct field names from SystemMetricsCollector)
         const selectedAttributes = [
-            'id', 'scan_timestamp', 'total_memory', 'used_memory', 'free_memory', 'available_memory', 
-            'memory_utilization_pct', 'swap_total', 'swap_used', 'swap_free', 'swap_utilization_pct'
+            'id', 'scan_timestamp', 'total_memory_bytes', 'used_memory_bytes', 'free_memory_bytes', 'available_memory_bytes', 
+            'memory_utilization_pct', 'swap_total_bytes', 'swap_used_bytes', 'swap_free_bytes', 'swap_utilization_pct'
         ];
 
         console.log('📊 Using optimized memory query...');
