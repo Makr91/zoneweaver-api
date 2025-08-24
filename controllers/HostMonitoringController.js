@@ -21,6 +21,7 @@ import PoolIOStats from "../models/PoolIOStatsModel.js";
 import HostInfo from "../models/HostInfoModel.js";
 import CPUStats from "../models/CPUStatsModel.js";
 import MemoryStats from "../models/MemoryStatsModel.js";
+import yj from "yieldable-json";
 import { getHostMonitoringService } from "./HostMonitoringService.js";
 import { logTiming } from "../middleware/RequestTiming.js";
 import os from "os";
@@ -1360,16 +1361,16 @@ export const getCPUStats = async (req, res) => {
 
         // Parse per-core data if requested
         if (include_cores === 'true' || include_cores === true) {
-            rows.forEach(row => {
+            for (const row of rows) {
                 if (row.per_core_data) {
                     try {
-                        row.dataValues.per_core_parsed = JSON.parse(row.per_core_data);
+                        row.dataValues.per_core_parsed = await yj.parseAsync(row.per_core_data);
                     } catch (error) {
                         console.warn('Failed to parse per-core data:', error.message);
                         row.dataValues.per_core_parsed = null;
                     }
                 }
-            });
+            }
         }
 
         // Get the latest CPU stats for quick reference

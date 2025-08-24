@@ -9,6 +9,7 @@ import { exec, execSync } from "child_process";
 import util from "util";
 import os from "os";
 import { Op } from "sequelize";
+import yj from "yieldable-json";
 import config from "../config/ConfigLoader.js";
 import PCIDevices from "../models/PCIDeviceModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
@@ -271,11 +272,11 @@ class DeviceCollector {
      * @param {string} output - Command output from pptadm list -j -a
      * @returns {Array} Parsed PPT device data
      */
-    parsePPTOutput(output) {
+    async parsePPTOutput(output) {
         const pptDevices = [];
         
         try {
-            const data = JSON.parse(output);
+            const data = await yj.parseAsync(output);
             if (data.devices && Array.isArray(data.devices)) {
                 data.devices.forEach(device => {
                     pptDevices.push({
@@ -323,12 +324,12 @@ class DeviceCollector {
             let pptDevices = [];
             try {
                 const { stdout: pptOutput } = await execProm('pfexec pptadm list -j -a', { timeout });
-                pptDevices = this.parsePPTOutput(pptOutput);
+                pptDevices = await this.parsePPTOutput(pptOutput);
             } catch (error) {
                 // Fallback to text format
                 try {
                     const { stdout: pptOutput } = await execProm('pfexec pptadm list -a', { timeout });
-                    pptDevices = this.parsePPTOutput(pptOutput);
+                    pptDevices = await this.parsePPTOutput(pptOutput);
                 } catch (fallbackError) {
                     console.warn('⚠️  Failed to get PPT status:', fallbackError.message);
                     return;

@@ -9,6 +9,7 @@ import config from '../config/ConfigLoader.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import yj from 'yieldable-json';
 
 // Get config path from environment variable (set by SMF) or fallback to local config
 const getConfigPath = () => process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
@@ -110,7 +111,7 @@ export const getSettings = async (req, res) => {
             return res.status(500).json({ error: 'Failed to get settings', details: 'Configuration not loaded' });
         }
 
-        const sanitizedConfig = JSON.parse(JSON.stringify(currentConfig));
+        const sanitizedConfig = await yj.parseAsync(JSON.stringify(currentConfig));
 
         // Remove sensitive fields that should not be exposed to the frontend
         if (sanitizedConfig.database) {

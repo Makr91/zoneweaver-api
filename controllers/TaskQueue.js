@@ -1084,7 +1084,7 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
     console.log('🔧 === IP ADDRESS DELETION TASK STARTING ===');
     
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { addrobj, release } = metadata;
 
         console.log('📋 IP address deletion task parameters:');
@@ -1185,7 +1185,7 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
  */
 const executeEnableIPAddressTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { addrobj } = metadata;
 
         const result = await executeCommand(`pfexec ipadm enable-addr ${addrobj}`);
@@ -1214,7 +1214,7 @@ const executeEnableIPAddressTask = async (metadataJson) => {
  */
 const executeDisableIPAddressTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { addrobj } = metadata;
 
         const result = await executeCommand(`pfexec ipadm disable-addr ${addrobj}`);
@@ -1256,7 +1256,7 @@ const executeCreateVNICTask = async (metadataJson) => {
 
         let metadata;
         try {
-            metadata = JSON.parse(metadataJson);
+            metadata = await yj.parseAsync(metadataJson);
             console.log('✅ Successfully parsed metadata:', metadata);
         } catch (parseError) {
             console.error('❌ Failed to parse metadata JSON:', parseError.message);
@@ -1381,7 +1381,7 @@ const executeDeleteVNICTask = async (metadataJson) => {
     console.log('🔧 === VNIC DELETION TASK STARTING ===');
     
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { vnic, temporary } = metadata;
 
         console.log('📋 VNIC deletion task parameters:');

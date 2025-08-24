@@ -6,6 +6,7 @@ import net from "net";
 import db from "../config/Database.js";
 import fs from 'fs';
 import path from 'path';
+import yj from "yieldable-json";
 
 /**
  * @fileoverview VNC Console controller for Zoneweaver API
@@ -435,7 +436,7 @@ const isVncEnabledAtBoot = async (zoneName) => {
         }
         
         // Parse the JSON configuration
-        const config = JSON.parse(configResult.output);
+        const config = await yj.parseAsync(configResult.output);
         
         // Check if VNC is enabled: config.vnc.enabled === "on"
         const vncEnabled = config.vnc && config.vnc.enabled === "on";
