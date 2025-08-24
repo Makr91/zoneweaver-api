@@ -1507,21 +1507,44 @@ export const getARCStats = async (req, res) => {
  *         description: Failed to get CPU statistics
  */
 export const getCPUStats = async (req, res) => {
+    const startTime = Date.now();
+    console.log('🚀 CPU stats query started:', { limit: req.query.limit, include_cores: req.query.include_cores });
+    
     try {
         const { limit = 100, since, host, include_cores = false } = req.query;
         const hostname = host || os.hostname();
+        const requestedLimit = parseInt(limit);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
 
-        const { count, rows } = await CPUStats.findAndCountAll({
+        // Performance optimization: Use selective attribute fetching
+        const selectedAttributes = [
+            'id', 'scan_timestamp', 'cpu_utilization', 'load_avg_1min', 'load_avg_5min', 'load_avg_15min',
+            'user_cpu', 'system_cpu', 'idle_cpu', 'wait_cpu', 'context_switches', 'interrupts', 
+            'system_calls', 'processes_running', 'processes_blocked', 'cpu_count'
+        ];
+
+        // Add per_core_data if requested
+        if (include_cores === 'true' || include_cores === true) {
+            selectedAttributes.push('per_core_data');
+        }
+
+        console.log('📊 Using optimized CPU query...');
+        const simpleQuery = Date.now();
+        
+        const rows = await CPUStats.findAll({
             where: whereClause,
-            limit: parseInt(limit),
+            attributes: selectedAttributes,
+            limit: requestedLimit,
             order: [['scan_timestamp', 'DESC']]
         });
+        
+        console.log(`📊 CPU query: ${Date.now() - simpleQuery}ms`);
 
         // Parse per-core data if requested
         if (include_cores === 'true' || include_cores === true) {
+            const parseStart = Date.now();
             for (const row of rows) {
                 if (row.per_core_data) {
                     try {
@@ -1537,21 +1560,27 @@ export const getCPUStats = async (req, res) => {
                     }
                 }
             }
+            console.log(`📊 Per-core parsing: ${Date.now() - parseStart}ms`);
         }
 
         // Get the latest CPU stats for quick reference
         const latest = rows.length > 0 ? rows[0] : null;
 
+        const queryTime = Date.now() - startTime;
+        console.log(`✅ CPU query completed in ${queryTime}ms: ${rows.length} records`);
+
         res.json({
             cpu: rows,
-            totalCount: count,
-            latest: latest
+            latest: latest,
+            queryTime: `${queryTime}ms`
         });
     } catch (error) {
-        console.error('Error getting CPU statistics:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ CPU stats query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get CPU statistics',
-            details: error.message 
+            details: error.message,
+            queryTime: `${queryTime}ms`
         });
     }
 };
@@ -1597,32 +1626,54 @@ export const getCPUStats = async (req, res) => {
  *         description: Failed to get memory statistics
  */
 export const getMemoryStats = async (req, res) => {
+    const startTime = Date.now();
+    console.log('🚀 Memory stats query started:', { limit: req.query.limit });
+    
     try {
         const { limit = 100, since, host } = req.query;
         const hostname = host || os.hostname();
+        const requestedLimit = parseInt(limit);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
 
-        const { count, rows } = await MemoryStats.findAndCountAll({
+        // Performance optimization: Use selective attribute fetching
+        const selectedAttributes = [
+            'id', 'scan_timestamp', 'total_memory', 'used_memory', 'free_memory', 'cached_memory',
+            'buffered_memory', 'shared_memory', 'available_memory', 'memory_utilization',
+            'total_swap', 'used_swap', 'free_swap', 'swap_utilization', 'page_ins', 'page_outs'
+        ];
+
+        console.log('📊 Using optimized memory query...');
+        const simpleQuery = Date.now();
+        
+        const rows = await MemoryStats.findAll({
             where: whereClause,
-            limit: parseInt(limit),
+            attributes: selectedAttributes,
+            limit: requestedLimit,
             order: [['scan_timestamp', 'DESC']]
         });
+        
+        console.log(`📊 Memory query: ${Date.now() - simpleQuery}ms`);
 
         // Get the latest memory stats for quick reference
         const latest = rows.length > 0 ? rows[0] : null;
 
+        const queryTime = Date.now() - startTime;
+        console.log(`✅ Memory query completed in ${queryTime}ms: ${rows.length} records`);
+
         res.json({
             memory: rows,
-            totalCount: count,
-            latest: latest
+            latest: latest,
+            queryTime: `${queryTime}ms`
         });
     } catch (error) {
-        console.error('Error getting memory statistics:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Memory stats query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get memory statistics',
-            details: error.message 
+            details: error.message,
+            queryTime: `${queryTime}ms`
         });
     }
 };
@@ -1766,16 +1817,29 @@ export const getSystemLoadMetrics = async (req, res) => {
 };
 
 export const getMonitoringSummary = async (req, res) => {
+    const startTime = Date.now();
+    console.log('🚀 Monitoring summary query started');
+    
     try {
         const hostname = os.hostname();
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        // Get host info
+        console.log('📊 Using optimized summary query...');
+        
+        // Step 1: Get host info with selective attributes
+        const hostInfoQuery = Date.now();
         const hostInfo = await HostInfo.findOne({
-            where: { host: hostname }
+            where: { host: hostname },
+            attributes: [
+                'network_acct_enabled', 'network_scan_errors', 'storage_scan_errors', 'platform', 
+                'uptime', 'last_network_scan', 'last_network_stats_scan', 'last_network_usage_scan', 
+                'last_storage_scan'
+            ]
         });
+        console.log(`📊 Host info query: ${Date.now() - hostInfoQuery}ms`);
 
-        // Get record counts for the last 24 hours
+        // Step 2: Parallel count queries for the last 24 hours
+        const countQuery = Date.now();
         const [
             interfaceCount,
             statsCount,
@@ -1835,8 +1899,10 @@ export const getMonitoringSummary = async (req, res) => {
                 }
             })
         ]);
+        console.log(`📊 Count queries: ${Date.now() - countQuery}ms`);
 
-        // Get latest timestamps
+        // Step 3: Parallel latest timestamp queries with minimal attributes
+        const latestQuery = Date.now();
         const [
             latestInterface,
             latestStats,
@@ -1888,6 +1954,10 @@ export const getMonitoringSummary = async (req, res) => {
                 attributes: ['scan_timestamp']
             })
         ]);
+        console.log(`📊 Latest timestamp queries: ${Date.now() - latestQuery}ms`);
+
+        const queryTime = Date.now() - startTime;
+        console.log(`✅ Summary query completed in ${queryTime}ms`);
 
         res.json({
             host: hostname,
@@ -1923,13 +1993,16 @@ export const getMonitoringSummary = async (req, res) => {
                 zfsPools: latestPool?.scan_timestamp,
                 zfsDatasets: latestDataset?.scan_timestamp,
                 disks: latestDisk?.scan_timestamp
-            }
+            },
+            queryTime: `${queryTime}ms`
         });
     } catch (error) {
-        console.error('Error getting monitoring summary:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Summary query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get monitoring summary',
-            details: error.message 
+            details: error.message,
+            queryTime: `${queryTime}ms`
         });
     }
 };
