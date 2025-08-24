@@ -439,37 +439,18 @@ export const getNetworkUsage = async (req, res) => {
             console.log(`📊 Processing ${interfaceNames.length} interfaces with modulo sampling...`);
             const parallelQuery = Date.now();
             
-            // Apply efficient modulo sampling - one query per interface
+            // Fetch records directly for each interface - one query per interface
             const interfaceResults = await Promise.all(
                 interfaceNames.map(async (interfaceName) => {
                     const interfaceWhereClause = { ...whereClause, link: interfaceName };
                     
-                    // Count records for this specific interface
-                    const interfaceCount = await NetworkUsage.count({ where: interfaceWhereClause });
-                    
-                    if (interfaceCount <= requestedLimit) {
-                        // No sampling needed - return all records for this interface
-                        return await NetworkUsage.findAll({
-                            where: interfaceWhereClause,
-                            attributes: selectedAttributes,
-                            order: [['scan_timestamp', 'DESC']]
-                        });
-                    } else {
-                        // Apply efficient modulo sampling for representative distribution
-                        const modulo = Math.max(1, Math.floor(interfaceCount / requestedLimit));
-                        
-                        return await NetworkUsage.findAll({
-                            where: {
-                                ...interfaceWhereClause,
-                                [Op.and]: [
-                                    sequelize.literal(`(id % ${modulo}) = 0`)
-                                ]
-                            },
-                            attributes: selectedAttributes,
-                            order: [['scan_timestamp', 'DESC']],
-                            limit: requestedLimit
-                        });
-                    }
+                    // Fetch the most recent records for this interface
+                    return await NetworkUsage.findAll({
+                        where: interfaceWhereClause,
+                        attributes: selectedAttributes,
+                        limit: requestedLimit,
+                        order: [['scan_timestamp', 'DESC']]
+                    });
                 })
             );
             

@@ -8,6 +8,7 @@
 import { exec } from "child_process";
 import util from "util";
 import os from "os";
+import yj from "yieldable-json";
 import config from "../config/ConfigLoader.js";
 import CPUStats from "../models/CPUStatsModel.js";
 import MemoryStats from "../models/MemoryStatsModel.js";
@@ -316,6 +317,9 @@ class SystemMetricsCollector {
             // Calculate overall CPU utilization
             const cpuUtilization = 100 - vmstatStats.cpu.idle_pct;
 
+            // Serialize per-core data using non-blocking JSON
+            const perCoreDataJson = perCoreData.length > 0 ? await yj.stringifyAsync(perCoreData) : null;
+
             const cpuData = {
                 host: this.hostname,
                 cpu_count: cpuCount,
@@ -335,7 +339,7 @@ class SystemMetricsCollector {
                 page_faults: vmstatStats.memory.minor_faults,
                 page_ins: vmstatStats.memory.page_in,
                 page_outs: vmstatStats.memory.page_out,
-                per_core_data: perCoreData.length > 0 ? JSON.stringify(perCoreData) : null,
+                per_core_data: perCoreDataJson,
                 scan_timestamp: new Date()
             };
 
