@@ -447,7 +447,12 @@ const executeDiscoverTask = async () => {
             return { success: false, error: `Failed to get system zones: ${result.error}` };
         }
         
-        const systemZones = await yj.parseAsync(result.output);
+        const systemZones = await new Promise((resolve, reject) => {
+            yj.parseAsync(result.output, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
         const systemZoneNames = Object.keys(systemZones);
         
         // Get all zones from database
@@ -979,7 +984,12 @@ export const getTaskStats = async (req, res) => {
  */
 const executeSetHostnameTask = async (metadataJson) => {
     try {
-        const metadata = await yj.parseAsync(metadataJson);
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
         const { hostname, apply_immediately } = metadata;
 
         // Write to /etc/nodename

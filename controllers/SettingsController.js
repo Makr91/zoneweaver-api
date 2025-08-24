@@ -111,7 +111,17 @@ export const getSettings = async (req, res) => {
             return res.status(500).json({ error: 'Failed to get settings', details: 'Configuration not loaded' });
         }
 
-        const sanitizedConfig = await yj.parseAsync(await yj.stringifyAsync(currentConfig));
+        const sanitizedConfig = await new Promise((resolve, reject) => {
+            yj.stringifyAsync(currentConfig, (err, jsonString) => {
+                if (err) reject(err);
+                else {
+                    yj.parseAsync(jsonString, (err, result) => {
+                        if (err) reject(err);
+                        else resolve(result);
+                    });
+                }
+            });
+        });
 
         // Remove sensitive fields that should not be exposed to the frontend
         if (sanitizedConfig.database) {
