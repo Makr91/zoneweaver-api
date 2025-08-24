@@ -109,10 +109,13 @@ export const getAggregates = async (req, res) => {
         
         if (state) whereClause.state = state;
 
-        // Optimize: Simple query with selective fetching, no expensive COUNT or complex OR queries
+        // Optimize: Simple query with selective fetching, include all frontend-required fields
         const rows = await NetworkInterfaces.findAll({
             where: whereClause,
-            attributes: ['id', 'link', 'class', 'state', 'policy', 'scan_timestamp'], // Selective fetching
+            attributes: [
+                'id', 'link', 'class', 'state', 'policy', 'scan_timestamp',
+                'over', 'lacp_activity', 'lacp_timeout', 'flags', 'name'
+            ], // Complete frontend requirements including critical React-Flow connections
             limit: parseInt(limit),
             order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
         });

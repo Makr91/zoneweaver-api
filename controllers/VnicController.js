@@ -110,10 +110,13 @@ export const getVNICs = async (req, res) => {
         if (zone) whereClause.zone = zone;
         if (state) whereClause.state = state;
 
-        // Optimize: Remove expensive COUNT query, frontend doesn't need it
+        // Optimize: Remove expensive COUNT query, include all frontend-required fields
         const rows = await NetworkInterfaces.findAll({
             where: whereClause,
-            attributes: ['id', 'link', 'class', 'state', 'zone', 'over', 'speed', 'duplex', 'scan_timestamp'], // Selective fetching
+            attributes: [
+                'id', 'link', 'class', 'state', 'zone', 'over', 'speed', 'duplex', 'scan_timestamp',
+                'vid', 'macaddress', 'macaddrtype', 'mtu', 'name', 'flags'
+            ], // Complete frontend requirements including critical React-Flow fields
             limit: parseInt(limit),
             order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
         });
