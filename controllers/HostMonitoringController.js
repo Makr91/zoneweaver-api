@@ -1006,13 +1006,13 @@ export const getIPAddresses = async (req, res) => {
         if (ip_version) whereClause.ip_version = ip_version;
         if (state) whereClause.state = state;
 
-        // Optimize: Remove expensive COUNT query, include all frontend-required fields
+        // Optimize: Remove expensive COUNT query, use only existing database columns
         const rows = await IPAddresses.findAll({
             where: whereClause,
             attributes: [
-                'id', 'interface', 'address_object', 'ip_address', 'ip_version', 'state', 'scan_timestamp',
-                'prefix_length', 'netmask', 'prefix', 'type', 'family', 'status', 'addrobj', 'address', 'addr', 'name'
-            ], // Complete frontend requirements
+                'id', 'interface', 'ip_address', 'ip_version', 'state', 'scan_timestamp',
+                'addrobj', 'type', 'addr', 'prefix_length'
+            ], // Only columns that actually exist in database
             limit: parseInt(limit),
             offset: parseInt(offset),
             order: [['scan_timestamp', 'DESC'], ['ip_version', 'ASC'], ['interface', 'ASC']]
@@ -1106,13 +1106,13 @@ export const getRoutes = async (req, res) => {
         if (is_default !== undefined) whereClause.is_default = is_default === 'true';
         if (destination) whereClause.destination = { [Op.like]: `%${destination}%` };
 
-        // Optimize: Remove expensive COUNT query, include all frontend-required fields
+        // Optimize: Remove expensive COUNT query, use only existing database columns
         const rows = await Routes.findAll({
             where: whereClause,
             attributes: [
                 'id', 'destination', 'gateway', 'interface', 'ip_version', 'is_default', 'flags', 'scan_timestamp',
-                'metric', 'type', 'dest', 'gw', 'iface'
-            ], // Complete frontend requirements
+                'ref', 'use', 'destination_mask'
+            ], // Only columns that actually exist in database
             limit: parseInt(limit),
             offset: parseInt(offset),
             order: [['scan_timestamp', 'DESC'], ['ip_version', 'ASC'], ['is_default', 'DESC'], ['destination', 'ASC']]
