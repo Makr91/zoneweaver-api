@@ -1176,30 +1176,111 @@ export const getDiskIOStats = async (req, res) => {
  *         description: Failed to get pool I/O statistics
  */
 export const getPoolIOStats = async (req, res) => {
+    const startTime = Date.now();
+    console.log('🚀 Pool I/O query started:', { limit: req.query.limit, per_pool: req.query.per_pool });
+    
     try {
-        const { limit = 100, since, pool, pool_type, host } = req.query;
+        const { limit = 100, since, pool, pool_type, host, per_pool = 'true' } = req.query;
         const hostname = host || os.hostname();
+        const requestedLimit = parseInt(limit);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
         if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
         if (pool_type) whereClause.pool_type = pool_type;
 
-        const { count, rows } = await PoolIOStats.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['pool', 'ASC']]
-        });
+        // Performance optimization: Use selective attribute fetching
+        const selectedAttributes = [
+            'id', 'pool', 'pool_type', 'scan_timestamp', 'read_ops', 'write_ops', 
+            'read_bandwidth', 'write_bandwidth', 'read_bandwidth_bytes', 'write_bandwidth_bytes',
+            'total_wait_read', 'total_wait_write', 'disk_wait_read', 'disk_wait_write',
+            'syncq_wait_read', 'syncq_wait_write', 'asyncq_wait_read', 'asyncq_wait_write'
+        ];
 
-        res.json({
-            poolio: rows,
-            totalCount: count
-        });
+        if (per_pool === 'true') {
+            console.log('📊 Using optimized per-pool sampling...');
+            
+            // Step 1: Get distinct pools efficiently
+            const poolQuery = Date.now();
+            const distinctPools = await PoolIOStats.findAll({
+                where: whereClause,
+                attributes: ['pool'],
+                group: ['pool'],
+                raw: true
+            });
+            console.log(`📊 Pool discovery: ${Date.now() - poolQuery}ms`);
+
+            const poolNames = distinctPools.map(row => row.pool);
+            
+            if (poolNames.length === 0) {
+                return res.json({
+                    poolio: [],
+                    queryTime: `${Date.now() - startTime}ms`
+                });
+            }
+
+            // Step 2: Efficient parallel sampling per pool
+            console.log(`📊 Processing ${poolNames.length} pools with parallel sampling...`);
+            const parallelQuery = Date.now();
+            
+            // Fetch records directly for each pool - one query per pool
+            const poolResults = await Promise.all(
+                poolNames.map(async (poolName) => {
+                    const poolWhereClause = { ...whereClause, pool: poolName };
+                    
+                    // Fetch the most recent records for this pool
+                    return await PoolIOStats.findAll({
+                        where: poolWhereClause,
+                        attributes: selectedAttributes,
+                        limit: requestedLimit,
+                        order: [['scan_timestamp', 'DESC']]
+                    });
+                })
+            );
+            
+            console.log(`📊 Parallel pool queries: ${Date.now() - parallelQuery}ms`);
+
+            // Step 3: Combine and sort results
+            const allRows = poolResults
+                .flat()
+                .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
+
+            const queryTime = Date.now() - startTime;
+            console.log(`✅ Per-pool query completed in ${queryTime}ms: ${allRows.length} records from ${poolNames.length} pools`);
+
+            res.json({
+                poolio: allRows,
+                queryTime: `${queryTime}ms`
+            });
+
+        } else {
+            // Simple non-per-pool query for comparison/fallback
+            console.log('📊 Using simple query approach...');
+            
+            const simpleQuery = Date.now();
+            const rows = await PoolIOStats.findAll({
+                where: whereClause,
+                attributes: selectedAttributes,
+                limit: requestedLimit,
+                order: [['scan_timestamp', 'DESC']]
+            });
+            console.log(`📊 Simple query: ${Date.now() - simpleQuery}ms`);
+
+            const queryTime = Date.now() - startTime;
+            console.log(`✅ Simple query completed in ${queryTime}ms: ${rows.length} records`);
+
+            res.json({
+                poolio: rows,
+                queryTime: `${queryTime}ms`
+            });
+        }
     } catch (error) {
-        console.error('Error getting pool I/O statistics:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Pool I/O query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get pool I/O statistics',
-            details: error.message 
+            details: error.message,
+            queryTime: `${queryTime}ms`
         });
     }
 };
