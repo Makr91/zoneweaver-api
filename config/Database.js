@@ -41,8 +41,42 @@ switch (dbConfig.dialect) {
         /**
          * SQLite configuration
          * @description File-based database, ideal for development and single-host deployments
+         * Optimized with WAL mode for concurrent reads during writes
          */
         sequelizeOptions.storage = dbConfig.storage;
+        
+        // Optimize connection pool for SQLite with WAL mode
+        sequelizeOptions.pool = {
+            max: 10,       // Multiple readers allowed with WAL mode
+            min: 2,        // Keep some connections ready
+            acquire: 60000, // 60s timeout for busy database
+            idle: 30000,   // 30s idle timeout
+            evict: 5000,   // Check for idle connections every 5s
+        };
+        
+        // Enable WAL mode and performance optimizations
+        sequelizeOptions.dialectOptions = {
+            pragma: {
+                journal_mode: 'WAL',           // Enable Write-Ahead Logging for concurrent reads
+                synchronous: 'NORMAL',         // Faster than FULL, safer than OFF
+                cache_size: -128000,           // 128MB cache (negative = KB)
+                temp_store: 'MEMORY',          // Keep temp tables in RAM
+                mmap_size: 536870912,          // 512MB memory-mapped I/O (doubled)
+                busy_timeout: 30000,           // 30s timeout for locked database
+                wal_autocheckpoint: 1000,      // Checkpoint WAL after 1000 pages
+                optimize: true,                // Run PRAGMA optimize on connection
+            }
+        };
+        
+        // Retry configuration for busy database
+        sequelizeOptions.retry = {
+            match: [/SQLITE_BUSY/, /SQLITE_LOCKED/],
+            max: 5,                            // Retry up to 5 times
+            backoffBase: 100,                  // Start with 100ms delay
+            backoffExponent: 1.5               // Exponential backoff
+        };
+        
+        console.log('🚀 SQLite configured with WAL mode and performance optimizations');
         break;
     
     case 'postgres':
