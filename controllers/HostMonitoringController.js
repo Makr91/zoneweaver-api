@@ -1511,18 +1511,19 @@ export const getCPUStats = async (req, res) => {
     console.log('🚀 CPU stats query started:', { limit: req.query.limit, include_cores: req.query.include_cores });
     
     try {
-        const { limit = 100, since, host, include_cores = false } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, since, include_cores = false } = req.query;
+        const hostname = os.hostname();
         const requestedLimit = parseInt(limit);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
 
-        // Performance optimization: Use selective attribute fetching
+        // Performance optimization: Use selective attribute fetching (actual column names)
         const selectedAttributes = [
-            'id', 'scan_timestamp', 'cpu_utilization', 'load_avg_1min', 'load_avg_5min', 'load_avg_15min',
-            'user_cpu', 'system_cpu', 'idle_cpu', 'wait_cpu', 'context_switches', 'interrupts', 
-            'system_calls', 'processes_running', 'processes_blocked', 'cpu_count'
+            'id', 'scan_timestamp', 'cpu_utilization_pct', 'load_avg_1min', 'load_avg_5min', 'load_avg_15min',
+            'user_pct', 'system_pct', 'idle_pct', 'iowait_pct', 'context_switches', 'interrupts', 
+            'system_calls', 'processes_running', 'processes_blocked', 'cpu_count', 'page_faults',
+            'page_ins', 'page_outs'
         ];
 
         // Add per_core_data if requested
@@ -1630,18 +1631,17 @@ export const getMemoryStats = async (req, res) => {
     console.log('🚀 Memory stats query started:', { limit: req.query.limit });
     
     try {
-        const { limit = 100, since, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, since } = req.query;
+        const hostname = os.hostname();
         const requestedLimit = parseInt(limit);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
 
-        // Performance optimization: Use selective attribute fetching
+        // Performance optimization: Use selective attribute fetching (actual column names)
         const selectedAttributes = [
-            'id', 'scan_timestamp', 'total_memory', 'used_memory', 'free_memory', 'cached_memory',
-            'buffered_memory', 'shared_memory', 'available_memory', 'memory_utilization',
-            'total_swap', 'used_swap', 'free_swap', 'swap_utilization', 'page_ins', 'page_outs'
+            'id', 'scan_timestamp', 'total_memory', 'used_memory', 'free_memory', 'available_memory', 
+            'memory_utilization_pct', 'swap_total', 'swap_used', 'swap_free', 'swap_utilization_pct'
         ];
 
         console.log('📊 Using optimized memory query...');
