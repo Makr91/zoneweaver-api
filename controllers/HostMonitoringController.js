@@ -385,12 +385,12 @@ export const getNetworkUsage = async (req, res) => {
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
         if (link) whereClause.link = { [Op.like]: `%${link}%` };
 
-        // Performance optimization: Use selective attribute fetching (only existing columns)
+        // Performance optimization: Use selective attribute fetching (includes all delta fields)
         const selectedAttributes = [
             'id', 'link', 'scan_timestamp', 'rx_mbps', 'tx_mbps', 
             'rx_bps', 'tx_bps', 'rbytes', 'obytes', 'interface_speed_mbps', 
             'interface_class', 'time_delta_seconds', 'ipackets_delta', 'opackets_delta', 
-            'ipackets'
+            'rbytes_delta', 'obytes_delta', 'ierrors_delta', 'oerrors_delta', 'ipackets'
         ];
 
         if (per_interface === 'true') {
