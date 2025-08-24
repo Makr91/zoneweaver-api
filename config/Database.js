@@ -14,7 +14,21 @@ const dbConfig = config.getDatabase();
  */
 let sequelizeOptions = {
     dialect: dbConfig.dialect,
-    logging: dbConfig.logging ? console.log : false
+    logging: dbConfig.logging ? (sql, timing) => {
+        // Log slow queries for performance monitoring
+        if (timing && timing > 100) {
+            console.warn(`⚠️  Slow query (${timing}ms): ${sql.substring(0, 100)}...`);
+        } else if (!timing && dbConfig.logging) {
+            console.log(sql);
+        }
+    } : false,
+    benchmark: true, // Enable query timing
+    pool: {
+        max: 10,      // Increase from default 5 for better concurrency
+        min: 2,       // Always keep some connections ready
+        acquire: 30000, // 30s timeout to acquire connection
+        idle: 10000,    // 10s timeout for idle connections
+    }
 };
 
 /**
