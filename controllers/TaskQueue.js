@@ -6,6 +6,7 @@ import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import NetworkStats from "../models/NetworkStatsModel.js";
 import NetworkUsage from "../models/NetworkUsageModel.js";
 import IPAddresses from "../models/IPAddressModel.js";
+import yj from "yieldable-json";
 import { Op } from "sequelize";
 import os from "os";
 import config from "../config/ConfigLoader.js";
@@ -446,7 +447,7 @@ const executeDiscoverTask = async () => {
             return { success: false, error: `Failed to get system zones: ${result.error}` };
         }
         
-        const systemZones = JSON.parse(result.output);
+        const systemZones = await yj.parseAsync(result.output);
         const systemZoneNames = Object.keys(systemZones);
         
         // Get all zones from database
@@ -978,7 +979,7 @@ export const getTaskStats = async (req, res) => {
  */
 const executeSetHostnameTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { hostname, apply_immediately } = metadata;
 
         // Write to /etc/nodename
@@ -1020,7 +1021,7 @@ const executeSetHostnameTask = async (metadataJson) => {
  */
 const executeCreateIPAddressTask = async (metadataJson) => {
     try {
-        const metadata = JSON.parse(metadataJson);
+        const metadata = await yj.parseAsync(metadataJson);
         const { interface: iface, type, addrobj, address, primary, wait, temporary, down } = metadata;
 
         let command = `pfexec ipadm create-addr`;

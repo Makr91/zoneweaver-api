@@ -2,6 +2,7 @@ import { execSync, spawn } from "child_process";
 import Zones from "../models/ZoneModel.js";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import VncSessions from "../models/VncSessionModel.js";
+import yj from "yieldable-json";
 import os from "os";
 
 /**
@@ -267,7 +268,7 @@ export const getZoneDetails = async (req, res) => {
             
             if (configResult.success && configResult.output) {
                 try {
-                    const configData = JSON.parse(configResult.output);
+                    const configData = await yj.parseAsync(configResult.output);
                     
                     // For single zone requests, zadm returns the config directly (not wrapped)
                     if (configData && typeof configData === 'object' && configData.zonename === zoneName) {
@@ -446,7 +447,7 @@ export const getZoneConfig = async (req, res) => {
             }
         }
         
-        const config = JSON.parse(configResult.output);
+        const config = await yj.parseAsync(configResult.output);
         
         res.json({
             zone_name: zoneName,
