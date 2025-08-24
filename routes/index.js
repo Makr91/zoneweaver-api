@@ -1,6 +1,7 @@
 import express from "express";
 import { serverStats } from "../controllers/ServerStats.js";
 import { verifyApiKey } from "../middleware/VerifyApiKey.js";
+import { requestTiming } from "../middleware/RequestTiming.js";
 import { 
     bootstrapFirstApiKey, 
     generateApiKey, 
@@ -227,6 +228,9 @@ router.get('/vnc/sessions', verifyApiKey, listVncSessions);                   //
 router.get('/zones/:zoneName/vnc/console', verifyApiKey, serveVncConsole);    // Serve VNC console HTML
 router.all('/zones/:zoneName/vnc/*', verifyApiKey, proxyVncContent);          // Proxy VNC assets (JS, CSS, images)
 
+// Apply timing middleware to all monitoring routes for performance analysis
+router.use('/monitoring', requestTiming);
+
 // Host Monitoring Routes
 router.get('/monitoring/status', verifyApiKey, getMonitoringStatus);          // Get monitoring service status
 router.get('/monitoring/health', verifyApiKey, getHealthCheck);               // Get monitoring health check
@@ -283,7 +287,7 @@ router.post('/terminal/start', verifyApiKey, startTerminalSession);
 router.get('/terminal/sessions', verifyApiKey, listTerminalSessions);
 router.get('/terminal/sessions/:terminal_cookie/health', verifyApiKey, checkSessionHealth);
 router.get('/terminal/sessions/:sessionId', verifyApiKey, getTerminalSessionInfo);
-router.delete('/terminal/sessions/:sessionId/stop', verifyApiKey, stopTerminalSession);
+router.delete('/terminal/sessions/:sessionId/stop', verifyApiKey, stop2TerminalSession);
 
 // Zlogin Routes
 router.post('/zones/:zoneName/zlogin/start', verifyApiKey, startZloginSession);
