@@ -23,7 +23,6 @@ import CPUStats from "../models/CPUStatsModel.js";
 import MemoryStats from "../models/MemoryStatsModel.js";
 import yj from "yieldable-json";
 import { getHostMonitoringService } from "./HostMonitoringService.js";
-import { logTiming } from "../middleware/RequestTiming.js";
 import os from "os";
 
 /**
@@ -231,18 +230,12 @@ export const triggerCollection = async (req, res) => {
  */
 export const getNetworkInterfaces = async (req, res) => {
     try {
-        logTiming(req, 'controller_entry', 'getNetworkInterfaces');
-        
         const { limit = 100, offset = 0, host, state, link } = req.query;
         const hostname = host || os.hostname();
-        
-        logTiming(req, 'parameters_parsed', `limit=${limit}, hostname=${hostname}`);
         
         const whereClause = { host: hostname };
         if (state) whereClause.state = state;
         if (link) whereClause.link = { [Op.like]: `%${link}%` };
-
-        logTiming(req, 'where_clause_built', `conditions: ${Object.keys(whereClause).length}`);
 
         const { count, rows } = await NetworkInterfaces.findAndCountAll({
             where: whereClause,
@@ -250,8 +243,6 @@ export const getNetworkInterfaces = async (req, res) => {
             offset: parseInt(offset),
             order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
         });
-
-        logTiming(req, 'database_query_complete', `${rows.length} rows, total: ${count}`);
 
         res.json({
             interfaces: rows,
@@ -263,9 +254,7 @@ export const getNetworkInterfaces = async (req, res) => {
             }
         });
         
-        logTiming(req, 'response_sent', 'success');
     } catch (error) {
-        logTiming(req, 'error_occurred', error.message);
         console.error('Error getting network interfaces:', error);
         res.status(500).json({ 
             error: 'Failed to get network interfaces',
@@ -391,13 +380,9 @@ export const getNetworkUsage = async (req, res) => {
     console.log('🚀 Network usage query started:', { limit: req.query.limit, per_interface: req.query.per_interface });
     
     try {
-        logTiming(req, 'controller_entry', 'getNetworkUsage');
-        
         const { limit = 100, since, link, host, per_interface = 'true' } = req.query;
         const hostname = host || os.hostname();
         const requestedLimit = parseInt(limit);
-        
-        logTiming(req, 'parameters_parsed', `limit=${requestedLimit}, hostname=${hostname}, per_interface=${per_interface}`);
         
         const whereClause = { host: hostname };
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
@@ -730,21 +715,14 @@ export const getZFSDatasets = async (req, res) => {
  */
 export const getHostInfo = async (req, res) => {
     try {
-        logTiming(req, 'controller_entry', 'getHostInfo');
-        
         const { host } = req.query;
         const hostname = host || os.hostname();
-        
-        logTiming(req, 'parameters_parsed', `hostname=${hostname}`);
         
         const hostInfo = await HostInfo.findOne({
             where: { host: hostname }
         });
 
-        logTiming(req, 'database_query_complete', hostInfo ? 'found' : 'not found');
-
         if (!hostInfo) {
-            logTiming(req, 'response_sent', '404 - host not found');
             return res.status(404).json({ 
                 error: 'Host not found',
                 host: hostname 
@@ -752,9 +730,7 @@ export const getHostInfo = async (req, res) => {
         }
 
         res.json(hostInfo);
-        logTiming(req, 'response_sent', 'success');
     } catch (error) {
-        logTiming(req, 'error_occurred', error.message);
         console.error('Error getting host info:', error);
         res.status(500).json({ 
             error: 'Failed to get host information',

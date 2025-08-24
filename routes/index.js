@@ -1,8 +1,7 @@
 import express from "express";
 import { serverStats } from "../controllers/ServerStats.js";
 import { verifyApiKey } from "../middleware/VerifyApiKey.js";
-import { requestTiming } from "../middleware/RequestTiming.js";
-import { 
+import {
     bootstrapFirstApiKey, 
     generateApiKey, 
     listApiKeys, 
@@ -227,9 +226,6 @@ router.get('/vnc/sessions', verifyApiKey, listVncSessions);                   //
 // VNC Console Content Routes (HTTP proxy to VNC server)
 router.get('/zones/:zoneName/vnc/console', verifyApiKey, serveVncConsole);    // Serve VNC console HTML
 router.all('/zones/:zoneName/vnc/*', verifyApiKey, proxyVncContent);          // Proxy VNC assets (JS, CSS, images)
-
-// Apply timing middleware to all monitoring routes for performance analysis
-router.use('/monitoring', requestTiming);
 
 // Host Monitoring Routes
 router.get('/monitoring/status', verifyApiKey, getMonitoringStatus);          // Get monitoring service status
