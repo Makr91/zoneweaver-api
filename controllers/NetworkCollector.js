@@ -646,13 +646,29 @@ class NetworkCollector {
             const ipData = this.parseIPAddrOutput(stdout);
             
             if (ipData.length > 0) {
+                // Delete existing IP address records for this host (current state replacement)
+                await IPAddresses.destroy({
+                    where: {
+                        host: this.hostname
+                    }
+                });
+
+                // Insert fresh current state data
                 const batchSize = this.hostMonitoringConfig.performance.batch_size;
                 for (let i = 0; i < ipData.length; i += batchSize) {
                     const batch = ipData.slice(i, i + batchSize);
-                    await IPAddresses.bulkCreate(batch, {
-                        updateOnDuplicate: Object.keys(IPAddresses.rawAttributes).filter(key => key !== 'id')
-                    });
+                    await IPAddresses.bulkCreate(batch);
                 }
+                
+                console.log(`🌐 IP Addresses updated: ${ipData.length} current addresses for ${this.hostname}`);
+            } else {
+                // No IP addresses found - clear existing records
+                await IPAddresses.destroy({
+                    where: {
+                        host: this.hostname
+                    }
+                });
+                console.log(`🌐 IP Addresses cleared: no addresses found for ${this.hostname}`);
             }
 
             return ipData;
@@ -675,13 +691,29 @@ class NetworkCollector {
             const routeData = this.parseRoutingOutput(stdout);
             
             if (routeData.length > 0) {
+                // Delete existing routing table records for this host (current state replacement)
+                await Routes.destroy({
+                    where: {
+                        host: this.hostname
+                    }
+                });
+
+                // Insert fresh current state data
                 const batchSize = this.hostMonitoringConfig.performance.batch_size;
                 for (let i = 0; i < routeData.length; i += batchSize) {
                     const batch = routeData.slice(i, i + batchSize);
-                    await Routes.bulkCreate(batch, {
-                        updateOnDuplicate: Object.keys(Routes.rawAttributes).filter(key => key !== 'id')
-                    });
+                    await Routes.bulkCreate(batch);
                 }
+                
+                console.log(`🛣️  Routes updated: ${routeData.length} current routes for ${this.hostname}`);
+            } else {
+                // No routes found - clear existing records
+                await Routes.destroy({
+                    where: {
+                        host: this.hostname
+                    }
+                });
+                console.log(`🛣️  Routes cleared: no routes found for ${this.hostname}`);
             }
 
             return routeData;
