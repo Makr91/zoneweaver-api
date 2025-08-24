@@ -80,13 +80,15 @@ const executeCommand = async (command) => {
  *         description: Failed to get etherstubs
  */
 export const getEtherstubs = async (req, res) => {
+    const startTime = Date.now();
+    
     try {
         const { 
             name, 
             limit = 100
         } = req.query;
 
-        // Always get data from database (monitoring data)
+        // Always get data from database (monitoring data) - only get the latest record per etherstub
         const hostname = os.hostname();
         const whereClause = { 
             host: hostname,
@@ -95,23 +97,49 @@ export const getEtherstubs = async (req, res) => {
         
         if (name) whereClause.link = name;
 
-        const { count, rows } = await NetworkInterfaces.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
+        console.log(`🚀 Etherstubs query started: limit=${limit}`);
+
+        // Optimized single query with window functions to get latest record per etherstub
+        const query = `
+            SELECT *
+            FROM (
+                SELECT *,
+                       ROW_NUMBER() OVER (PARTITION BY link ORDER BY scan_timestamp DESC) as rn
+                FROM network_interfaces 
+                WHERE host = ? AND class = 'etherstub' ${name ? 'AND link = ?' : ''}
+            ) latest
+            WHERE rn = 1
+            ORDER BY link ASC
+            LIMIT ?`;
+            
+        const queryParams = [hostname];
+        if (name) queryParams.push(name);
+        queryParams.push(parseInt(limit));
+        
+        const rows = await NetworkInterfaces.sequelize.query(query, {
+            replacements: queryParams,
+            type: NetworkInterfaces.sequelize.QueryTypes.SELECT,
+            model: NetworkInterfaces,
+            mapToModel: true
         });
+
+        const queryTime = Date.now() - startTime;
+        console.log(`✅ Etherstubs query completed in ${queryTime}ms: ${rows.length} records returned`);
 
         res.json({
             etherstubs: rows,
-            total: count,
-            source: 'database'
+            total: rows.length,
+            source: 'database',
+            queryTimeMs: queryTime
         });
 
     } catch (error) {
-        console.error('Error getting etherstubs:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Etherstubs query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get etherstubs',
-            details: error.message 
+            details: error.message,
+            queryTimeMs: queryTime
         });
     }
 };

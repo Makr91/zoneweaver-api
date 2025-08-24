@@ -91,6 +91,8 @@ const executeCommand = async (command) => {
  *         description: Failed to get VNICs
  */
 export const getVNICs = async (req, res) => {
+    const startTime = Date.now();
+    
     try {
         const { 
             over, 
@@ -99,34 +101,67 @@ export const getVNICs = async (req, res) => {
             limit = 100
         } = req.query;
 
-        // Always get data from database (monitoring data)
+        // Always get data from database (monitoring data) - only get the latest record per VNIC
         const hostname = os.hostname();
-        const whereClause = { 
-            host: hostname,
-            class: 'vnic'
-        };
         
-        if (over) whereClause.over = over;
-        if (zone) whereClause.zone = zone;
-        if (state) whereClause.state = state;
+        console.log(`🚀 VNICs query started: limit=${limit}, filters: over=${over}, zone=${zone}, state=${state}`);
 
-        const { count, rows } = await NetworkInterfaces.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
+        // Build dynamic WHERE clause for the query
+        let whereConditions = 'host = ? AND class = \'vnic\'';
+        const queryParams = [hostname];
+        
+        if (over) {
+            whereConditions += ' AND over = ?';
+            queryParams.push(over);
+        }
+        if (zone) {
+            whereConditions += ' AND zone = ?';
+            queryParams.push(zone);
+        }
+        if (state) {
+            whereConditions += ' AND state = ?';
+            queryParams.push(state);
+        }
+
+        // Optimized single query with window functions to get latest record per VNIC
+        const query = `
+            SELECT *
+            FROM (
+                SELECT *,
+                       ROW_NUMBER() OVER (PARTITION BY link ORDER BY scan_timestamp DESC) as rn
+                FROM network_interfaces 
+                WHERE ${whereConditions}
+            ) latest
+            WHERE rn = 1
+            ORDER BY link ASC
+            LIMIT ?`;
+            
+        queryParams.push(parseInt(limit));
+        
+        const rows = await NetworkInterfaces.sequelize.query(query, {
+            replacements: queryParams,
+            type: NetworkInterfaces.sequelize.QueryTypes.SELECT,
+            model: NetworkInterfaces,
+            mapToModel: true
         });
+
+        const queryTime = Date.now() - startTime;
+        console.log(`✅ VNICs query completed in ${queryTime}ms: ${rows.length} records returned`);
 
         res.json({
             vnics: rows,
-            total: count,
-            source: 'database'
+            total: rows.length,
+            source: 'database',
+            queryTimeMs: queryTime
         });
 
     } catch (error) {
-        console.error('Error getting VNICs:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ VNICs query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get VNICs',
-            details: error.message 
+            details: error.message,
+            queryTimeMs: queryTime
         });
     }
 };

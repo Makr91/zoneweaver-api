@@ -355,6 +355,12 @@ export const getNetworkStats = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Filter by interface/link name
+ *       - in: query
+ *         name: per_interface
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Apply sampling per interface to maintain proportional representation
  *     responses:
  *       200:
  *         description: Network usage data
@@ -373,8 +379,10 @@ export const getNetworkStats = async (req, res) => {
  *         description: Failed to get network usage
  */
 export const getNetworkUsage = async (req, res) => {
+    const startTime = Date.now();
+    
     try {
-        const { limit = 100, since, link, host } = req.query;
+        const { limit = 100, since, link, host, per_interface = false } = req.query;
         const hostname = host || os.hostname();
         const requestedLimit = parseInt(limit);
         
@@ -382,158 +390,72 @@ export const getNetworkUsage = async (req, res) => {
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
         if (link) whereClause.link = { [Op.like]: `%${link}%` };
 
-        // Step 1: Get all distinct interfaces in the time range
-        const distinctInterfaces = await NetworkUsage.findAll({
-            where: whereClause,
-            attributes: ['link'],
-            group: ['link'],
-            raw: true
-        });
+        console.log(`🚀 Network usage query started: limit=${requestedLimit}, per_interface=${per_interface}`);
 
-        const interfaceNames = distinctInterfaces.map(row => row.link);
-        console.log(`📊 Found ${interfaceNames.length} distinct interfaces for sampling`);
-
-        // Step 2: Count total records across all interfaces
-        const totalCount = await NetworkUsage.count({ where: whereClause });
-        
-        let allRows = [];
+        let results;
+        let totalCount;
         let samplingApplied = false;
-        let perInterfaceCounts = {};
-
-        if (interfaceNames.length === 0) {
-            // No data found
-            return res.json({
-                usage: [],
-                totalCount: 0,
-                returnedCount: 0,
-                sampling: {
-                    applied: false,
-                    interfaceCount: 0,
-                    recordsPerInterface: 0,
-                    timeDistributed: false
-                },
-                metadata: {
-                    timeSpan: null,
-                    activeInterfacesCount: 0,
-                    queryOptimized: true
-                }
+        
+        if (per_interface === 'true' || per_interface === true) {
+            // Optimized per-interface sampling using single query with window functions
+            console.log(`📊 Using optimized per-interface sampling...`);
+            samplingApplied = true;
+            
+            // Single query with window functions for even sampling across interfaces
+            const query = `
+                SELECT *
+                FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (PARTITION BY link ORDER BY scan_timestamp ASC) as sample_num,
+                           COUNT(*) OVER (PARTITION BY link) as link_total
+                    FROM network_usage 
+                    WHERE host = ? ${since ? 'AND scan_timestamp >= ?' : ''} ${link ? 'AND link LIKE ?' : ''}
+                ) sampled
+                WHERE (link_total <= ${requestedLimit}) OR 
+                      (sample_num % CAST(link_total / ${requestedLimit} AS INTEGER) = 1)
+                ORDER BY link ASC, scan_timestamp ASC
+                LIMIT ${requestedLimit * 50}`;
+                
+            const queryParams = [hostname];
+            if (since) queryParams.push(new Date(since));
+            if (link) queryParams.push(`%${link}%`);
+            
+            const sampledResults = await NetworkUsage.sequelize.query(query, {
+                replacements: queryParams,
+                type: NetworkUsage.sequelize.QueryTypes.SELECT,
+                model: NetworkUsage,
+                mapToModel: true
             });
+            
+            results = sampledResults;
+            
+            // Get total count for metadata
+            totalCount = await NetworkUsage.count({ where: whereClause });
+            
+        } else {
+            // Standard query - much faster for simple cases
+            console.log(`📊 Using standard query...`);
+            
+            const { count, rows } = await NetworkUsage.findAndCountAll({
+                where: whereClause,
+                limit: requestedLimit,
+                order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
+            });
+            
+            results = rows;
+            totalCount = count;
         }
 
-        // Step 3: Process each interface separately with per-interface sampling
-        const interfacePromises = interfaceNames.map(async (interfaceName) => {
-            const interfaceWhereClause = { ...whereClause, link: interfaceName };
-            
-            // Count records for this specific interface
-            const interfaceCount = await NetworkUsage.count({ where: interfaceWhereClause });
-            perInterfaceCounts[interfaceName] = interfaceCount;
+        const queryTime = Date.now() - startTime;
+        console.log(`✅ Network usage query completed in ${queryTime}ms: ${results.length} records returned`);
 
-            if (interfaceCount <= requestedLimit) {
-                // No sampling needed for this interface - return all records
-                return await NetworkUsage.findAll({
-                    where: interfaceWhereClause,
-                    order: [['scan_timestamp', 'ASC']]
-                });
-            } else {
-                // Apply time-bucket sampling for this interface
-                samplingApplied = true;
-                
-                console.log(`📊 Sampling interface ${interfaceName}: ${interfaceCount} records → ${requestedLimit} samples`);
-                
-                // Get time range for this interface
-                const [oldestRecord, newestRecord] = await Promise.all([
-                    NetworkUsage.findOne({
-                        where: interfaceWhereClause,
-                        order: [['scan_timestamp', 'ASC']],
-                        attributes: ['scan_timestamp']
-                    }),
-                    NetworkUsage.findOne({
-                        where: interfaceWhereClause,
-                        order: [['scan_timestamp', 'DESC']],
-                        attributes: ['scan_timestamp']
-                    })
-                ]);
-
-                if (!oldestRecord || !newestRecord) {
-                    // Fallback for this interface
-                    return await NetworkUsage.findAll({
-                        where: interfaceWhereClause,
-                        order: [['scan_timestamp', 'ASC']],
-                        limit: requestedLimit
-                    });
-                }
-
-                // Calculate time buckets for this interface
-                const startTime = new Date(oldestRecord.scan_timestamp);
-                const endTime = new Date(newestRecord.scan_timestamp);
-                const timeSpan = endTime.getTime() - startTime.getTime();
-                const bucketDuration = timeSpan / requestedLimit;
-                
-                // Collect samples from time buckets for this interface
-                const bucketPromises = [];
-                for (let i = 0; i < requestedLimit; i++) {
-                    const bucketStart = new Date(startTime.getTime() + (i * bucketDuration));
-                    const bucketEnd = new Date(startTime.getTime() + ((i + 1) * bucketDuration));
-                    
-                    const bucketPromise = NetworkUsage.findOne({
-                        where: {
-                            ...interfaceWhereClause,
-                            scan_timestamp: {
-                                [Op.gte]: bucketStart,
-                                [Op.lt]: bucketEnd
-                            }
-                        },
-                        order: [['scan_timestamp', 'ASC']]
-                    });
-                    
-                    bucketPromises.push(bucketPromise);
-                }
-                
-                const bucketResults = await Promise.all(bucketPromises);
-                
-                // Filter out null results and sort by timestamp
-                let interfaceRows = bucketResults
-                    .filter(record => record !== null)
-                    .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
-                
-                // Fill gaps if needed for this interface
-                if (interfaceRows.length < requestedLimit * 0.7) {
-                    const existingTimestamps = new Set(interfaceRows.map(r => r.scan_timestamp.getTime()));
-                    const additionalNeeded = requestedLimit - interfaceRows.length;
-                    
-                    const additionalRecords = await NetworkUsage.findAll({
-                        where: interfaceWhereClause,
-                        order: [['scan_timestamp', 'ASC']],
-                        limit: additionalNeeded * 2
-                    });
-                    
-                    const additionalFiltered = additionalRecords.filter(record => 
-                        !existingTimestamps.has(record.scan_timestamp.getTime())
-                    ).slice(0, additionalNeeded);
-                    
-                    interfaceRows = [...interfaceRows, ...additionalFiltered]
-                        .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
-                }
-                
-                return interfaceRows;
-            }
-        });
-
-        // Execute all interface sampling in parallel
-        const interfaceResults = await Promise.all(interfacePromises);
-        
-        // Combine all interface results
-        allRows = interfaceResults
-            .flat()
-            .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
-
-        console.log(`✅ Per-interface sampling complete: ${allRows.length} total records from ${interfaceNames.length} interfaces`);
-
-        // Calculate time span for metadata
+        // Calculate metadata
+        const interfaceNames = [...new Set(results.map(r => r.link))];
         let timeSpan = null;
-        if (allRows.length > 1) {
-            const firstRecord = new Date(allRows[0].scan_timestamp);
-            const lastRecord = new Date(allRows[allRows.length - 1].scan_timestamp);
+        if (results.length > 1) {
+            const timestamps = results.map(r => new Date(r.scan_timestamp)).sort((a, b) => a - b);
+            const firstRecord = timestamps[0];
+            const lastRecord = timestamps[timestamps.length - 1];
             timeSpan = {
                 start: firstRecord.toISOString(),
                 end: lastRecord.toISOString(),
@@ -541,43 +463,38 @@ export const getNetworkUsage = async (req, res) => {
             };
         }
 
-        // Calculate metadata about active interfaces
-        const activeInterfaces = allRows.reduce((acc, row) => {
+        // Calculate active interfaces
+        const activeInterfaces = results.reduce((acc, row) => {
             if (row.rx_mbps > 0 || row.tx_mbps > 0) {
                 acc.add(row.link);
             }
             return acc;
         }, new Set()).size;
 
-        // Calculate average records per interface returned
-        const avgRecordsPerInterface = Math.round(allRows.length / interfaceNames.length);
-
         res.json({
-            usage: allRows,
+            usage: results,
             totalCount: totalCount,
-            returnedCount: allRows.length,
+            returnedCount: results.length,
             sampling: {
                 applied: samplingApplied,
                 interfaceCount: interfaceNames.length,
-                requestedLimit: requestedLimit,
-                avgRecordsPerInterface: avgRecordsPerInterface,
-                maxRecordsPerInterface: requestedLimit,
-                timeDistributed: samplingApplied,
-                perInterfaceCounts: perInterfaceCounts
+                strategy: samplingApplied ? "single-query window-function sampling" : "standard limit/offset",
+                queryTimeMs: queryTime
             },
             metadata: {
                 timeSpan: timeSpan,
                 activeInterfacesCount: activeInterfaces,
-                queryOptimized: true,
-                samplingStrategy: "per-interface time-bucket sampling",
-                interfaceList: interfaceNames
+                interfaceList: interfaceNames,
+                queryOptimized: true
             }
         });
     } catch (error) {
-        console.error('Error getting network usage:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Network usage query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get network usage',
-            details: error.message 
+            details: error.message,
+            queryTimeMs: queryTime
         });
     }
 };

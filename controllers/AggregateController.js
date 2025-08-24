@@ -93,6 +93,8 @@ const executeCommand = async (command) => {
  *         description: Failed to get aggregates
  */
 export const getAggregates = async (req, res) => {
+    const startTime = Date.now();
+    
     try {
         const { 
             state, 
@@ -109,56 +111,49 @@ export const getAggregates = async (req, res) => {
         
         if (state) whereClause.state = state;
 
-        // Get distinct aggregates by getting the latest scan_timestamp for each link
-        const latestAggregates = await NetworkInterfaces.findAll({
-            attributes: [
-                'link',
-                [NetworkInterfaces.sequelize.fn('MAX', NetworkInterfaces.sequelize.col('scan_timestamp')), 'latest_scan']
-            ],
-            where: whereClause,
-            group: ['link'],
-            raw: true
+        console.log(`🚀 Aggregates query started: limit=${limit}`);
+
+        // Optimized single query with window functions to get latest record per aggregate
+        const query = `
+            SELECT *
+            FROM (
+                SELECT *,
+                       ROW_NUMBER() OVER (PARTITION BY link ORDER BY scan_timestamp DESC) as rn
+                FROM network_interfaces 
+                WHERE host = ? AND class = 'aggr' ${state ? 'AND state = ?' : ''}
+            ) latest
+            WHERE rn = 1
+            ORDER BY link ASC
+            LIMIT ?`;
+            
+        const queryParams = [hostname];
+        if (state) queryParams.push(state);
+        queryParams.push(parseInt(limit));
+        
+        const rows = await NetworkInterfaces.sequelize.query(query, {
+            replacements: queryParams,
+            type: NetworkInterfaces.sequelize.QueryTypes.SELECT,
+            model: NetworkInterfaces,
+            mapToModel: true
         });
 
-        if (latestAggregates.length === 0) {
-            return res.json({
-                aggregates: [],
-                total: 0,
-                source: 'database'
-            });
-        }
-
-        // Get the actual records for the latest timestamps
-        const linkTimestampPairs = latestAggregates.map(aggr => ({
-            link: aggr.link,
-            scan_timestamp: aggr.latest_scan
-        }));
-
-        const rows = await NetworkInterfaces.findAll({
-            where: {
-                ...whereClause,
-                [Op.or]: linkTimestampPairs.map(pair => ({
-                    link: pair.link,
-                    scan_timestamp: pair.scan_timestamp
-                }))
-            },
-            limit: parseInt(limit),
-            order: [['link', 'ASC']]
-        });
-
-        const count = rows.length;
+        const queryTime = Date.now() - startTime;
+        console.log(`✅ Aggregates query completed in ${queryTime}ms: ${rows.length} records returned`);
 
         res.json({
             aggregates: rows,
-            total: count,
-            source: 'database'
+            total: rows.length,
+            source: 'database',
+            queryTimeMs: queryTime
         });
 
     } catch (error) {
-        console.error('Error getting aggregates:', error);
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Aggregates query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get aggregates',
-            details: error.message 
+            details: error.message,
+            queryTimeMs: queryTime
         });
     }
 };
