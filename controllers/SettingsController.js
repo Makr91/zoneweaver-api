@@ -427,12 +427,63 @@ export const restoreBackup = async (req, res) => {
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
- *       501:
- *         description: Not Implemented
+ *       200:
+ *         description: Server restart initiated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Failed to initiate server restart
  */
-export const restartServer = (req, res) => {
-    res.status(501).json({ 
-        message: 'Server restart functionality is not implemented in this version. Please restart the server manually.',
-        details: 'This is a placeholder for future integration with a process manager like PM2 or systemd.'
-    });
+export const restartServer = async (req, res) => {
+    try {
+        // Send success response immediately before initiating restart
+        res.json({ 
+            success: true, 
+            message: 'Server restart initiated. Please wait 30-60 seconds before reconnecting. The server will reload all configuration changes.'
+        });
+        
+        // Schedule restart in detached process after response is sent
+        // This ensures the HTTP response is delivered before the process is terminated
+        setTimeout(() => {
+            console.log('Initiating server restart via SMF...');
+            
+            // Import exec here to avoid loading it at module level
+            import('child_process').then(({ exec }) => {
+                // Use pfexec to restart the SMF service in a detached process
+                exec('pfexec svcadm restart system/virtualization/zoneweaver-api', 
+                    { 
+                        detached: true, 
+                        stdio: 'ignore'
+                    }, 
+                    (error, stdout, stderr) => {
+                        // This callback likely won't execute since the process will be killed
+                        // but we include it for completeness
+                        if (error) {
+                            console.error('Restart command error:', error);
+                        } else {
+                            console.log('Restart command executed successfully');
+                        }
+                    }
+                );
+            }).catch(err => {
+                console.error('Failed to import child_process for restart:', err);
+            });
+            
+        }, 1000); // 1 second delay to ensure HTTP response is fully sent
+        
+    } catch (error) {
+        console.error('Error initiating server restart:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to initiate server restart', 
+            details: error.message 
+        });
+    }
 };
