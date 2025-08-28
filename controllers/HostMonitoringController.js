@@ -1167,19 +1167,12 @@ export const getRoutes = async (req, res) => {
  */
 export const getDiskIOStats = async (req, res) => {
     const startTime = Date.now();
-    console.log('🚀 Disk I/O query started:', { limit: req.query.limit, per_device: req.query.per_device });
     
     try {
         const { limit = 100, since, pool, device, host, per_device = 'true' } = req.query;
         const hostname = host || os.hostname();
         const requestedLimit = parseInt(limit);
         
-        const whereClause = { host: hostname };
-        if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-        if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
-        if (device) whereClause.device_name = { [Op.like]: `%${device}%` };
-
-        // Performance optimization: Use selective attribute fetching
         const selectedAttributes = [
             'id', 'device_name', 'pool', 'scan_timestamp', 'read_ops', 'write_ops',
             'read_bandwidth', 'write_bandwidth', 'read_bandwidth_bytes', 'write_bandwidth_bytes',
@@ -1187,85 +1180,181 @@ export const getDiskIOStats = async (req, res) => {
         ];
 
         if (per_device === 'true') {
-            console.log('📊 Using optimized per-device sampling...');
             
-            // Step 1: Get distinct devices efficiently
-            const deviceQuery = Date.now();
-            const distinctDevices = await DiskIOStats.findAll({
-                where: whereClause,
-                attributes: ['device_name'],
-                group: ['device_name'],
-                raw: true
-            });
-            console.log(`📊 Device discovery: ${Date.now() - deviceQuery}ms`);
+            if (!since) {
+                // Path 1: Latest Records - Fast JavaScript deduplication approach
+                const baseWhereClause = { host: hostname };
+                if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
+                if (device) baseWhereClause.device_name = { [Op.like]: `%${device}%` };
 
-            const deviceNames = distinctDevices.map(row => row.device_name);
-            
-            if (deviceNames.length === 0) {
-                return res.json({
-                    diskio: [],
-                    queryTime: `${Date.now() - startTime}ms`
+                // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
+                const recentRecords = await DiskIOStats.findAll({
+                    attributes: selectedAttributes,
+                    where: baseWhereClause,
+                    order: [['scan_timestamp', 'DESC']],
+                    limit: 2000  // Reasonable limit to find latest per device
+                });
+
+                if (recentRecords.length === 0) {
+                    return res.json({
+                        diskio: [],
+                        totalCount: 0,
+                        returnedCount: 0,
+                        queryTime: `${Date.now() - startTime}ms`,
+                        sampling: {
+                            applied: true,
+                            deviceCount: 0,
+                            strategy: "latest-per-device-fast"
+                        }
+                    });
+                }
+
+                // JavaScript deduplication - pick first (most recent) occurrence of each device
+                const latestPerDevice = {};
+                const deviceOrder = [];
+                
+                recentRecords.forEach(record => {
+                    if (!latestPerDevice[record.device_name]) {
+                        latestPerDevice[record.device_name] = record;
+                        deviceOrder.push(record.device_name);
+                    }
+                });
+
+                // Convert to array and sort by device name
+                const results = deviceOrder
+                    .sort()
+                    .map(deviceName => latestPerDevice[deviceName]);
+
+                const deviceCount = results.length;
+                const queryTime = Date.now() - startTime;
+
+                res.json({
+                    diskio: results,
+                    totalCount: results.length,
+                    returnedCount: results.length,
+                    queryTime: `${queryTime}ms`,
+                    sampling: {
+                        applied: true,
+                        deviceCount: deviceCount,
+                        samplesPerDevice: 1,
+                        strategy: "latest-per-device-fast"
+                    }
+                });
+
+            } else {
+                // Path 2: Historical Sampling - Even distribution across time range using JavaScript
+                const baseWhereClause = { 
+                    host: hostname,
+                    scan_timestamp: { [Op.gte]: new Date(since) }
+                };
+                if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
+                if (device) baseWhereClause.device_name = { [Op.like]: `%${device}%` };
+
+                // Fetch all data within time range, grouped by device
+                const allData = await DiskIOStats.findAll({
+                    attributes: selectedAttributes,
+                    where: baseWhereClause,
+                    order: [['device_name', 'ASC'], ['scan_timestamp', 'ASC']]
+                });
+
+                if (allData.length === 0) {
+                    return res.json({
+                        diskio: [],
+                        totalCount: 0,
+                        returnedCount: 0,
+                        queryTime: `${Date.now() - startTime}ms`,
+                        sampling: {
+                            applied: true,
+                            deviceCount: 0,
+                            strategy: "javascript-time-sampling"
+                        }
+                    });
+                }
+
+                // Group data by device
+                const deviceGroups = {};
+                allData.forEach(row => {
+                    if (!deviceGroups[row.device_name]) {
+                        deviceGroups[row.device_name] = [];
+                    }
+                    deviceGroups[row.device_name].push(row);
+                });
+
+                // Sample evenly from each device group
+                const sampledResults = [];
+                const deviceNames = Object.keys(deviceGroups);
+
+                deviceNames.forEach(deviceName => {
+                    const deviceData = deviceGroups[deviceName];
+                    const totalRecords = deviceData.length;
+                    
+                    if (totalRecords === 0) return;
+
+                    // Calculate sampling interval
+                    const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+                    
+                    // Sample evenly across the data
+                    for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+                        const index = Math.min(i * interval, totalRecords - 1);
+                        sampledResults.push(deviceData[index]);
+                    }
+                });
+
+                // Sort results by device and timestamp
+                sampledResults.sort((a, b) => {
+                    if (a.device_name !== b.device_name) {
+                        return a.device_name.localeCompare(b.device_name);
+                    }
+                    return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
+                });
+
+                const deviceCount = deviceNames.length;
+                const queryTime = Date.now() - startTime;
+
+                res.json({
+                    diskio: sampledResults,
+                    totalCount: sampledResults.length,
+                    returnedCount: sampledResults.length,
+                    queryTime: `${queryTime}ms`,
+                    sampling: {
+                        applied: true,
+                        deviceCount: deviceCount,
+                        samplesPerDevice: Math.round(sampledResults.length / deviceCount),
+                        requestedSamplesPerDevice: requestedLimit,
+                        strategy: "javascript-time-sampling"
+                    }
                 });
             }
 
-            // Step 2: Efficient parallel sampling per device
-            console.log(`📊 Processing ${deviceNames.length} devices with parallel sampling...`);
-            const parallelQuery = Date.now();
-            
-            // Fetch records directly for each device - one query per device
-            const deviceResults = await Promise.all(
-                deviceNames.map(async (deviceName) => {
-                    const deviceWhereClause = { ...whereClause, device_name: deviceName };
-                    
-                    // Fetch the most recent records for this device
-                    return await DiskIOStats.findAll({
-                        where: deviceWhereClause,
-                        attributes: selectedAttributes,
-                        limit: requestedLimit,
-                        order: [['scan_timestamp', 'DESC']]
-                    });
-                })
-            );
-            
-            console.log(`📊 Parallel device queries: ${Date.now() - parallelQuery}ms`);
-
-            // Step 3: Combine and sort results
-            const allRows = deviceResults
-                .flat()
-                .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
-
-            const queryTime = Date.now() - startTime;
-            console.log(`✅ Per-device query completed in ${queryTime}ms: ${allRows.length} records from ${deviceNames.length} devices`);
-
-            res.json({
-                diskio: allRows,
-                queryTime: `${queryTime}ms`
-            });
-
         } else {
-            // Simple non-per-device query for comparison/fallback
-            console.log('📊 Using simple query approach...');
+            // Simple non-per-device query (latest records across all devices)
+            const whereClause = { host: hostname };
+            if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
+            if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
+            if (device) whereClause.device_name = { [Op.like]: `%${device}%` };
             
-            const simpleQuery = Date.now();
-            const rows = await DiskIOStats.findAll({
+            const { count, rows } = await DiskIOStats.findAndCountAll({
                 where: whereClause,
                 attributes: selectedAttributes,
                 limit: requestedLimit,
-                order: [['scan_timestamp', 'DESC'], ['pool', 'ASC'], ['device_name', 'ASC']]
+                order: [['scan_timestamp', 'DESC']]
             });
-            console.log(`📊 Simple query: ${Date.now() - simpleQuery}ms`);
 
             const queryTime = Date.now() - startTime;
-            console.log(`✅ Simple query completed in ${queryTime}ms: ${rows.length} records`);
 
             res.json({
                 diskio: rows,
-                queryTime: `${queryTime}ms`
+                totalCount: count,
+                returnedCount: rows.length,
+                queryTime: `${queryTime}ms`,
+                sampling: {
+                    applied: false,
+                    strategy: "simple-limit-latest"
+                }
             });
         }
     } catch (error) {
         const queryTime = Date.now() - startTime;
-        console.error(`❌ Disk I/O query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get disk I/O statistics',
             details: error.message,
@@ -1323,19 +1412,12 @@ export const getDiskIOStats = async (req, res) => {
  */
 export const getPoolIOStats = async (req, res) => {
     const startTime = Date.now();
-    console.log('🚀 Pool I/O query started:', { limit: req.query.limit, per_pool: req.query.per_pool });
     
     try {
         const { limit = 100, since, pool, pool_type, host, per_pool = 'true' } = req.query;
         const hostname = host || os.hostname();
         const requestedLimit = parseInt(limit);
         
-        const whereClause = { host: hostname };
-        if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-        if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
-        if (pool_type) whereClause.pool_type = pool_type;
-
-        // Performance optimization: Use selective attribute fetching
         const selectedAttributes = [
             'id', 'pool', 'pool_type', 'scan_timestamp', 'read_ops', 'write_ops', 
             'read_bandwidth', 'write_bandwidth', 'read_bandwidth_bytes', 'write_bandwidth_bytes',
@@ -1344,85 +1426,181 @@ export const getPoolIOStats = async (req, res) => {
         ];
 
         if (per_pool === 'true') {
-            console.log('📊 Using optimized per-pool sampling...');
             
-            // Step 1: Get distinct pools efficiently
-            const poolQuery = Date.now();
-            const distinctPools = await PoolIOStats.findAll({
-                where: whereClause,
-                attributes: ['pool'],
-                group: ['pool'],
-                raw: true
-            });
-            console.log(`📊 Pool discovery: ${Date.now() - poolQuery}ms`);
+            if (!since) {
+                // Path 1: Latest Records - Fast JavaScript deduplication approach
+                const baseWhereClause = { host: hostname };
+                if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
+                if (pool_type) baseWhereClause.pool_type = pool_type;
 
-            const poolNames = distinctPools.map(row => row.pool);
-            
-            if (poolNames.length === 0) {
-                return res.json({
-                    poolio: [],
-                    queryTime: `${Date.now() - startTime}ms`
+                // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
+                const recentRecords = await PoolIOStats.findAll({
+                    attributes: selectedAttributes,
+                    where: baseWhereClause,
+                    order: [['scan_timestamp', 'DESC']],
+                    limit: 2000  // Reasonable limit to find latest per pool
+                });
+
+                if (recentRecords.length === 0) {
+                    return res.json({
+                        poolio: [],
+                        totalCount: 0,
+                        returnedCount: 0,
+                        queryTime: `${Date.now() - startTime}ms`,
+                        sampling: {
+                            applied: true,
+                            poolCount: 0,
+                            strategy: "latest-per-pool-fast"
+                        }
+                    });
+                }
+
+                // JavaScript deduplication - pick first (most recent) occurrence of each pool
+                const latestPerPool = {};
+                const poolOrder = [];
+                
+                recentRecords.forEach(record => {
+                    if (!latestPerPool[record.pool]) {
+                        latestPerPool[record.pool] = record;
+                        poolOrder.push(record.pool);
+                    }
+                });
+
+                // Convert to array and sort by pool name
+                const results = poolOrder
+                    .sort()
+                    .map(poolName => latestPerPool[poolName]);
+
+                const poolCount = results.length;
+                const queryTime = Date.now() - startTime;
+
+                res.json({
+                    poolio: results,
+                    totalCount: results.length,
+                    returnedCount: results.length,
+                    queryTime: `${queryTime}ms`,
+                    sampling: {
+                        applied: true,
+                        poolCount: poolCount,
+                        samplesPerPool: 1,
+                        strategy: "latest-per-pool-fast"
+                    }
+                });
+
+            } else {
+                // Path 2: Historical Sampling - Even distribution across time range using JavaScript
+                const baseWhereClause = { 
+                    host: hostname,
+                    scan_timestamp: { [Op.gte]: new Date(since) }
+                };
+                if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
+                if (pool_type) baseWhereClause.pool_type = pool_type;
+
+                // Fetch all data within time range, grouped by pool
+                const allData = await PoolIOStats.findAll({
+                    attributes: selectedAttributes,
+                    where: baseWhereClause,
+                    order: [['pool', 'ASC'], ['scan_timestamp', 'ASC']]
+                });
+
+                if (allData.length === 0) {
+                    return res.json({
+                        poolio: [],
+                        totalCount: 0,
+                        returnedCount: 0,
+                        queryTime: `${Date.now() - startTime}ms`,
+                        sampling: {
+                            applied: true,
+                            poolCount: 0,
+                            strategy: "javascript-time-sampling"
+                        }
+                    });
+                }
+
+                // Group data by pool
+                const poolGroups = {};
+                allData.forEach(row => {
+                    if (!poolGroups[row.pool]) {
+                        poolGroups[row.pool] = [];
+                    }
+                    poolGroups[row.pool].push(row);
+                });
+
+                // Sample evenly from each pool group
+                const sampledResults = [];
+                const poolNames = Object.keys(poolGroups);
+
+                poolNames.forEach(poolName => {
+                    const poolData = poolGroups[poolName];
+                    const totalRecords = poolData.length;
+                    
+                    if (totalRecords === 0) return;
+
+                    // Calculate sampling interval
+                    const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+                    
+                    // Sample evenly across the data
+                    for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+                        const index = Math.min(i * interval, totalRecords - 1);
+                        sampledResults.push(poolData[index]);
+                    }
+                });
+
+                // Sort results by pool and timestamp
+                sampledResults.sort((a, b) => {
+                    if (a.pool !== b.pool) {
+                        return a.pool.localeCompare(b.pool);
+                    }
+                    return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
+                });
+
+                const poolCount = poolNames.length;
+                const queryTime = Date.now() - startTime;
+
+                res.json({
+                    poolio: sampledResults,
+                    totalCount: sampledResults.length,
+                    returnedCount: sampledResults.length,
+                    queryTime: `${queryTime}ms`,
+                    sampling: {
+                        applied: true,
+                        poolCount: poolCount,
+                        samplesPerPool: Math.round(sampledResults.length / poolCount),
+                        requestedSamplesPerPool: requestedLimit,
+                        strategy: "javascript-time-sampling"
+                    }
                 });
             }
 
-            // Step 2: Efficient parallel sampling per pool
-            console.log(`📊 Processing ${poolNames.length} pools with parallel sampling...`);
-            const parallelQuery = Date.now();
-            
-            // Fetch records directly for each pool - one query per pool
-            const poolResults = await Promise.all(
-                poolNames.map(async (poolName) => {
-                    const poolWhereClause = { ...whereClause, pool: poolName };
-                    
-                    // Fetch the most recent records for this pool
-                    return await PoolIOStats.findAll({
-                        where: poolWhereClause,
-                        attributes: selectedAttributes,
-                        limit: requestedLimit,
-                        order: [['scan_timestamp', 'DESC']]
-                    });
-                })
-            );
-            
-            console.log(`📊 Parallel pool queries: ${Date.now() - parallelQuery}ms`);
-
-            // Step 3: Combine and sort results
-            const allRows = poolResults
-                .flat()
-                .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
-
-            const queryTime = Date.now() - startTime;
-            console.log(`✅ Per-pool query completed in ${queryTime}ms: ${allRows.length} records from ${poolNames.length} pools`);
-
-            res.json({
-                poolio: allRows,
-                queryTime: `${queryTime}ms`
-            });
-
         } else {
-            // Simple non-per-pool query for comparison/fallback
-            console.log('📊 Using simple query approach...');
+            // Simple non-per-pool query (latest records across all pools)
+            const whereClause = { host: hostname };
+            if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
+            if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
+            if (pool_type) whereClause.pool_type = pool_type;
             
-            const simpleQuery = Date.now();
-            const rows = await PoolIOStats.findAll({
+            const { count, rows } = await PoolIOStats.findAndCountAll({
                 where: whereClause,
                 attributes: selectedAttributes,
                 limit: requestedLimit,
                 order: [['scan_timestamp', 'DESC']]
             });
-            console.log(`📊 Simple query: ${Date.now() - simpleQuery}ms`);
 
             const queryTime = Date.now() - startTime;
-            console.log(`✅ Simple query completed in ${queryTime}ms: ${rows.length} records`);
 
             res.json({
                 poolio: rows,
-                queryTime: `${queryTime}ms`
+                totalCount: count,
+                returnedCount: rows.length,
+                queryTime: `${queryTime}ms`,
+                sampling: {
+                    applied: false,
+                    strategy: "simple-limit-latest"
+                }
             });
         }
     } catch (error) {
         const queryTime = Date.now() - startTime;
-        console.error(`❌ Pool I/O query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get pool I/O statistics',
             details: error.message,
@@ -1473,17 +1651,12 @@ export const getPoolIOStats = async (req, res) => {
  */
 export const getARCStats = async (req, res) => {
     const startTime = Date.now();
-    console.log('🚀 ARC stats query started:', { limit: req.query.limit });
     
     try {
         const { limit = 100, since, host } = req.query;
         const hostname = host || os.hostname();
         const requestedLimit = parseInt(limit);
         
-        const whereClause = { host: hostname };
-        if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-
-        // Performance optimization: Use selective attribute fetching
         const selectedAttributes = [
             'id', 'scan_timestamp', 'arc_size', 'arc_target_size', 'arc_min_size', 'arc_max_size',
             'arc_meta_used', 'arc_meta_limit', 'mru_size', 'mfu_size', 'data_size', 'metadata_size',
@@ -1491,33 +1664,102 @@ export const getARCStats = async (req, res) => {
             'data_demand_efficiency', 'data_prefetch_efficiency', 'l2_hits', 'l2_misses', 'l2_size'
         ];
 
-        // Simple optimized query (no grouping needed for system-wide ARC stats)
-        console.log('📊 Using optimized ARC query...');
-        const simpleQuery = Date.now();
-        
-        const rows = await ARCStats.findAll({
-            where: whereClause,
-            attributes: selectedAttributes,
-            limit: requestedLimit,
-            order: [['scan_timestamp', 'DESC']]
-        });
-        
-        console.log(`📊 ARC query: ${Date.now() - simpleQuery}ms`);
+        if (!since) {
+            // Path 1: Latest Records - Get most recent system-wide ARC stats
+            const baseWhereClause = { host: hostname };
 
-        // Get the latest ARC stats for quick reference
-        const latest = rows.length > 0 ? rows[0] : null;
+            const latestRecord = await ARCStats.findOne({
+                attributes: selectedAttributes,
+                where: baseWhereClause,
+                order: [['scan_timestamp', 'DESC']]
+            });
 
-        const queryTime = Date.now() - startTime;
-        console.log(`✅ ARC query completed in ${queryTime}ms: ${rows.length} records`);
+            const results = latestRecord ? [latestRecord] : [];
+            const queryTime = Date.now() - startTime;
 
-        res.json({
-            arc: rows,
-            latest: latest,
-            queryTime: `${queryTime}ms`
-        });
+            res.json({
+                arc: results,
+                totalCount: results.length,
+                returnedCount: results.length,
+                queryTime: `${queryTime}ms`,
+                latest: latestRecord,
+                sampling: {
+                    applied: true,
+                    strategy: "latest-system-wide"
+                }
+            });
+
+        } else {
+            // Path 2: Historical Sampling - Even distribution across time range
+            const baseWhereClause = { 
+                host: hostname,
+                scan_timestamp: { [Op.gte]: new Date(since) }
+            };
+
+            // Fetch all data within time range
+            const allData = await ARCStats.findAll({
+                attributes: selectedAttributes,
+                where: baseWhereClause,
+                order: [['scan_timestamp', 'ASC']]
+            });
+
+            if (allData.length === 0) {
+                return res.json({
+                    arc: [],
+                    totalCount: 0,
+                    returnedCount: 0,
+                    queryTime: `${Date.now() - startTime}ms`,
+                    latest: null,
+                    sampling: {
+                        applied: true,
+                        strategy: "javascript-time-sampling"
+                    }
+                });
+            }
+
+            // Sample evenly across the time range
+            const totalRecords = allData.length;
+            const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+            const sampledResults = [];
+
+            for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+                const index = Math.min(i * interval, totalRecords - 1);
+                sampledResults.push(allData[index]);
+            }
+
+            let timeSpan = null;
+            if (sampledResults.length > 1) {
+                const firstRecord = new Date(sampledResults[0].scan_timestamp);
+                const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
+                timeSpan = {
+                    start: firstRecord.toISOString(),
+                    end: lastRecord.toISOString(),
+                    durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60))
+                };
+            }
+
+            const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
+            const queryTime = Date.now() - startTime;
+
+            res.json({
+                arc: sampledResults,
+                totalCount: sampledResults.length,
+                returnedCount: sampledResults.length,
+                queryTime: `${queryTime}ms`,
+                latest: latest,
+                sampling: {
+                    applied: true,
+                    samplesRequested: requestedLimit,
+                    samplesReturned: sampledResults.length,
+                    strategy: "javascript-time-sampling"
+                },
+                metadata: {
+                    timeSpan: timeSpan
+                }
+            });
+        }
     } catch (error) {
         const queryTime = Date.now() - startTime;
-        console.error(`❌ ARC stats query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get ARC statistics',
             details: error.message,
@@ -1574,16 +1816,11 @@ export const getARCStats = async (req, res) => {
  */
 export const getCPUStats = async (req, res) => {
     const startTime = Date.now();
-    console.log('🚀 CPU stats query started:', { limit: req.query.limit, include_cores: req.query.include_cores });
     
     try {
         const { limit = 100, since, include_cores = false } = req.query;
         const requestedLimit = parseInt(limit);
         
-        const whereClause = {};
-        if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-
-        // Performance optimization: Use selective attribute fetching (actual column names)
         const selectedAttributes = [
             'id', 'scan_timestamp', 'cpu_utilization_pct', 'load_avg_1min', 'load_avg_5min', 'load_avg_15min',
             'user_pct', 'system_pct', 'idle_pct', 'iowait_pct', 'context_switches', 'interrupts', 
@@ -1596,53 +1833,130 @@ export const getCPUStats = async (req, res) => {
             selectedAttributes.push('per_core_data');
         }
 
-        console.log('📊 Using optimized CPU query...');
-        const simpleQuery = Date.now();
-        
-        const rows = await CPUStats.findAll({
-            where: whereClause,
-            attributes: selectedAttributes,
-            limit: requestedLimit,
-            order: [['scan_timestamp', 'DESC']]
-        });
-        
-        console.log(`📊 CPU query: ${Date.now() - simpleQuery}ms`);
+        if (!since) {
+            // Path 1: Latest Records - Get most recent system-wide CPU stats
+            const latestRecord = await CPUStats.findOne({
+                attributes: selectedAttributes,
+                order: [['scan_timestamp', 'DESC']]
+            });
 
-        // Parse per-core data if requested
-        if (include_cores === 'true' || include_cores === true) {
-            const parseStart = Date.now();
-            for (const row of rows) {
-                if (row.per_core_data) {
-                    try {
-                        row.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
-                            yj.parseAsync(row.per_core_data, (err, result) => {
-                                if (err) reject(err);
-                                else resolve(result);
-                            });
+            // Parse per-core data if requested and available
+            if ((include_cores === 'true' || include_cores === true) && latestRecord?.per_core_data) {
+                try {
+                    latestRecord.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
+                        yj.parseAsync(latestRecord.per_core_data, (err, result) => {
+                            if (err) reject(err);
+                            else resolve(result);
                         });
-                    } catch (error) {
-                        console.warn('Failed to parse per-core data:', error.message);
-                        row.dataValues.per_core_parsed = null;
+                    });
+                } catch (error) {
+                    latestRecord.dataValues.per_core_parsed = null;
+                }
+            }
+
+            const results = latestRecord ? [latestRecord] : [];
+            const queryTime = Date.now() - startTime;
+
+            res.json({
+                cpu: results,
+                totalCount: results.length,
+                returnedCount: results.length,
+                queryTime: `${queryTime}ms`,
+                latest: latestRecord,
+                sampling: {
+                    applied: true,
+                    strategy: "latest-system-wide"
+                }
+            });
+
+        } else {
+            // Path 2: Historical Sampling - Even distribution across time range
+            const baseWhereClause = { 
+                scan_timestamp: { [Op.gte]: new Date(since) }
+            };
+
+            // Fetch all data within time range
+            const allData = await CPUStats.findAll({
+                attributes: selectedAttributes,
+                where: baseWhereClause,
+                order: [['scan_timestamp', 'ASC']]
+            });
+
+            if (allData.length === 0) {
+                return res.json({
+                    cpu: [],
+                    totalCount: 0,
+                    returnedCount: 0,
+                    queryTime: `${Date.now() - startTime}ms`,
+                    latest: null,
+                    sampling: {
+                        applied: true,
+                        strategy: "javascript-time-sampling"
+                    }
+                });
+            }
+
+            // Sample evenly across the time range
+            const totalRecords = allData.length;
+            const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+            const sampledResults = [];
+
+            for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+                const index = Math.min(i * interval, totalRecords - 1);
+                sampledResults.push(allData[index]);
+            }
+
+            // Parse per-core data if requested
+            if (include_cores === 'true' || include_cores === true) {
+                for (const row of sampledResults) {
+                    if (row.per_core_data) {
+                        try {
+                            row.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
+                                yj.parseAsync(row.per_core_data, (err, result) => {
+                                    if (err) reject(err);
+                                    else resolve(result);
+                                });
+                            });
+                        } catch (error) {
+                            row.dataValues.per_core_parsed = null;
+                        }
                     }
                 }
             }
-            console.log(`📊 Per-core parsing: ${Date.now() - parseStart}ms`);
+
+            let timeSpan = null;
+            if (sampledResults.length > 1) {
+                const firstRecord = new Date(sampledResults[0].scan_timestamp);
+                const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
+                timeSpan = {
+                    start: firstRecord.toISOString(),
+                    end: lastRecord.toISOString(),
+                    durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60))
+                };
+            }
+
+            const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
+            const queryTime = Date.now() - startTime;
+
+            res.json({
+                cpu: sampledResults,
+                totalCount: sampledResults.length,
+                returnedCount: sampledResults.length,
+                queryTime: `${queryTime}ms`,
+                latest: latest,
+                sampling: {
+                    applied: true,
+                    samplesRequested: requestedLimit,
+                    samplesReturned: sampledResults.length,
+                    strategy: "javascript-time-sampling"
+                },
+                metadata: {
+                    timeSpan: timeSpan
+                }
+            });
         }
-
-        // Get the latest CPU stats for quick reference
-        const latest = rows.length > 0 ? rows[0] : null;
-
-        const queryTime = Date.now() - startTime;
-        console.log(`✅ CPU query completed in ${queryTime}ms: ${rows.length} records`);
-
-        res.json({
-            cpu: rows,
-            latest: latest,
-            queryTime: `${queryTime}ms`
-        });
     } catch (error) {
         const queryTime = Date.now() - startTime;
-        console.error(`❌ CPU stats query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get CPU statistics',
             details: error.message,
@@ -1693,47 +2007,108 @@ export const getCPUStats = async (req, res) => {
  */
 export const getMemoryStats = async (req, res) => {
     const startTime = Date.now();
-    console.log('🚀 Memory stats query started:', { limit: req.query.limit });
     
     try {
         const { limit = 100, since } = req.query;
         const requestedLimit = parseInt(limit);
         
-        const whereClause = {};
-        if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-
-        // Performance optimization: Use selective attribute fetching (correct field names from SystemMetricsCollector)
         const selectedAttributes = [
             'id', 'scan_timestamp', 'total_memory_bytes', 'used_memory_bytes', 'free_memory_bytes', 'available_memory_bytes', 
             'memory_utilization_pct', 'swap_total_bytes', 'swap_used_bytes', 'swap_free_bytes', 'swap_utilization_pct'
         ];
 
-        console.log('📊 Using optimized memory query...');
-        const simpleQuery = Date.now();
-        
-        const rows = await MemoryStats.findAll({
-            where: whereClause,
-            attributes: selectedAttributes,
-            limit: requestedLimit,
-            order: [['scan_timestamp', 'DESC']]
-        });
-        
-        console.log(`📊 Memory query: ${Date.now() - simpleQuery}ms`);
+        if (!since) {
+            // Path 1: Latest Records - Get most recent system-wide memory stats
+            const latestRecord = await MemoryStats.findOne({
+                attributes: selectedAttributes,
+                order: [['scan_timestamp', 'DESC']]
+            });
 
-        // Get the latest memory stats for quick reference
-        const latest = rows.length > 0 ? rows[0] : null;
+            const results = latestRecord ? [latestRecord] : [];
+            const queryTime = Date.now() - startTime;
 
-        const queryTime = Date.now() - startTime;
-        console.log(`✅ Memory query completed in ${queryTime}ms: ${rows.length} records`);
+            res.json({
+                memory: results,
+                totalCount: results.length,
+                returnedCount: results.length,
+                queryTime: `${queryTime}ms`,
+                latest: latestRecord,
+                sampling: {
+                    applied: true,
+                    strategy: "latest-system-wide"
+                }
+            });
 
-        res.json({
-            memory: rows,
-            latest: latest,
-            queryTime: `${queryTime}ms`
-        });
+        } else {
+            // Path 2: Historical Sampling - Even distribution across time range
+            const baseWhereClause = { 
+                scan_timestamp: { [Op.gte]: new Date(since) }
+            };
+
+            // Fetch all data within time range
+            const allData = await MemoryStats.findAll({
+                attributes: selectedAttributes,
+                where: baseWhereClause,
+                order: [['scan_timestamp', 'ASC']]
+            });
+
+            if (allData.length === 0) {
+                return res.json({
+                    memory: [],
+                    totalCount: 0,
+                    returnedCount: 0,
+                    queryTime: `${Date.now() - startTime}ms`,
+                    latest: null,
+                    sampling: {
+                        applied: true,
+                        strategy: "javascript-time-sampling"
+                    }
+                });
+            }
+
+            // Sample evenly across the time range
+            const totalRecords = allData.length;
+            const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+            const sampledResults = [];
+
+            for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+                const index = Math.min(i * interval, totalRecords - 1);
+                sampledResults.push(allData[index]);
+            }
+
+            let timeSpan = null;
+            if (sampledResults.length > 1) {
+                const firstRecord = new Date(sampledResults[0].scan_timestamp);
+                const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
+                timeSpan = {
+                    start: firstRecord.toISOString(),
+                    end: lastRecord.toISOString(),
+                    durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60))
+                };
+            }
+
+            const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
+            const queryTime = Date.now() - startTime;
+
+            res.json({
+                memory: sampledResults,
+                totalCount: sampledResults.length,
+                returnedCount: sampledResults.length,
+                queryTime: `${queryTime}ms`,
+                latest: latest,
+                sampling: {
+                    applied: true,
+                    samplesRequested: requestedLimit,
+                    samplesReturned: sampledResults.length,
+                    strategy: "javascript-time-sampling"
+                },
+                metadata: {
+                    timeSpan: timeSpan
+                }
+            });
+        }
     } catch (error) {
         const queryTime = Date.now() - startTime;
-        console.error(`❌ Memory stats query failed after ${queryTime}ms:`, error);
         res.status(500).json({ 
             error: 'Failed to get memory statistics',
             details: error.message,
