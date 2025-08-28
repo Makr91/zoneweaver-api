@@ -1414,8 +1414,7 @@ export const getPoolIOStats = async (req, res) => {
     const startTime = Date.now();
     
     try {
-        const { limit = 100, since, pool, pool_type, host, per_pool = 'true' } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, since, pool, pool_type, per_pool = 'true' } = req.query;
         const requestedLimit = parseInt(limit);
         
         const selectedAttributes = [
@@ -1429,7 +1428,7 @@ export const getPoolIOStats = async (req, res) => {
             
             if (!since) {
                 // Path 1: Latest Records - Fast JavaScript deduplication approach
-                const baseWhereClause = { host: hostname };
+                const baseWhereClause = {};
                 if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
                 if (pool_type) baseWhereClause.pool_type = pool_type;
 
@@ -1490,7 +1489,6 @@ export const getPoolIOStats = async (req, res) => {
             } else {
                 // Path 2: Historical Sampling - Even distribution across time range using JavaScript
                 const baseWhereClause = { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: new Date(since) }
                 };
                 if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
@@ -1574,7 +1572,7 @@ export const getPoolIOStats = async (req, res) => {
 
         } else {
             // Simple non-per-pool query (latest records across all pools)
-            const whereClause = { host: hostname };
+            const whereClause = {};
             if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
             if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
             if (pool_type) whereClause.pool_type = pool_type;
