@@ -230,10 +230,9 @@ export const triggerCollection = async (req, res) => {
  */
 export const getNetworkInterfaces = async (req, res) => {
     try {
-        const { limit = 100, offset = 0, host, state, link } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, offset = 0, state, link } = req.query;
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (state) whereClause.state = state;
         if (link) whereClause.link = { [Op.like]: `%${link}%` };
 
@@ -307,10 +306,9 @@ export const getNetworkInterfaces = async (req, res) => {
  */
 export const getNetworkStats = async (req, res) => {
     try {
-        const { limit = 100, since, link, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, since, link } = req.query;
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
         if (link) whereClause.link = { [Op.like]: `%${link}%` };
 
@@ -379,8 +377,7 @@ export const getNetworkUsage = async (req, res) => {
     const startTime = Date.now();
     
     try {
-        const { limit = 100, since, link, host, per_interface = 'true' } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, since, link, per_interface = 'true' } = req.query;
         const requestedLimit = parseInt(limit);
         
         const selectedAttributes = [
@@ -394,15 +391,14 @@ export const getNetworkUsage = async (req, res) => {
             
             if (!since) {
                 // Path 1: Latest Records - Fast JavaScript deduplication approach
-                const baseWhereClause = { host: hostname };
+                const baseWhereClause = {};
                 if (link) baseWhereClause.link = { [Op.like]: `%${link}%` };
 
                 // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
                 const recentRecords = await NetworkUsage.findAll({
                     attributes: selectedAttributes,
                     where: baseWhereClause,
-                    order: [['scan_timestamp', 'DESC']],
-                    limit: 2000  // Reasonable limit to find latest per interface
+                    order: [['scan_timestamp', 'DESC']]
                 });
 
                 if (recentRecords.length === 0) {
@@ -460,7 +456,6 @@ export const getNetworkUsage = async (req, res) => {
             } else {
                 // Path 2: Historical Sampling - Even distribution across time range using JavaScript
                 const baseWhereClause = { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: new Date(since) }
                 };
                 if (link) baseWhereClause.link = { [Op.like]: `%${link}%` };
@@ -562,7 +557,7 @@ export const getNetworkUsage = async (req, res) => {
 
         } else {
             // Simple non-per-interface query (latest records across all interfaces)
-            const whereClause = { host: hostname };
+            const whereClause = {};
             if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
             if (link) whereClause.link = { [Op.like]: `%${link}%` };
             
@@ -639,10 +634,9 @@ export const getNetworkUsage = async (req, res) => {
  */
 export const getZFSPools = async (req, res) => {
     try {
-        const { limit = 50, pool, health, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 50, pool, health } = req.query;
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
         if (health) whereClause.health = health;
 
@@ -721,10 +715,9 @@ export const getZFSPools = async (req, res) => {
  */
 export const getZFSDatasets = async (req, res) => {
     try {
-        const { limit = 100, offset = 0, pool, type, name, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, offset = 0, pool, type, name } = req.query;
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (pool) whereClause.pool = pool;
         if (type) whereClause.type = type;
         if (name) whereClause.name = { [Op.like]: `%${name}%` };
@@ -781,17 +774,13 @@ export const getZFSDatasets = async (req, res) => {
  */
 export const getHostInfo = async (req, res) => {
     try {
-        const { host } = req.query;
-        const hostname = host || os.hostname();
-        
         const hostInfo = await HostInfo.findOne({
-            where: { host: hostname }
+            order: [['updated_at', 'DESC']]
         });
 
         if (!hostInfo) {
             return res.status(404).json({ 
-                error: 'Host not found',
-                host: hostname 
+                error: 'Host information not found'
             });
         }
 
@@ -891,10 +880,9 @@ export const getHostInfo = async (req, res) => {
  */
 export const getDisks = async (req, res) => {
     try {
-        const { limit = 100, offset = 0, pool, available, type, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, offset = 0, pool, available, type } = req.query;
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (pool) whereClause.pool_assignment = pool;
         if (available !== undefined) whereClause.is_available = available === 'true';
         if (type) whereClause.disk_type = type;
@@ -981,10 +969,9 @@ export const getDisks = async (req, res) => {
  */
 export const getIPAddresses = async (req, res) => {
     try {
-        const { limit = 100, offset = 0, interface: iface, ip_version, state, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, offset = 0, interface: iface, ip_version, state } = req.query;
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (iface) whereClause.interface = { [Op.like]: `%${iface}%` };
         if (ip_version) whereClause.ip_version = ip_version;
         if (state) whereClause.state = state;
@@ -1080,10 +1067,9 @@ export const getIPAddresses = async (req, res) => {
  */
 export const getRoutes = async (req, res) => {
     try {
-        const { limit = 100, offset = 0, interface: iface, ip_version, is_default, destination, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, offset = 0, interface: iface, ip_version, is_default, destination } = req.query;
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (iface) whereClause.interface = { [Op.like]: `%${iface}%` };
         if (ip_version) whereClause.ip_version = ip_version;
         if (is_default !== undefined) whereClause.is_default = is_default === 'true';
@@ -1169,8 +1155,7 @@ export const getDiskIOStats = async (req, res) => {
     const startTime = Date.now();
     
     try {
-        const { limit = 100, since, pool, device, host, per_device = 'true' } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, since, pool, device, per_device = 'true' } = req.query;
         const requestedLimit = parseInt(limit);
         
         const selectedAttributes = [
@@ -1183,7 +1168,7 @@ export const getDiskIOStats = async (req, res) => {
             
             if (!since) {
                 // Path 1: Latest Records - Fast JavaScript deduplication approach
-                const baseWhereClause = { host: hostname };
+                const baseWhereClause = {};
                 if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
                 if (device) baseWhereClause.device_name = { [Op.like]: `%${device}%` };
 
@@ -1191,8 +1176,7 @@ export const getDiskIOStats = async (req, res) => {
                 const recentRecords = await DiskIOStats.findAll({
                     attributes: selectedAttributes,
                     where: baseWhereClause,
-                    order: [['scan_timestamp', 'DESC']],
-                    limit: 2000  // Reasonable limit to find latest per device
+                    order: [['scan_timestamp', 'DESC']]
                 });
 
                 if (recentRecords.length === 0) {
@@ -1244,7 +1228,6 @@ export const getDiskIOStats = async (req, res) => {
             } else {
                 // Path 2: Historical Sampling - Even distribution across time range using JavaScript
                 const baseWhereClause = { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: new Date(since) }
                 };
                 if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
@@ -1328,7 +1311,7 @@ export const getDiskIOStats = async (req, res) => {
 
         } else {
             // Simple non-per-device query (latest records across all devices)
-            const whereClause = { host: hostname };
+            const whereClause = {};
             if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
             if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
             if (device) whereClause.device_name = { [Op.like]: `%${device}%` };
@@ -1436,8 +1419,7 @@ export const getPoolIOStats = async (req, res) => {
                 const recentRecords = await PoolIOStats.findAll({
                     attributes: selectedAttributes,
                     where: baseWhereClause,
-                    order: [['scan_timestamp', 'DESC']],
-                    limit: 2000  // Reasonable limit to find latest per pool
+                    order: [['scan_timestamp', 'DESC']]
                 });
 
                 if (recentRecords.length === 0) {
@@ -1651,8 +1633,7 @@ export const getARCStats = async (req, res) => {
     const startTime = Date.now();
     
     try {
-        const { limit = 100, since, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, since } = req.query;
         const requestedLimit = parseInt(limit);
         
         const selectedAttributes = [
@@ -1664,11 +1645,8 @@ export const getARCStats = async (req, res) => {
 
         if (!since) {
             // Path 1: Latest Records - Get most recent system-wide ARC stats
-            const baseWhereClause = { host: hostname };
-
             const latestRecord = await ARCStats.findOne({
                 attributes: selectedAttributes,
-                where: baseWhereClause,
                 order: [['scan_timestamp', 'DESC']]
             });
 
@@ -1690,7 +1668,6 @@ export const getARCStats = async (req, res) => {
         } else {
             // Path 2: Historical Sampling - Even distribution across time range
             const baseWhereClause = { 
-                host: hostname,
                 scan_timestamp: { [Op.gte]: new Date(since) }
             };
 
@@ -2172,10 +2149,9 @@ export const getMemoryStats = async (req, res) => {
  */
 export const getSystemLoadMetrics = async (req, res) => {
     try {
-        const { limit = 100, since, host } = req.query;
-        const hostname = host || os.hostname();
+        const { limit = 100, since } = req.query;
         
-        const whereClause = { host: hostname };
+        const whereClause = {};
         if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
 
         const { count, rows } = await CPUStats.findAndCountAll({
@@ -2266,7 +2242,7 @@ export const getMonitoringSummary = async (req, res) => {
         // Step 1: Get host info with selective attributes
         const hostInfoQuery = Date.now();
         const hostInfo = await HostInfo.findOne({
-            where: { host: hostname },
+            order: [['updated_at', 'DESC']],
             attributes: [
                 'network_acct_enabled', 'network_scan_errors', 'storage_scan_errors', 'platform', 
                 'uptime', 'last_network_scan', 'last_network_stats_scan', 'last_network_usage_scan', 
@@ -2289,49 +2265,41 @@ export const getMonitoringSummary = async (req, res) => {
         ] = await Promise.all([
             NetworkInterfaces.count({
                 where: { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
             }),
             NetworkStats.count({
                 where: { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
             }),
             NetworkUsage.count({
                 where: { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
             }),
             IPAddresses.count({
                 where: { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
             }),
             Routes.count({
                 where: { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
             }),
             ZFSPools.count({
                 where: { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
             }),
             ZFSDatasets.count({
                 where: { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
             }),
             Disks.count({
                 where: { 
-                    host: hostname,
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
             })
@@ -2351,42 +2319,34 @@ export const getMonitoringSummary = async (req, res) => {
             latestDisk
         ] = await Promise.all([
             NetworkInterfaces.findOne({
-                where: { host: hostname },
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             }),
             NetworkStats.findOne({
-                where: { host: hostname },
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             }),
             NetworkUsage.findOne({
-                where: { host: hostname },
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             }),
             IPAddresses.findOne({
-                where: { host: hostname },
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             }),
             Routes.findOne({
-                where: { host: hostname },
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             }),
             ZFSPools.findOne({
-                where: { host: hostname },
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             }),
             ZFSDatasets.findOne({
-                where: { host: hostname },
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             }),
             Disks.findOne({
-                where: { host: hostname },
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             })
