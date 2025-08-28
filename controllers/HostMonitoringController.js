@@ -393,21 +393,19 @@ export const getNetworkUsage = async (req, res) => {
         if (per_interface === 'true') {
             
             if (!since) {
-                // Path 1: Latest Records - Get most recent record for each interface
+                // Path 1: Latest Records - Fast JavaScript deduplication approach
                 const baseWhereClause = { host: hostname };
                 if (link) baseWhereClause.link = { [Op.like]: `%${link}%` };
 
-                // Get latest timestamp for each interface
-                const latestPerInterface = await NetworkUsage.findAll({
-                    attributes: [
-                        'link',
-                        [Sequelize.fn('MAX', Sequelize.col('scan_timestamp')), 'latest_timestamp']
-                    ],
+                // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
+                const recentRecords = await NetworkUsage.findAll({
+                    attributes: selectedAttributes,
                     where: baseWhereClause,
-                    group: ['link']
+                    order: [['scan_timestamp', 'DESC']],
+                    limit: 2000  // Reasonable limit to find latest per interface
                 });
 
-                if (latestPerInterface.length === 0) {
+                if (recentRecords.length === 0) {
                     return res.json({
                         usage: [],
                         totalCount: 0,
@@ -416,23 +414,26 @@ export const getNetworkUsage = async (req, res) => {
                         sampling: {
                             applied: true,
                             interfaceCount: 0,
-                            strategy: "latest-per-interface"
+                            strategy: "latest-per-interface-fast"
                         }
                     });
                 }
 
-                // Get actual records for those latest timestamps
-                const results = await NetworkUsage.findAll({
-                    attributes: selectedAttributes,
-                    where: {
-                        host: hostname,
-                        [Op.or]: latestPerInterface.map(row => ({
-                            link: row.link,
-                            scan_timestamp: row.dataValues.latest_timestamp
-                        }))
-                    },
-                    order: [['link', 'ASC'], ['scan_timestamp', 'DESC']]
+                // JavaScript deduplication - pick first (most recent) occurrence of each interface
+                const latestPerInterface = {};
+                const interfaceOrder = [];
+                
+                recentRecords.forEach(record => {
+                    if (!latestPerInterface[record.link]) {
+                        latestPerInterface[record.link] = record;
+                        interfaceOrder.push(record.link);
+                    }
                 });
+
+                // Convert to array and sort by interface name
+                const results = interfaceOrder
+                    .sort()
+                    .map(link => latestPerInterface[link]);
 
                 const interfaceCount = results.length;
                 const activeInterfaces = results.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
@@ -448,7 +449,7 @@ export const getNetworkUsage = async (req, res) => {
                         applied: true,
                         interfaceCount: interfaceCount,
                         samplesPerInterface: 1,
-                        strategy: "latest-per-interface"
+                        strategy: "latest-per-interface-fast"
                     },
                     metadata: {
                         activeInterfacesCount: activeInterfaces,
