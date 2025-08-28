@@ -384,77 +384,58 @@ export const getNetworkUsage = async (req, res) => {
         const hostname = host || os.hostname();
         const requestedLimit = parseInt(limit);
         
-        const whereClause = { host: hostname };
-        if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-        if (link) whereClause.link = { [Op.like]: `%${link}%` };
-
-        // Performance optimization: Use selective attribute fetching (includes all delta fields)
+        // Performance optimization: Use selective attribute fetching
         const selectedAttributes = [
-            'id', 'link', 'scan_timestamp', 'rx_mbps', 'tx_mbps', 
+            'link', 'scan_timestamp', 'rx_mbps', 'tx_mbps', 
             'rx_bps', 'tx_bps', 'rbytes', 'obytes', 'interface_speed_mbps', 
             'interface_class', 'time_delta_seconds', 'ipackets_delta', 'opackets_delta', 
             'rbytes_delta', 'obytes_delta', 'ierrors_delta', 'oerrors_delta', 'ipackets'
         ];
 
         if (per_interface === 'true') {
-            console.log('📊 Using optimized per-interface sampling...');
+            console.log('📊 Using optimized per-interface even sampling...');
             
-            // Step 1: Get distinct interfaces efficiently
-            const interfaceQuery = Date.now();
-            const distinctInterfaces = await NetworkUsage.findAll({
-                where: whereClause,
-                attributes: ['link'],
-                group: ['link'],
-                raw: true
-            });
-            console.log(`📊 Interface discovery: ${Date.now() - interfaceQuery}ms`);
-
-            const interfaceNames = distinctInterfaces.map(row => row.link);
-            
-            if (interfaceNames.length === 0) {
-                return res.json({
-                    usage: [],
-                    totalCount: 0,
-                    returnedCount: 0,
-                    queryTime: `${Date.now() - startTime}ms`,
-                    optimized: true
+            // Validate required parameters for even sampling
+            if (!since) {
+                return res.status(400).json({
+                    error: 'Parameter "since" is required for per-interface sampling',
+                    queryTime: `${Date.now() - startTime}ms`
                 });
             }
 
-            // Step 2: Efficient modulo sampling per interface - PERFORMANCE OPTIMIZED
-            console.log(`📊 Processing ${interfaceNames.length} interfaces with modulo sampling...`);
-            const parallelQuery = Date.now();
-            
-            // Fetch records directly for each interface - one query per interface
-            const interfaceResults = await Promise.all(
-                interfaceNames.map(async (interfaceName) => {
-                    const interfaceWhereClause = { ...whereClause, link: interfaceName };
-                    
-                    // Fetch the most recent records for this interface
-                    return await NetworkUsage.findAll({
-                        where: interfaceWhereClause,
-                        attributes: selectedAttributes,
-                        limit: requestedLimit,
-                        order: [['scan_timestamp', 'DESC']]
-                    });
-                })
-            );
-            
-            console.log(`📊 Parallel interface queries: ${Date.now() - parallelQuery}ms`);
+            // Build the time-bucket sampling query using raw SQL for database compatibility
+            const evenSamplingQuery = `
+                SELECT ${selectedAttributes.join(', ')}
+                FROM network_usage
+                WHERE host = ? AND scan_timestamp >= ?
+                  ${link ? 'AND link LIKE ?' : ''}
+                  AND (link, scan_timestamp) IN (
+                    SELECT link, MIN(scan_timestamp)
+                    FROM network_usage
+                    WHERE host = ? AND scan_timestamp >= ?
+                      ${link ? 'AND link LIKE ?' : ''}
+                    GROUP BY link, CAST((julianday(scan_timestamp) - julianday(?)) * ? AS INTEGER)
+                  )
+                ORDER BY link, scan_timestamp
+            `;
 
-            // Step 3: Combine and sort results
-            const allRows = interfaceResults
-                .flat()
-                .sort((a, b) => new Date(a.scan_timestamp) - new Date(b.scan_timestamp));
+            // Build parameters array
+            const params = [hostname, since];
+            if (link) params.push(`%${link}%`);
+            params.push(hostname, since);
+            if (link) params.push(`%${link}%`);
+            params.push(since, requestedLimit);
 
-            // Step 4: Get total count efficiently (single query)
-            const totalCount = await NetworkUsage.count({ where: whereClause });
-
-            const queryTime = Date.now() - startTime;
-            console.log(`✅ Per-interface query completed in ${queryTime}ms: ${allRows.length} records from ${interfaceNames.length} interfaces`);
+            const evenSamplingStart = Date.now();
+            const results = await sequelize.query(evenSamplingQuery, {
+                replacements: params,
+                type: Sequelize.QueryTypes.SELECT
+            });
+            console.log(`📊 Even sampling query: ${Date.now() - evenSamplingStart}ms`);
 
             // Calculate metadata
-            const activeInterfaces = allRows.reduce((acc, row) => {
+            const interfaceCount = new Set(results.map(row => row.link)).size;
+            const activeInterfaces = results.reduce((acc, row) => {
                 if (row.rx_mbps > 0 || row.tx_mbps > 0) {
                     acc.add(row.link);
                 }
@@ -462,9 +443,9 @@ export const getNetworkUsage = async (req, res) => {
             }, new Set()).size;
 
             let timeSpan = null;
-            if (allRows.length > 1) {
-                const firstRecord = new Date(allRows[0].scan_timestamp);
-                const lastRecord = new Date(allRows[allRows.length - 1].scan_timestamp);
+            if (results.length > 1) {
+                const firstRecord = new Date(results[0].scan_timestamp);
+                const lastRecord = new Date(results[results.length - 1].scan_timestamp);
                 timeSpan = {
                     start: firstRecord.toISOString(),
                     end: lastRecord.toISOString(),
@@ -472,28 +453,36 @@ export const getNetworkUsage = async (req, res) => {
                 };
             }
 
+            const queryTime = Date.now() - startTime;
+            console.log(`✅ Per-interface even sampling completed in ${queryTime}ms: ${results.length} records from ${interfaceCount} interfaces`);
+
             res.json({
-                usage: allRows,
-                totalCount: totalCount,
-                returnedCount: allRows.length,
+                usage: results,
+                totalCount: results.length,
+                returnedCount: results.length,
                 queryTime: `${queryTime}ms`,
                 optimized: true,
                 sampling: {
                     applied: true,
-                    interfaceCount: interfaceNames.length,
-                    maxSamplesPerInterface: requestedLimit,
-                    strategy: "optimized-parallel-sampling"
+                    interfaceCount: interfaceCount,
+                    samplesPerInterface: Math.round(results.length / interfaceCount),
+                    requestedSamplesPerInterface: requestedLimit,
+                    strategy: "time-bucket-even-sampling"
                 },
                 metadata: {
                     timeSpan: timeSpan,
                     activeInterfacesCount: activeInterfaces,
-                    interfaceList: interfaceNames
+                    interfaceList: [...new Set(results.map(row => row.link))].sort()
                 }
             });
 
         } else {
-            // Simple non-per-interface query for comparison/fallback
-            console.log('📊 Using simple query approach...');
+            // Simple non-per-interface query (latest records across all interfaces)
+            console.log('📊 Using simple latest records query...');
+            
+            const whereClause = { host: hostname };
+            if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
+            if (link) whereClause.link = { [Op.like]: `%${link}%` };
             
             const simpleQuery = Date.now();
             const { count, rows } = await NetworkUsage.findAndCountAll({
@@ -515,7 +504,7 @@ export const getNetworkUsage = async (req, res) => {
                 optimized: true,
                 sampling: {
                     applied: false,
-                    strategy: "simple-limit"
+                    strategy: "simple-limit-latest"
                 }
             });
         }
