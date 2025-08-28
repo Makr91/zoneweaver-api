@@ -66,6 +66,9 @@ const OPERATION_CATEGORIES = {
     
     // System operations (serialized)
     'set_hostname': 'system_config',
+    'update_time_sync_config': 'system_config',
+    'force_time_sync': 'system_config', 
+    'set_timezone': 'system_config',
     
     // Zone operations (safe to run concurrently - no category)
     // start, stop, restart, delete, discover - no category = no conflicts
@@ -209,6 +212,12 @@ const executeTask = async (task) => {
                 return await refreshService(zone_name);
             case 'set_hostname':
                 return await executeSetHostnameTask(task.metadata);
+            case 'update_time_sync_config':
+                return await executeUpdateTimeSyncConfigTask(task.metadata);
+            case 'force_time_sync':
+                return await executeForceTimeSyncTask(task.metadata);
+            case 'set_timezone':
+                return await executeSetTimezoneTask(task.metadata);
             case 'create_ip_address':
                 return await executeCreateIPAddressTask(task.metadata);
             case 'delete_ip_address':
@@ -2990,6 +2999,268 @@ const executeRepositoryDisableTask = async (metadataJson) => {
 
     } catch (error) {
         return { success: false, error: `Repository disable task failed: ${error.message}` };
+    }
+};
+
+/**
+ * Execute time sync configuration update task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
+    console.log('🔧 === TIME SYNC CONFIG UPDATE TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { service, config_content, backup_existing, restart_service } = metadata;
+
+        console.log('📋 Time sync config update parameters:');
+        console.log('   - service:', service);
+        console.log('   - backup_existing:', backup_existing);
+        console.log('   - restart_service:', restart_service);
+        console.log('   - config_content length:', config_content ? config_content.length : 'N/A');
+
+        // Determine config file path based on service
+        let configFile;
+        if (service === 'ntp') {
+            configFile = '/etc/inet/ntp.conf';
+        } else if (service === 'chrony') {
+            configFile = '/etc/chrony.conf';
+        } else {
+            return { success: false, error: `Unknown time sync service: ${service}` };
+        }
+
+        console.log('🔧 Target config file:', configFile);
+
+        // Create backup if existing config exists and backup is requested
+        if (backup_existing) {
+            const backupResult = await executeCommand(`test -f ${configFile} && pfexec cp ${configFile} ${configFile}.backup.$(date +%Y%m%d_%H%M%S) || echo "No existing config to backup"`);
+            if (backupResult.success) {
+                console.log('✅ Config backup created (if file existed)');
+            } else {
+                console.warn('⚠️  Failed to create backup:', backupResult.error);
+            }
+        }
+
+        // Write new config content
+        const writeResult = await executeCommand(`echo '${config_content.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`);
+        
+        if (!writeResult.success) {
+            return { 
+                success: false, 
+                error: `Failed to write config file ${configFile}: ${writeResult.error}` 
+            };
+        }
+
+        console.log('✅ Config file written successfully');
+
+        // Restart service if requested
+        if (restart_service) {
+            console.log(`🔄 Restarting ${service} service...`);
+            const restartResult = await executeCommand(`pfexec svcadm restart ${service}`);
+            
+            if (!restartResult.success) {
+                return { 
+                    success: true, // Config was written successfully
+                    message: `Time sync configuration updated successfully, but service restart failed: ${restartResult.error}`,
+                    warning: `Service ${service} restart failed - may need manual restart`
+                };
+            }
+            console.log('✅ Service restarted successfully');
+        }
+
+        return { 
+            success: true, 
+            message: `Time sync configuration updated successfully for ${service}${restart_service ? ' (service restarted)' : ''}`,
+            config_file: configFile
+        };
+
+    } catch (error) {
+        console.error('❌ Time sync config update task exception:', error);
+        return { success: false, error: `Time sync config update task failed: ${error.message}` };
+    }
+};
+
+/**
+ * Execute force time synchronization task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeForceTimeSyncTask = async (metadataJson) => {
+    console.log('🔧 === FORCE TIME SYNC TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { service, server, timeout } = metadata;
+
+        console.log('📋 Force time sync parameters:');
+        console.log('   - service:', service);
+        console.log('   - server:', server || 'auto-detect');
+        console.log('   - timeout:', timeout);
+
+        let syncResult;
+
+        if (service === 'ntp') {
+            // For NTP, use ntpdig for immediate sync
+            let command = `pfexec ntpdig`;
+            if (timeout) command += ` -t ${timeout}`;
+            if (server) {
+                command += ` ${server}`;
+            } else {
+                command += ` pool.ntp.org`; // Default fallback server
+            }
+
+            console.log('🔧 Executing NTP sync command:', command);
+            syncResult = await executeCommand(command, (timeout || 30) * 1000);
+            
+        } else if (service === 'chrony') {
+            // For Chrony, use chronyc to force sync
+            console.log('🔧 Executing Chrony makestep command...');
+            syncResult = await executeCommand(`pfexec chronyc makestep`, (timeout || 30) * 1000);
+            
+            if (!syncResult.success) {
+                // Fallback to burst command
+                console.log('🔧 Makestep failed, trying burst command...');
+                syncResult = await executeCommand(`pfexec chronyc burst 5/10`, (timeout || 30) * 1000);
+            }
+            
+        } else {
+            return { success: false, error: `Cannot force sync - unknown service: ${service}` };
+        }
+
+        if (syncResult.success) {
+            console.log('✅ Time sync command completed successfully');
+            
+            // Get current system time for confirmation
+            const timeResult = await executeCommand('date');
+            const currentTime = timeResult.success ? timeResult.output : 'unknown';
+            
+            return { 
+                success: true, 
+                message: `Time synchronization completed successfully using ${service}${server ? ` (server: ${server})` : ''}`,
+                current_time: currentTime,
+                sync_output: syncResult.output
+            };
+        } else {
+            console.error('❌ Time sync command failed:', syncResult.error);
+            return { 
+                success: false, 
+                error: `Time synchronization failed: ${syncResult.error}` 
+            };
+        }
+
+    } catch (error) {
+        console.error('❌ Force time sync task exception:', error);
+        return { success: false, error: `Force time sync task failed: ${error.message}` };
+    }
+};
+
+/**
+ * Execute timezone setting task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeSetTimezoneTask = async (metadataJson) => {
+    console.log('🔧 === SET TIMEZONE TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { timezone, backup_existing } = metadata;
+
+        console.log('📋 Set timezone parameters:');
+        console.log('   - timezone:', timezone);
+        console.log('   - backup_existing:', backup_existing);
+
+        const configFile = '/etc/default/init';
+
+        // Validate timezone exists
+        const zonePath = `/usr/share/lib/zoneinfo/${timezone}`;
+        const validateResult = await executeCommand(`test -f ${zonePath}`);
+        if (!validateResult.success) {
+            return { 
+                success: false, 
+                error: `Invalid timezone: ${timezone} - timezone file not found at ${zonePath}` 
+            };
+        }
+
+        console.log('✅ Timezone validated successfully');
+
+        // Create backup if requested
+        if (backup_existing) {
+            const backupResult = await executeCommand(`pfexec cp ${configFile} ${configFile}.backup.$(date +%Y%m%d_%H%M%S)`);
+            if (backupResult.success) {
+                console.log('✅ Config backup created');
+            } else {
+                console.warn('⚠️  Failed to create backup:', backupResult.error);
+            }
+        }
+
+        // Read current config
+        const readResult = await executeCommand(`cat ${configFile}`);
+        if (!readResult.success) {
+            return { 
+                success: false, 
+                error: `Failed to read config file ${configFile}: ${readResult.error}` 
+            };
+        }
+
+        // Update timezone in config
+        let configContent = readResult.output;
+        const tzPattern = /^TZ=.*$/m;
+        
+        if (tzPattern.test(configContent)) {
+            // Replace existing TZ line
+            configContent = configContent.replace(tzPattern, `TZ=${timezone}`);
+            console.log('✅ Updated existing TZ line');
+        } else {
+            // Add TZ line
+            configContent += `\nTZ=${timezone}\n`;
+            console.log('✅ Added new TZ line');
+        }
+
+        // Write updated config
+        const writeResult = await executeCommand(`echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`);
+        
+        if (!writeResult.success) {
+            return { 
+                success: false, 
+                error: `Failed to write config file ${configFile}: ${writeResult.error}` 
+            };
+        }
+
+        console.log('✅ Timezone config written successfully');
+
+        // Verify the change
+        const verifyResult = await executeCommand(`grep "^TZ=" ${configFile}`);
+        const verifiedTz = verifyResult.success ? verifyResult.output : 'unknown';
+
+        return { 
+            success: true, 
+            message: `Timezone set to ${timezone} successfully (reboot required for full effect)`,
+            config_file: configFile,
+            verified_setting: verifiedTz,
+            requires_reboot: true,
+            reboot_reason: 'Timezone change in /etc/default/init requires system reboot to take effect'
+        };
+
+    } catch (error) {
+        console.error('❌ Set timezone task exception:', error);
+        return { success: false, error: `Set timezone task failed: ${error.message}` };
     }
 };
 

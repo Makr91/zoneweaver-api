@@ -172,6 +172,15 @@ import {
     enableRepository,
     disableRepository
 } from "../controllers/RepositoryController.js";
+import {
+    getTimeSyncStatus,
+    getTimeSyncConfig,
+    updateTimeSyncConfig,
+    forceTimeSync,
+    getTimezone,
+    setTimezone,
+    listTimezones
+} from "../controllers/TimeSyncController.js";
 import config from "../config/ConfigLoader.js";
  
 const router = express.Router();
@@ -372,6 +381,17 @@ router.delete('/system/repositories/:name', verifyApiKey, removeRepository);    
 router.put('/system/repositories/:name', verifyApiKey, modifyRepository);        // Modify package repository
 router.post('/system/repositories/:name/enable', verifyApiKey, enableRepository); // Enable package repository
 router.post('/system/repositories/:name/disable', verifyApiKey, disableRepository); // Disable package repository
+
+// Time Synchronization Routes
+router.get('/system/time-sync/status', verifyApiKey, getTimeSyncStatus);          // Get time sync service status
+router.get('/system/time-sync/config', verifyApiKey, getTimeSyncConfig);          // Get time sync configuration
+router.put('/system/time-sync/config', verifyApiKey, updateTimeSyncConfig);       // Update time sync configuration
+router.post('/system/time-sync/sync', verifyApiKey, forceTimeSync);               // Force immediate time synchronization
+
+// Timezone Management Routes
+router.get('/system/timezone', verifyApiKey, getTimezone);                        // Get current timezone
+router.put('/system/timezone', verifyApiKey, setTimezone);                        // Set system timezone
+router.get('/system/timezones', verifyApiKey, listTimezones);                     // List available timezones
 
 // NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
  

@@ -77,3 +77,29 @@ reconciliation:
   log_level: warn
 api_docs:
   enabled: true
+time_sync:
+  enabled: true
+  auto_sync_on_startup: true
+  config_backup: true
+  default_servers:
+    - "0.pool.ntp.org"
+    - "1.pool.ntp.org"
+    - "2.pool.ntp.org"
+    - "3.pool.ntp.org"
+  sync_timeout: 30
+  monitoring:
+    enabled: true
+    check_interval: 300
+    max_offset_warning: 100  # milliseconds
+    max_offset_critical: 1000
+  ntp:
+    config_file: "/etc/inet/ntp.conf"
+    drift_file: "/etc/inet/ntp.drift"
+  chrony:
+    config_file: "/etc/chrony.conf"
+    drift_file: "/var/lib/chrony/drift"
+timezone:
+  enabled: true
+  auto_detect: false
+  default_timezone: "UTC"
+  config_file: "/etc/default/init"
