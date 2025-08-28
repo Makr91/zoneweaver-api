@@ -457,33 +457,21 @@ export const getNetworkUsage = async (req, res) => {
                 });
 
             } else {
-                // Path 2: Historical Sampling - Even distribution across time range
+                // Path 2: Historical Sampling - Even distribution across time range using JavaScript
                 const baseWhereClause = { 
                     host: hostname,
                     scan_timestamp: { [Op.gte]: new Date(since) }
                 };
                 if (link) baseWhereClause.link = { [Op.like]: `%${link}%` };
 
-                // Calculate time buckets using database-agnostic approach
-                const sinceDate = new Date(since);
-                const nowDate = new Date();
-                const totalSeconds = Math.floor((nowDate - sinceDate) / 1000);
-                const bucketSizeSeconds = Math.floor(totalSeconds / requestedLimit);
-
-                // Get time-bucketed samples using Sequelize
-                const bucketedSamples = await NetworkUsage.findAll({
-                    attributes: [
-                        'link',
-                        [Sequelize.fn('MIN', Sequelize.col('scan_timestamp')), 'bucket_timestamp'],
-                        [Sequelize.literal(`FLOOR(EXTRACT(EPOCH FROM scan_timestamp - timestamp '${sinceDate.toISOString()}') / ${bucketSizeSeconds})`), 'time_bucket']
-                    ],
+                // Fetch all data within time range, grouped by interface
+                const allData = await NetworkUsage.findAll({
+                    attributes: selectedAttributes,
                     where: baseWhereClause,
-                    group: ['link', Sequelize.literal('time_bucket')],
-                    having: Sequelize.literal('time_bucket >= 0'),
-                    raw: true
+                    order: [['link', 'ASC'], ['scan_timestamp', 'ASC']]
                 });
 
-                if (bucketedSamples.length === 0) {
+                if (allData.length === 0) {
                     return res.json({
                         usage: [],
                         totalCount: 0,
@@ -492,30 +480,54 @@ export const getNetworkUsage = async (req, res) => {
                         sampling: {
                             applied: true,
                             interfaceCount: 0,
-                            strategy: "time-bucket-sampling"
+                            strategy: "javascript-time-sampling"
                         }
                     });
                 }
 
-                // Get actual records for the bucketed timestamps
-                const results = await NetworkUsage.findAll({
-                    attributes: selectedAttributes,
-                    where: {
-                        host: hostname,
-                        [Op.or]: bucketedSamples.map(sample => ({
-                            link: sample.link,
-                            scan_timestamp: sample.bucket_timestamp
-                        }))
-                    },
-                    order: [['link', 'ASC'], ['scan_timestamp', 'ASC']]
+                // Group data by interface
+                const interfaceGroups = {};
+                allData.forEach(row => {
+                    if (!interfaceGroups[row.link]) {
+                        interfaceGroups[row.link] = [];
+                    }
+                    interfaceGroups[row.link].push(row);
                 });
 
-                const interfaceCount = new Set(results.map(row => row.link)).size;
-                const activeInterfaces = results.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
+                // Sample evenly from each interface group
+                const sampledResults = [];
+                const interfaceNames = Object.keys(interfaceGroups);
+
+                interfaceNames.forEach(interfaceName => {
+                    const interfaceData = interfaceGroups[interfaceName];
+                    const totalRecords = interfaceData.length;
+                    
+                    if (totalRecords === 0) return;
+
+                    // Calculate sampling interval
+                    const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+                    
+                    // Sample evenly across the data
+                    for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+                        const index = Math.min(i * interval, totalRecords - 1);
+                        sampledResults.push(interfaceData[index]);
+                    }
+                });
+
+                // Sort results by interface and timestamp
+                sampledResults.sort((a, b) => {
+                    if (a.link !== b.link) {
+                        return a.link.localeCompare(b.link);
+                    }
+                    return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
+                });
+
+                const interfaceCount = interfaceNames.length;
+                const activeInterfaces = sampledResults.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
 
                 let timeSpan = null;
-                if (results.length > 1) {
-                    const timestamps = results.map(row => new Date(row.scan_timestamp)).sort();
+                if (sampledResults.length > 1) {
+                    const timestamps = sampledResults.map(row => new Date(row.scan_timestamp)).sort();
                     const firstRecord = timestamps[0];
                     const lastRecord = timestamps[timestamps.length - 1];
                     timeSpan = {
@@ -528,21 +540,21 @@ export const getNetworkUsage = async (req, res) => {
                 const queryTime = Date.now() - startTime;
 
                 res.json({
-                    usage: results,
-                    totalCount: results.length,
-                    returnedCount: results.length,
+                    usage: sampledResults,
+                    totalCount: sampledResults.length,
+                    returnedCount: sampledResults.length,
                     queryTime: `${queryTime}ms`,
                     sampling: {
                         applied: true,
                         interfaceCount: interfaceCount,
-                        samplesPerInterface: Math.round(results.length / interfaceCount),
+                        samplesPerInterface: Math.round(sampledResults.length / interfaceCount),
                         requestedSamplesPerInterface: requestedLimit,
-                        strategy: "time-bucket-sampling"
+                        strategy: "javascript-time-sampling"
                     },
                     metadata: {
                         timeSpan: timeSpan,
                         activeInterfacesCount: activeInterfaces,
-                        interfaceList: [...new Set(results.map(row => row.link))].sort()
+                        interfaceList: interfaceNames.sort()
                     }
                 });
             }
