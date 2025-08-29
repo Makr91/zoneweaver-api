@@ -148,8 +148,11 @@ export const serviceAction = async (req, res) => {
     try {
         const { action, fmri, options } = req.body;
         
+        // Decode FMRI for proper storage and execution
+        const decodedFmri = decodeURIComponent(fmri);
+        
         const task = await Tasks.create({
-            zone_name: fmri,
+            zone_name: decodedFmri,
             operation: `service_${action}`,
             priority: TaskPriority.SERVICE,
             created_by: req.entity.name,
@@ -158,7 +161,7 @@ export const serviceAction = async (req, res) => {
 
         res.json({
             success: true,
-            message: `Task created for action ${action} on service ${fmri}`,
+            message: `Task created for action ${action} on service ${decodedFmri}`,
             task_id: task.id
         });
     } catch (error) {
