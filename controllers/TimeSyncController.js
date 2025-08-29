@@ -212,7 +212,7 @@ const parseChronySources = (chronycOutput) => {
             const source = {
                 mode_indicator: msField.charAt(0), // M field: ^, =, #, ?
                 state_indicator: msField.charAt(1), // S field: *, +, -, x, ?, ~
-                name: parts[1],
+                remote: parts[1], // Use 'remote' to match NTP peer structure
                 stratum: parseInt(parts[2]) || 16,
                 poll: parseInt(parts[3]) || 0,
                 reach: parseInt(parts[4]) || 0,
