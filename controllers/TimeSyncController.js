@@ -194,7 +194,7 @@ const parseNtpPeers = (ntpqOutput) => {
 /**
  * Parse timing data from Chrony's "Last sample" field
  * @param {string} lastSample - Raw last sample string like "+928us[ +928us] +/-   19ms"
- * @returns {object} Object with delay, offset, jitter values
+ * @returns {object} Object with delay, offset, jitter values (in milliseconds to match NTP format)
  */
 const parseChronySampleTiming = (lastSample) => {
     const timing = {
@@ -209,14 +209,15 @@ const parseChronySampleTiming = (lastSample) => {
     const offsetMatch = lastSample.match(/([+-]?\d+(?:\.\d+)?)(?:us|ms|ns|s)/);
     if (offsetMatch) {
         let offsetValue = parseFloat(offsetMatch[1]);
-        // Convert to microseconds if needed
-        if (lastSample.includes('ms')) {
-            offsetValue = offsetValue * 1000; // ms to µs
+        // Convert to milliseconds to match NTP format
+        if (lastSample.includes('us')) {
+            offsetValue = offsetValue / 1000; // µs to ms
         } else if (lastSample.includes('ns')) {
-            offsetValue = offsetValue / 1000; // ns to µs
+            offsetValue = offsetValue / 1000000; // ns to ms
         } else if (lastSample.includes('s') && !lastSample.includes('us') && !lastSample.includes('ms')) {
-            offsetValue = offsetValue * 1000000; // s to µs
+            offsetValue = offsetValue * 1000; // s to ms
         }
+        // If 'ms', keep as-is
         timing.offset = offsetValue;
     }
     
@@ -224,14 +225,15 @@ const parseChronySampleTiming = (lastSample) => {
     const jitterMatch = lastSample.match(/\+\/- +(\d+(?:\.\d+)?)(?:us|ms|ns|s)/);
     if (jitterMatch) {
         let jitterValue = parseFloat(jitterMatch[1]);
-        // Convert to microseconds if needed
-        if (lastSample.includes('ms') && jitterMatch[0].includes('ms')) {
-            jitterValue = jitterValue * 1000; // ms to µs
-        } else if (lastSample.includes('ns') && jitterMatch[0].includes('ns')) {
-            jitterValue = jitterValue / 1000; // ns to µs
+        // Convert to milliseconds to match NTP format
+        if (jitterMatch[0].includes('us')) {
+            jitterValue = jitterValue / 1000; // µs to ms
+        } else if (jitterMatch[0].includes('ns')) {
+            jitterValue = jitterValue / 1000000; // ns to ms
         } else if (jitterMatch[0].includes('s') && !jitterMatch[0].includes('us') && !jitterMatch[0].includes('ms')) {
-            jitterValue = jitterValue * 1000000; // s to µs
+            jitterValue = jitterValue * 1000; // s to ms
         }
+        // If 'ms', keep as-is
         timing.jitter = jitterValue;
     }
     
@@ -323,8 +325,8 @@ const parseChronySources = (chronycOutput) => {
                     break;
             }
             
-            // Calculate reachability percentage (chrony uses decimal, not octal)
-            source.reachability_percent = Math.round((source.reach / 255) * 100);
+            // Calculate reachability percentage (chrony uses octal like NTP)
+            source.reachability_percent = Math.round((parseInt(source.reach, 8) / 255) * 100);
             
             sources.push(source);
         }
