@@ -179,7 +179,9 @@ import {
     forceTimeSync,
     getTimezone,
     setTimezone,
-    listTimezones
+    listTimezones,
+    getAvailableTimeSyncSystems,
+    switchTimeSyncSystem
 } from "../controllers/TimeSyncController.js";
 import config from "../config/ConfigLoader.js";
  
@@ -387,6 +389,8 @@ router.get('/system/time-sync/status', verifyApiKey, getTimeSyncStatus);        
 router.get('/system/time-sync/config', verifyApiKey, getTimeSyncConfig);          // Get time sync configuration
 router.put('/system/time-sync/config', verifyApiKey, updateTimeSyncConfig);       // Update time sync configuration
 router.post('/system/time-sync/sync', verifyApiKey, forceTimeSync);               // Force immediate time synchronization
+router.get('/system/time-sync/available-systems', verifyApiKey, getAvailableTimeSyncSystems); // Get available time sync systems
+router.post('/system/time-sync/switch', verifyApiKey, switchTimeSyncSystem);      // Switch between time sync systems
 
 // Timezone Management Routes
 router.get('/system/timezone', verifyApiKey, getTimezone);                        // Get current timezone

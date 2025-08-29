@@ -218,6 +218,8 @@ const executeTask = async (task) => {
                 return await executeForceTimeSyncTask(task.metadata);
             case 'set_timezone':
                 return await executeSetTimezoneTask(task.metadata);
+            case 'switch_time_sync_system':
+                return await executeSwitchTimeSyncSystemTask(task.metadata);
             case 'create_ip_address':
                 return await executeCreateIPAddressTask(task.metadata);
             case 'delete_ip_address':
@@ -3262,6 +3264,301 @@ const executeSetTimezoneTask = async (metadataJson) => {
         console.error('❌ Set timezone task exception:', error);
         return { success: false, error: `Set timezone task failed: ${error.message}` };
     }
+};
+
+/**
+ * Execute time sync system switching task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
+    console.log('🔧 === TIME SYNC SYSTEM SWITCH TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { current_system, target_system, preserve_servers, install_if_needed, systems_info } = metadata;
+
+        console.log('📋 Time sync system switch parameters:');
+        console.log('   - current_system:', current_system);
+        console.log('   - target_system:', target_system);
+        console.log('   - preserve_servers:', preserve_servers);
+        console.log('   - install_if_needed:', install_if_needed);
+
+        let migratedServers = ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
+
+        // Step 1: Extract servers from current config if requested
+        if (preserve_servers && current_system !== 'none') {
+            console.log('🔧 Attempting to extract servers from current configuration...');
+            const currentInfo = systems_info.available[current_system];
+            if (currentInfo && currentInfo.config_file) {
+                const readConfigResult = await executeCommand(`cat ${currentInfo.config_file} 2>/dev/null || echo ""`);
+                if (readConfigResult.success && readConfigResult.output.trim()) {
+                    const extractedServers = extractServersFromConfig(readConfigResult.output, current_system);
+                    if (extractedServers.length > 0) {
+                        migratedServers = extractedServers;
+                        console.log('✅ Extracted servers from current config:', migratedServers);
+                    }
+                } else {
+                    console.log('⚠️  Could not read current config, using defaults');
+                }
+            }
+        }
+
+        // Step 2: Disable current service if active
+        if (current_system !== 'none') {
+            console.log(`🔧 Disabling current ${current_system} service...`);
+            const disableResult = await executeCommand(`pfexec svcadm disable ${current_system}`);
+            if (!disableResult.success) {
+                console.warn(`⚠️  Failed to disable ${current_system}:`, disableResult.error);
+            } else {
+                console.log(`✅ Current ${current_system} service disabled`);
+            }
+        }
+
+        // Step 3: Handle target system installation and configuration
+        if (target_system === 'none') {
+            console.log('🔧 Target is "none" - time sync will be disabled');
+            return { 
+                success: true, 
+                message: `Switched from ${current_system} to none (time sync disabled)`,
+                current_system: 'none',
+                original_system: current_system
+            };
+        }
+
+        const targetInfo = systems_info.available[target_system];
+        if (!targetInfo) {
+            return { success: false, error: `Unknown target system: ${target_system}` };
+        }
+
+        // Step 4: Install target package if needed
+        if (!targetInfo.installed && install_if_needed) {
+            console.log(`🔧 Installing ${target_system} package (${targetInfo.package_name})...`);
+            const installResult = await executeCommand(`pfexec pkg install ${targetInfo.package_name}`, 5 * 60 * 1000);
+            if (!installResult.success) {
+                // Rollback: re-enable original service
+                if (current_system !== 'none') {
+                    console.log(`🔄 Installation failed, rolling back to ${current_system}...`);
+                    await executeCommand(`pfexec svcadm enable ${current_system}`);
+                }
+                return { 
+                    success: false, 
+                    error: `Failed to install ${targetInfo.package_name}: ${installResult.error}`,
+                    rollback_performed: current_system !== 'none'
+                };
+            }
+            console.log(`✅ Package ${targetInfo.package_name} installed successfully`);
+        }
+
+        // Step 5: Generate configuration for target system
+        console.log(`🔧 Generating configuration for ${target_system}...`);
+        let configContent;
+        try {
+            configContent = generateConfigForSystem(target_system, migratedServers);
+            console.log('✅ Configuration generated successfully');
+        } catch (configError) {
+            // Rollback: re-enable original service
+            if (current_system !== 'none') {
+                console.log(`🔄 Config generation failed, rolling back to ${current_system}...`);
+                await executeCommand(`pfexec svcadm enable ${current_system}`);
+            }
+            return { 
+                success: false, 
+                error: `Failed to generate configuration: ${configError.message}`,
+                rollback_performed: current_system !== 'none'
+            };
+        }
+
+        // Step 6: Write target configuration
+        const configFile = targetInfo.config_file;
+        console.log(`🔧 Writing configuration to ${configFile}...`);
+        const writeResult = await executeCommand(`echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`);
+        
+        if (!writeResult.success) {
+            // Rollback: re-enable original service
+            if (current_system !== 'none') {
+                console.log(`🔄 Config write failed, rolling back to ${current_system}...`);
+                await executeCommand(`pfexec svcadm enable ${current_system}`);
+            }
+            return { 
+                success: false, 
+                error: `Failed to write config file ${configFile}: ${writeResult.error}`,
+                rollback_performed: current_system !== 'none'
+            };
+        }
+        console.log('✅ Configuration written successfully');
+
+        // Step 7: Enable target service
+        console.log(`🔧 Enabling ${target_system} service...`);
+        const enableResult = await executeCommand(`pfexec svcadm enable ${target_system}`);
+        
+        if (!enableResult.success) {
+            // Rollback: re-enable original service
+            if (current_system !== 'none') {
+                console.log(`🔄 Service enable failed, rolling back to ${current_system}...`);
+                await executeCommand(`pfexec svcadm enable ${current_system}`);
+            }
+            return { 
+                success: false, 
+                error: `Failed to enable ${target_system} service: ${enableResult.error}`,
+                rollback_performed: current_system !== 'none'
+            };
+        }
+
+        // Step 8: Verify service is running
+        console.log(`🔧 Verifying ${target_system} service status...`);
+        let verifyAttempts = 0;
+        let serviceOnline = false;
+        
+        while (verifyAttempts < 10 && !serviceOnline) {
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+            const statusResult = await executeCommand(`svcs ${target_system}`);
+            if (statusResult.success && statusResult.output.includes('online')) {
+                serviceOnline = true;
+                console.log(`✅ ${target_system} service is online`);
+            } else {
+                verifyAttempts++;
+                console.log(`⏳ Waiting for ${target_system} service to come online (attempt ${verifyAttempts}/10)...`);
+            }
+        }
+
+        if (!serviceOnline) {
+            console.warn(`⚠️  ${target_system} service may not be fully online yet`);
+        }
+
+        // Step 9: Verify time sync is working (basic check)
+        console.log(`🔧 Performing basic sync verification...`);
+        let syncWorking = false;
+        if (target_system === 'ntp') {
+            const ntpqResult = await executeCommand(`ntpq -p`, 10000);
+            syncWorking = ntpqResult.success && ntpqResult.output.includes('remote');
+        } else if (target_system === 'chrony') {
+            const chronycResult = await executeCommand(`chronyc sources`, 10000);
+            syncWorking = chronycResult.success && chronycResult.output.includes('Name/IP address');
+        }
+
+        const finalMessage = `Successfully switched from ${current_system} to ${target_system}`;
+        const result = {
+            success: true,
+            message: finalMessage,
+            current_system: target_system,
+            original_system: current_system,
+            servers_migrated: preserve_servers,
+            migrated_servers: migratedServers,
+            config_file: configFile,
+            service_online: serviceOnline,
+            sync_verification: syncWorking ? 'working' : 'unknown'
+        };
+
+        if (preserve_servers) {
+            result.message += ` (${migratedServers.length} servers migrated)`;
+        }
+        
+        if (!serviceOnline) {
+            result.message += ' (service may need additional time to fully start)';
+        }
+
+        console.log(`✅ Time sync system switch completed: ${current_system} → ${target_system}`);
+        return result;
+
+    } catch (error) {
+        console.error('❌ Time sync system switch task exception:', error);
+        return { success: false, error: `Time sync system switch failed: ${error.message}` };
+    }
+};
+
+// Helper function to extract servers from config (for migration)
+const extractServersFromConfig = (configContent, systemType) => {
+    const servers = [];
+    const lines = configContent.split('\n');
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('server ') && !trimmed.includes('127.127.1.0') && !trimmed.includes('127.0.0.1')) {
+            const parts = trimmed.split(/\s+/);
+            if (parts.length >= 2) {
+                servers.push(parts[1]);
+            }
+        }
+    }
+
+    return servers.length > 0 ? servers : ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
+};
+
+// Helper function to generate config for target system
+const generateConfigForSystem = (targetSystem, servers) => {
+    let baseConfig = '';
+    
+    switch (targetSystem) {
+        case 'ntp':
+            baseConfig = `# Generated by Zoneweaver API - System Switch
+# NTP configuration for OmniOS
+
+driftfile /var/ntp/ntp.drift
+
+# Access restrictions
+restrict default ignore
+restrict -6 default ignore
+restrict 127.0.0.1
+restrict -6 ::1
+
+# Time servers
+${servers.map(server => `server ${server} iburst`).join('\n')}
+
+# Allow updates from configured servers
+${servers.map(server => `restrict ${server} nomodify noquery notrap`).join('\n')}
+`;
+            break;
+        case 'chrony':
+            baseConfig = `# Generated by Zoneweaver API - System Switch
+# Chrony configuration for OmniOS
+
+# Time servers
+${servers.map(server => `server ${server} iburst`).join('\n')}
+
+# Drift file location
+driftfile /var/lib/chrony/drift
+
+# Allow chronyd to make gradual corrections
+makestep 1.0 3
+
+# Enable RTC sync
+rtcsync
+
+# Log measurements
+logdir /var/log/chrony
+log measurements statistics tracking
+`;
+            break;
+        case 'ntpsec':
+            baseConfig = `# Generated by Zoneweaver API - System Switch
+# NTPsec configuration for OmniOS
+
+driftfile /var/lib/ntp/ntp.drift
+
+# Access restrictions
+restrict default kod limited nomodify nopeer noquery notrap
+restrict -6 default kod limited nomodify nopeer noquery notrap
+restrict 127.0.0.1
+restrict -6 ::1
+
+# Time servers
+${servers.map(server => `server ${server} iburst`).join('\n')}
+
+# Allow updates from configured servers
+${servers.map(server => `restrict ${server} nomodify noquery notrap`).join('\n')}
+`;
+            break;
+        default:
+            throw new Error(`Unknown target system: ${targetSystem}`);
+    }
+    
+    return baseConfig;
 };
 
 /**
