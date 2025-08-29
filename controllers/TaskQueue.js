@@ -3032,7 +3032,7 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
         if (service === 'ntp') {
             configFile = '/etc/inet/ntp.conf';
         } else if (service === 'chrony') {
-            configFile = '/etc/chrony.conf';
+            configFile = '/etc/inet/chrony.conf';
         } else {
             return { success: false, error: `Unknown time sync service: ${service}` };
         }
@@ -3479,7 +3479,15 @@ const extractServersFromConfig = (configContent, systemType) => {
 
     for (const line of lines) {
         const trimmed = line.trim();
-        if (trimmed.startsWith('server ') && !trimmed.includes('127.127.1.0') && !trimmed.includes('127.0.0.1')) {
+        
+        // Skip commented lines
+        if (trimmed.startsWith('#') || trimmed.startsWith('!') || trimmed.startsWith('%') || trimmed.startsWith(';')) {
+            continue;
+        }
+        
+        // Handle both 'server' and 'pool' directives
+        if ((trimmed.startsWith('server ') || trimmed.startsWith('pool ')) && 
+            !trimmed.includes('127.127.1.0') && !trimmed.includes('127.0.0.1')) {
             const parts = trimmed.split(/\s+/);
             if (parts.length >= 2) {
                 servers.push(parts[1]);
@@ -3487,7 +3495,20 @@ const extractServersFromConfig = (configContent, systemType) => {
         }
     }
 
-    return servers.length > 0 ? servers : ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
+    // Return extracted servers or appropriate defaults based on system type
+    if (servers.length > 0) {
+        return servers;
+    }
+    
+    // System-specific defaults
+    switch (systemType) {
+        case 'chrony':
+            return ['0.omnios.pool.ntp.org'];
+        case 'ntp':
+        case 'ntpsec':
+        default:
+            return ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
+    }
 };
 
 // Helper function to generate config for target system
