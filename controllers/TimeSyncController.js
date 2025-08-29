@@ -192,6 +192,53 @@ const parseNtpPeers = (ntpqOutput) => {
 };
 
 /**
+ * Parse timing data from Chrony's "Last sample" field
+ * @param {string} lastSample - Raw last sample string like "+928us[ +928us] +/-   19ms"
+ * @returns {object} Object with delay, offset, jitter values
+ */
+const parseChronySampleTiming = (lastSample) => {
+    const timing = {
+        delay: null, // Chrony doesn't provide delay equivalent
+        offset: 0,
+        jitter: 0
+    };
+    
+    if (!lastSample) return timing;
+    
+    // Parse offset from first value: "+928us[ +928us] +/-   19ms"
+    const offsetMatch = lastSample.match(/([+-]?\d+(?:\.\d+)?)(?:us|ms|ns|s)/);
+    if (offsetMatch) {
+        let offsetValue = parseFloat(offsetMatch[1]);
+        // Convert to microseconds if needed
+        if (lastSample.includes('ms')) {
+            offsetValue = offsetValue * 1000; // ms to µs
+        } else if (lastSample.includes('ns')) {
+            offsetValue = offsetValue / 1000; // ns to µs
+        } else if (lastSample.includes('s') && !lastSample.includes('us') && !lastSample.includes('ms')) {
+            offsetValue = offsetValue * 1000000; // s to µs
+        }
+        timing.offset = offsetValue;
+    }
+    
+    // Parse jitter from "+/-" value: "+928us[ +928us] +/-   19ms"
+    const jitterMatch = lastSample.match(/\+\/- +(\d+(?:\.\d+)?)(?:us|ms|ns|s)/);
+    if (jitterMatch) {
+        let jitterValue = parseFloat(jitterMatch[1]);
+        // Convert to microseconds if needed
+        if (lastSample.includes('ms') && jitterMatch[0].includes('ms')) {
+            jitterValue = jitterValue * 1000; // ms to µs
+        } else if (lastSample.includes('ns') && jitterMatch[0].includes('ns')) {
+            jitterValue = jitterValue / 1000; // ns to µs
+        } else if (jitterMatch[0].includes('s') && !jitterMatch[0].includes('us') && !jitterMatch[0].includes('ms')) {
+            jitterValue = jitterValue * 1000000; // s to µs
+        }
+        timing.jitter = jitterValue;
+    }
+    
+    return timing;
+};
+
+/**
  * Parse Chrony sources from chronyc sources output
  * @param {string} chronycOutput - Raw output from chronyc sources command
  * @returns {Array<Object>} Array of chrony source objects
@@ -209,15 +256,23 @@ const parseChronySources = (chronycOutput) => {
         const parts = line.split(/\s+/);
         if (parts.length >= 8) {
             const msField = parts[0];
+            const lastSample = parts.slice(6).join(' ');
+            const timing = parseChronySampleTiming(lastSample);
+            
             const source = {
                 mode_indicator: msField.charAt(0), // M field: ^, =, #, ?
                 state_indicator: msField.charAt(1), // S field: *, +, -, x, ?, ~
+                indicator: msField.charAt(1), // Add indicator field for frontend compatibility
                 remote: parts[1], // Use 'remote' to match NTP peer structure
                 stratum: parseInt(parts[2]) || 16,
                 poll: parseInt(parts[3]) || 0,
                 reach: parseInt(parts[4]) || 0,
                 last_rx: parts[5],
-                last_sample: parts.slice(6).join(' ')
+                last_sample: lastSample,
+                // Add timing fields to match NTP peer structure
+                delay: timing.delay,
+                offset: timing.offset,
+                jitter: timing.jitter
             };
             
             // Interpret mode indicator
