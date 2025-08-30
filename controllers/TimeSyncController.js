@@ -38,10 +38,10 @@ const executeCommand = async (command, timeout = 30000) => {
  * @returns {Promise<{service: string, status: string, available: boolean, details?: object}>}
  */
 const detectTimeService = async () => {
-    // Check for NTP first
-    const ntpCheck = await executeCommand('svcs ntp');
+    // Check for NTP first (using proper service name)
+    const ntpCheck = await executeCommand('svcs network/ntp 2>/dev/null');
     if (ntpCheck.success) {
-        const ntpDetails = await executeCommand('svcs -l ntp');
+        const ntpDetails = await executeCommand('svcs -l network/ntp');
         return {
             service: 'ntp',
             status: 'available',
@@ -51,9 +51,9 @@ const detectTimeService = async () => {
     }
 
     // Check for Chrony
-    const chronyCheck = await executeCommand('svcs chrony');
+    const chronyCheck = await executeCommand('svcs network/chrony 2>/dev/null');
     if (chronyCheck.success) {
-        const chronyDetails = await executeCommand('svcs -l chrony');
+        const chronyDetails = await executeCommand('svcs -l network/chrony');
         return {
             service: 'chrony',
             status: 'available',
@@ -62,12 +62,24 @@ const detectTimeService = async () => {
         };
     }
 
-    // Check if either service exists but is disabled
-    const allServices = await executeCommand('svcs -a | grep -E "(ntp|chrony)"');
+    // Check for NTPsec
+    const ntpsecCheck = await executeCommand('svcs network/ntpsec 2>/dev/null');
+    if (ntpsecCheck.success) {
+        const ntpsecDetails = await executeCommand('svcs -l network/ntpsec');
+        return {
+            service: 'ntpsec',
+            status: 'available',
+            available: true,
+            details: parseServiceDetails(ntpsecDetails.output)
+        };
+    }
+
+    // Check if any service exists but is disabled
+    const allServices = await executeCommand('svcs -a | grep -E "(network/ntp|network/chrony|network/ntpsec)" 2>/dev/null');
     if (allServices.success && allServices.output) {
         const lines = allServices.output.split('\n');
         for (const line of lines) {
-            if (line.includes('ntp:default')) {
+            if (line.includes('network/ntp:default')) {
                 return {
                     service: 'ntp',
                     status: 'disabled',
@@ -75,9 +87,17 @@ const detectTimeService = async () => {
                     details: { state: 'disabled', note: 'Service exists but is disabled' }
                 };
             }
-            if (line.includes('chrony:default')) {
+            if (line.includes('network/chrony:default')) {
                 return {
                     service: 'chrony',
+                    status: 'disabled',
+                    available: true,
+                    details: { state: 'disabled', note: 'Service exists but is disabled' }
+                };
+            }
+            if (line.includes('network/ntpsec:default')) {
+                return {
+                    service: 'ntpsec',
                     status: 'disabled',
                     available: true,
                     details: { state: 'disabled', note: 'Service exists but is disabled' }
@@ -90,7 +110,7 @@ const detectTimeService = async () => {
         service: 'none',
         status: 'unavailable',
         available: false,
-        details: { note: 'No time synchronization service found (NTP or Chrony)' }
+        details: { note: 'No time synchronization service found (NTP, Chrony, or NTPsec)' }
     };
 };
 
@@ -566,12 +586,12 @@ const detectAvailableTimeSyncSystems = async () => {
         systemInfo.installed = pkgResult.success;
 
         if (systemInfo.installed) {
-            // Check service status
-            const serviceResult = await executeCommand(`svcs ${systemName} 2>/dev/null`);
+            // Check service status using proper service name
+            const serviceResult = await executeCommand(`svcs network/${systemName} 2>/dev/null`);
             if (serviceResult.success) {
                 const serviceLines = serviceResult.output.split('\n');
                 for (const line of serviceLines) {
-                    if (line.includes(`${systemName}:default`)) {
+                    if (line.includes(`network/${systemName}:default`)) {
                         const parts = line.trim().split(/\s+/);
                         systemInfo.enabled = parts[0] !== 'disabled';
                         systemInfo.active = parts[0] === 'online';

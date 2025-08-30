@@ -3064,7 +3064,7 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
         // Restart service if requested
         if (restart_service) {
             console.log(`🔄 Restarting ${service} service...`);
-            const restartResult = await executeCommand(`pfexec svcadm restart ${service}`);
+            const restartResult = await executeCommand(`pfexec svcadm restart network/${service}`);
             
             if (!restartResult.success) {
                 return { 
@@ -3312,7 +3312,7 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
         // Step 2: Disable current service if active
         if (current_system !== 'none') {
             console.log(`🔧 Disabling current ${current_system} service...`);
-            const disableResult = await executeCommand(`pfexec svcadm disable ${current_system}`);
+            const disableResult = await executeCommand(`pfexec svcadm disable network/${current_system}`);
             if (!disableResult.success) {
                 console.warn(`⚠️  Failed to disable ${current_system}:`, disableResult.error);
             } else {
@@ -3344,7 +3344,7 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
                 // Rollback: re-enable original service
                 if (current_system !== 'none') {
                     console.log(`🔄 Installation failed, rolling back to ${current_system}...`);
-                    await executeCommand(`pfexec svcadm enable ${current_system}`);
+                    await executeCommand(`pfexec svcadm enable network/${current_system}`);
                 }
                 return { 
                     success: false, 
@@ -3365,7 +3365,7 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
             // Rollback: re-enable original service
             if (current_system !== 'none') {
                 console.log(`🔄 Config generation failed, rolling back to ${current_system}...`);
-                await executeCommand(`pfexec svcadm enable ${current_system}`);
+                await executeCommand(`pfexec svcadm enable network/${current_system}`);
             }
             return { 
                 success: false, 
@@ -3383,7 +3383,7 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
             // Rollback: re-enable original service
             if (current_system !== 'none') {
                 console.log(`🔄 Config write failed, rolling back to ${current_system}...`);
-                await executeCommand(`pfexec svcadm enable ${current_system}`);
+                await executeCommand(`pfexec svcadm enable network/${current_system}`);
             }
             return { 
                 success: false, 
@@ -3395,13 +3395,13 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
 
         // Step 7: Enable target service
         console.log(`🔧 Enabling ${target_system} service...`);
-        const enableResult = await executeCommand(`pfexec svcadm enable ${target_system}`);
+        const enableResult = await executeCommand(`pfexec svcadm enable network/${target_system}`);
         
         if (!enableResult.success) {
             // Rollback: re-enable original service
             if (current_system !== 'none') {
                 console.log(`🔄 Service enable failed, rolling back to ${current_system}...`);
-                await executeCommand(`pfexec svcadm enable ${current_system}`);
+                await executeCommand(`pfexec svcadm enable network/${current_system}`);
             }
             return { 
                 success: false, 
@@ -3417,7 +3417,7 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
         
         while (verifyAttempts < 10 && !serviceOnline) {
             await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-            const statusResult = await executeCommand(`svcs ${target_system}`);
+            const statusResult = await executeCommand(`svcs network/${target_system}`);
             if (statusResult.success && statusResult.output.includes('online')) {
                 serviceOnline = true;
                 console.log(`✅ ${target_system} service is online`);
