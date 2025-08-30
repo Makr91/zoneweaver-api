@@ -14,7 +14,6 @@ import { cleanupOldTasks } from "./TaskQueue.js";
 import CleanupService from "./CleanupService.js";
 import HostInfo from "../models/HostInfoModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
-import NetworkStats from "../models/NetworkStatsModel.js";
 import NetworkUsage from "../models/NetworkUsageModel.js";
 import IPAddresses from "../models/IPAddressModel.js";
 import Routes from "../models/RoutingTableModel.js";
@@ -46,7 +45,6 @@ class HostMonitoringService {
         // Interval IDs for cleanup
         this.intervals = {
             networkConfig: null,
-            networkStats: null,
             networkUsage: null,
             storage: null,
             storageFrequent: null,
@@ -61,13 +59,11 @@ class HostMonitoringService {
         // Performance tracking
         this.stats = {
             networkConfigRuns: 0,
-            networkStatsRuns: 0,
             networkUsageRuns: 0,
             storageRuns: 0,
             deviceRuns: 0,
             systemMetricsRuns: 0,
             lastNetworkConfigSuccess: null,
-            lastNetworkStatsSuccess: null,
             lastNetworkUsageSuccess: null,
             lastStorageSuccess: null,
             lastDeviceSuccess: null,
@@ -248,19 +244,6 @@ class HostMonitoringService {
                 }
             }, intervals.network_config * 1000);
 
-            // Network statistics collection (10 seconds default)
-            this.intervals.networkStats = setInterval(async () => {
-                try {
-                    this.stats.networkStatsRuns++;
-                    const success = await this.networkCollector.collectNetworkStats();
-                    if (success) {
-                        this.stats.lastNetworkStatsSuccess = new Date();
-                    }
-                } catch (error) {
-                    this.stats.totalErrors++;
-                    console.error('❌ Scheduled network stats collection failed:', error.message);
-                }
-            }, intervals.network_stats * 1000);
 
             // Network usage collection (10 seconds default)
             this.intervals.networkUsage = setInterval(async () => {
@@ -389,7 +372,6 @@ class HostMonitoringService {
             },
             activeIntervals: {
                 networkConfig: !!this.intervals.networkConfig,
-                networkStats: !!this.intervals.networkStats,
                 networkUsage: !!this.intervals.networkUsage,
                 storage: !!this.intervals.storage,
                 storageFrequent: !!this.intervals.storageFrequent,
@@ -407,7 +389,6 @@ class HostMonitoringService {
     async triggerCollection(type = 'all') {
         const results = {
             networkConfig: null,
-            networkStats: null,
             networkUsage: null,
             storage: null,
             devices: null,
@@ -419,7 +400,6 @@ class HostMonitoringService {
             if (type === 'network' || type === 'all') {
                 try {
                     results.networkConfig = await this.networkCollector.collectNetworkConfig();
-                    results.networkStats = await this.networkCollector.collectNetworkStats();
                     results.networkUsage = await this.networkCollector.collectNetworkUsage();
                 } catch (error) {
                     results.errors.push(`Network collection: ${error.message}`);

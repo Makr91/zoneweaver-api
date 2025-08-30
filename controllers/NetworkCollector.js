@@ -12,7 +12,6 @@ import { Op } from "sequelize";
 import yj from "yieldable-json";
 import config from "../config/ConfigLoader.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
-import NetworkStats from "../models/NetworkStatsModel.js";
 import NetworkUsage from "../models/NetworkUsageModel.js";
 import IPAddresses from "../models/IPAddressModel.js";
 import Routes from "../models/RoutingTableModel.js";
@@ -1052,36 +1051,6 @@ class NetworkCollector {
         return true;
     }
 
-    /**
-     * Collect network statistics
-     * @description Gathers traffic statistics from dladm show-link -s using parseable format
-     */
-    async collectNetworkStats() {
-        try {
-            const timeout = this.hostMonitoringConfig.performance.command_timeout * 1000;
-            // Use parseable format to avoid header parsing issues
-            const { stdout } = await execProm('dladm show-link -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors', { timeout });
-            
-            const statsData = this.parseStatsOutput(stdout);
-            
-            if (statsData.length > 0) {
-                const batchSize = this.hostMonitoringConfig.performance.batch_size;
-                for (let i = 0; i < statsData.length; i += batchSize) {
-                    const batch = statsData.slice(i, i + batchSize);
-                    await NetworkStats.bulkCreate(batch);
-                }
-                
-                await this.updateHostInfo({ last_network_stats_scan: new Date() });
-            }
-
-            await this.resetErrorCount();
-            return true;
-
-        } catch (error) {
-            const shouldContinue = await this.handleError(error, 'Network stats collection');
-            return shouldContinue;
-        }
-    }
 
     /**
      * Check if interface name appears to be truncated and find matches
@@ -1383,14 +1352,14 @@ class NetworkCollector {
                 interfaceConfigs = new Map();
             }
 
-            // Get previous statistics for bandwidth calculation - properly get previous collection samples
+            // Get previous statistics for bandwidth calculation - use NetworkUsage's own previous records
             let previousStatsMap = new Map();
             try {
                 // Calculate minimum age for "previous" records (collection interval - 2 seconds buffer)
-                const collectionInterval = this.hostMonitoringConfig.intervals.network_stats || 10;
+                const collectionInterval = this.hostMonitoringConfig.intervals.network_usage || 20;
                 const minPreviousAge = new Date(Date.now() - ((collectionInterval - 2) * 1000));
                 
-                const previousStats = await NetworkStats.findAll({
+                const previousStats = await NetworkUsage.findAll({
                     where: { 
                         host: this.hostname,
                         scan_timestamp: { [Op.lt]: minPreviousAge } // Only get records older than collection interval
@@ -1408,10 +1377,10 @@ class NetworkCollector {
                 });
                 previousStatsMap = grouped;
                 
-                console.log(`📊 Found ${previousStatsMap.size} previous stat records for ${currentStats.length} current interfaces`);
+                console.log(`📊 Found ${previousStatsMap.size} previous usage records for ${currentStats.length} current interfaces`);
                 
             } catch (error) {
-                console.warn('⚠️  Could not fetch previous statistics for bandwidth calculation:', error.message);
+                console.warn('⚠️  Could not fetch previous usage statistics for bandwidth calculation:', error.message);
             }
 
             const usageDataResults = [];
@@ -1564,14 +1533,6 @@ class NetworkCollector {
             const retentionConfig = this.hostMonitoringConfig.retention;
             const now = new Date();
 
-            // Clean network stats
-            const statsRetentionDate = new Date(now.getTime() - (retentionConfig.network_stats * 24 * 60 * 60 * 1000));
-            const deletedStats = await NetworkStats.destroy({
-                where: {
-                    scan_timestamp: { [Op.lt]: statsRetentionDate }
-                }
-            });
-
             // Clean network usage
             const usageRetentionDate = new Date(now.getTime() - (retentionConfig.network_usage * 24 * 60 * 60 * 1000));
             const deletedUsage = await NetworkUsage.destroy({
@@ -1602,8 +1563,8 @@ class NetworkCollector {
                 }
             });
 
-            if (deletedStats > 0 || deletedUsage > 0 || deletedConfig > 0 || deletedIPAddresses > 0 || deletedRoutes > 0) {
-                console.log(`🧹 Network cleanup completed: ${deletedStats} stats, ${deletedUsage} usage, ${deletedConfig} interfaces, ${deletedIPAddresses} IP addresses, ${deletedRoutes} routes deleted`);
+            if (deletedUsage > 0 || deletedConfig > 0 || deletedIPAddresses > 0 || deletedRoutes > 0) {
+                console.log(`🧹 Network cleanup completed: ${deletedUsage} usage, ${deletedConfig} interfaces, ${deletedIPAddresses} IP addresses, ${deletedRoutes} routes deleted`);
             }
 
         } catch (error) {

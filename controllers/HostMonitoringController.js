@@ -8,7 +8,6 @@
 import { Op, Sequelize } from "sequelize";
 import sequelize from "../config/Database.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
-import NetworkStats from "../models/NetworkStatsModel.js";
 import NetworkUsage from "../models/NetworkUsageModel.js";
 import IPAddresses from "../models/IPAddressModel.js";
 import Routes from "../models/RoutingTableModel.js";
@@ -262,74 +261,6 @@ export const getNetworkInterfaces = async (req, res) => {
     }
 };
 
-/**
- * @swagger
- * /monitoring/network/stats:
- *   get:
- *     summary: Get network traffic statistics
- *     description: Returns network interface traffic statistics (packets, bytes, errors)
- *     tags: [Host Monitoring]
- *     parameters:
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 100
- *         description: Maximum number of records to return
- *       - in: query
- *         name: since
- *         schema:
- *           type: string
- *           format: date-time
- *         description: Return records since this timestamp
- *       - in: query
- *         name: link
- *         schema:
- *           type: string
- *         description: Filter by interface/link name
- *     responses:
- *       200:
- *         description: Network statistics data
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 stats:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/NetworkStats'
- *                 totalCount:
- *                   type: integer
- *       500:
- *         description: Failed to get network statistics
- */
-export const getNetworkStats = async (req, res) => {
-    try {
-        const { limit = 100, since, link } = req.query;
-        
-        const whereClause = {};
-        if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-        if (link) whereClause.link = { [Op.like]: `%${link}%` };
-
-        const { count, rows } = await NetworkStats.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
-        });
-
-        res.json({
-            stats: rows,
-            totalCount: count
-        });
-    } catch (error) {
-        console.error('Error getting network stats:', error);
-        res.status(500).json({ 
-            error: 'Failed to get network statistics',
-            details: error.message 
-        });
-    }
-};
 
 /**
  * @swagger
@@ -2255,7 +2186,6 @@ export const getMonitoringSummary = async (req, res) => {
         const countQuery = Date.now();
         const [
             interfaceCount,
-            statsCount,
             usageCount,
             ipAddressCount,
             routeCount,
@@ -2264,11 +2194,6 @@ export const getMonitoringSummary = async (req, res) => {
             diskCount
         ] = await Promise.all([
             NetworkInterfaces.count({
-                where: { 
-                    scan_timestamp: { [Op.gte]: oneDayAgo }
-                }
-            }),
-            NetworkStats.count({
                 where: { 
                     scan_timestamp: { [Op.gte]: oneDayAgo }
                 }
@@ -2310,7 +2235,6 @@ export const getMonitoringSummary = async (req, res) => {
         const latestQuery = Date.now();
         const [
             latestInterface,
-            latestStats,
             latestUsage,
             latestIPAddress,
             latestRoute,
@@ -2319,10 +2243,6 @@ export const getMonitoringSummary = async (req, res) => {
             latestDisk
         ] = await Promise.all([
             NetworkInterfaces.findOne({
-                order: [['scan_timestamp', 'DESC']],
-                attributes: ['scan_timestamp']
-            }),
-            NetworkStats.findOne({
                 order: [['scan_timestamp', 'DESC']],
                 attributes: ['scan_timestamp']
             }),
@@ -2367,13 +2287,11 @@ export const getMonitoringSummary = async (req, res) => {
             },
             lastCollected: {
                 networkInterfaces: hostInfo?.last_network_scan,
-                networkStats: hostInfo?.last_network_stats_scan,
                 networkUsage: hostInfo?.last_network_usage_scan,
                 storage: hostInfo?.last_storage_scan
             },
             recordCounts: {
                 networkInterfaces: interfaceCount,
-                networkStats: statsCount,
                 networkUsage: usageCount,
                 ipAddresses: ipAddressCount,
                 routes: routeCount,
@@ -2383,7 +2301,6 @@ export const getMonitoringSummary = async (req, res) => {
             },
             latestData: {
                 networkInterfaces: latestInterface?.scan_timestamp,
-                networkStats: latestStats?.scan_timestamp,
                 networkUsage: latestUsage?.scan_timestamp,
                 ipAddresses: latestIPAddress?.scan_timestamp,
                 routes: latestRoute?.scan_timestamp,

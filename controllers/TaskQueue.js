@@ -3,7 +3,6 @@ import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import Zones from "../models/ZoneModel.js";
 import VncSessions from "../models/VncSessionModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
-import NetworkStats from "../models/NetworkStatsModel.js";
 import NetworkUsage from "../models/NetworkUsageModel.js";
 import IPAddresses from "../models/IPAddressModel.js";
 import yj from "yieldable-json";
@@ -418,7 +417,6 @@ const executeDeleteTask = async (zoneName) => {
 
         // Clean up associated data
         await NetworkInterfaces.destroy({ where: { zone: zoneName } });
-        await NetworkStats.destroy({ where: { link: { [Op.like]: `${zoneName}%` } } });
         await NetworkUsage.destroy({ where: { link: { [Op.like]: `${zoneName}%` } } });
         await IPAddresses.destroy({ where: { interface: { [Op.like]: `${zoneName}%` } } });
         
@@ -1082,7 +1080,6 @@ const executeCreateIPAddressTask = async (metadataJson) => {
         if (result.success) {
             // Clean up associated data
             await NetworkInterfaces.destroy({ where: { link: vlan } });
-            await NetworkStats.destroy({ where: { link: vlan } });
             await NetworkUsage.destroy({ where: { link: vlan } });
 
             return { 
@@ -1470,16 +1467,6 @@ const executeDeleteVNICTask = async (metadataJson) => {
                 cleanupResults.network_interfaces = interfacesDeleted;
                 console.log(`🗑️  Cleaned up ${interfacesDeleted} network interface entries for VNIC ${vnic}`);
 
-                // Clean up NetworkStats table (traffic statistics)
-                const statsDeleted = await NetworkStats.destroy({
-                    where: {
-                        host: hostname,
-                        link: vnic
-                    }
-                });
-                cleanupResults.network_stats = statsDeleted;
-                console.log(`🗑️  Cleaned up ${statsDeleted} network stats entries for VNIC ${vnic}`);
-
                 // Clean up NetworkUsage table (usage accounting)
                 const usageDeleted = await NetworkUsage.destroy({
                     where: {
@@ -1490,7 +1477,7 @@ const executeDeleteVNICTask = async (metadataJson) => {
                 cleanupResults.network_usage = usageDeleted;
                 console.log(`🗑️  Cleaned up ${usageDeleted} network usage entries for VNIC ${vnic}`);
 
-                const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_stats + cleanupResults.network_usage;
+                const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_usage;
                 console.log(`✅ Database cleanup completed: ${totalCleaned} total entries removed for VNIC ${vnic}`);
 
                 return { 
@@ -1552,7 +1539,6 @@ const executeSetVNICPropertiesTask = async (metadataJson) => {
             // Clean up all monitoring database entries for this VLAN
             const hostname = os.hostname();
             await NetworkInterfaces.destroy({ where: { host: hostname, link: vlan, class: 'vlan' } });
-            await NetworkStats.destroy({ where: { host: hostname, link: vlan } });
             await NetworkUsage.destroy({ where: { host: hostname, link: vlan } });
 
             return { 
@@ -1674,7 +1660,6 @@ const executeDeleteAggregateTask = async (metadataJson) => {
             const hostname = os.hostname();
             let cleanupResults = {
                 network_interfaces: 0,
-                network_stats: 0,
                 network_usage: 0
             };
 
@@ -1690,16 +1675,6 @@ const executeDeleteAggregateTask = async (metadataJson) => {
                 cleanupResults.network_interfaces = interfacesDeleted;
                 console.log(`🗑️  Cleaned up ${interfacesDeleted} network interface entries for aggregate ${aggregate}`);
 
-                // Clean up NetworkStats table (traffic statistics)
-                const statsDeleted = await NetworkStats.destroy({
-                    where: {
-                        host: hostname,
-                        link: aggregate
-                    }
-                });
-                cleanupResults.network_stats = statsDeleted;
-                console.log(`🗑️  Cleaned up ${statsDeleted} network stats entries for aggregate ${aggregate}`);
-
                 // Clean up NetworkUsage table (usage accounting)
                 const usageDeleted = await NetworkUsage.destroy({
                     where: {
@@ -1710,7 +1685,7 @@ const executeDeleteAggregateTask = async (metadataJson) => {
                 cleanupResults.network_usage = usageDeleted;
                 console.log(`🗑️  Cleaned up ${usageDeleted} network usage entries for aggregate ${aggregate}`);
 
-                const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_stats + cleanupResults.network_usage;
+                const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_usage;
                 console.log(`✅ Database cleanup completed: ${totalCleaned} total entries removed for aggregate ${aggregate}`);
 
                 return { 
@@ -1890,16 +1865,6 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
                 cleanupResults.network_interfaces = interfacesDeleted;
                 console.log(`🗑️  Cleaned up ${interfacesDeleted} network interface entries for etherstub ${etherstub}`);
 
-                // Clean up NetworkStats table (traffic statistics)
-                const statsDeleted = await NetworkStats.destroy({
-                    where: {
-                        host: hostname,
-                        link: etherstub
-                    }
-                });
-                cleanupResults.network_stats = statsDeleted;
-                console.log(`🗑️  Cleaned up ${statsDeleted} network stats entries for etherstub ${etherstub}`);
-
                 // Clean up NetworkUsage table (usage accounting)
                 const usageDeleted = await NetworkUsage.destroy({
                     where: {
@@ -2003,7 +1968,6 @@ const executeDeleteVlanTask = async (metadataJson) => {
         if (result.success) {
             // Clean up associated data
             await NetworkInterfaces.destroy({ where: { link: vlan } });
-            await NetworkStats.destroy({ where: { link: vlan } });
             await NetworkUsage.destroy({ where: { link: vlan } });
 
             return { 
@@ -2154,16 +2118,6 @@ const executeDeleteBridgeTask = async (metadataJson) => {
                 });
                 cleanupResults.network_interfaces = interfacesDeleted;
                 console.log(`🗑️  Cleaned up ${interfacesDeleted} network interface entries for bridge ${bridge}`);
-
-                // Clean up NetworkStats table (traffic statistics)
-                const statsDeleted = await NetworkStats.destroy({
-                    where: {
-                        host: hostname,
-                        link: bridge
-                    }
-                });
-                cleanupResults.network_stats = statsDeleted;
-                console.log(`🗑️  Cleaned up ${statsDeleted} network stats entries for bridge ${bridge}`);
 
                 // Clean up NetworkUsage table (usage accounting)
                 const usageDeleted = await NetworkUsage.destroy({

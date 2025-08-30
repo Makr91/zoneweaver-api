@@ -37,7 +37,6 @@ import {
     getHealthCheck,
     triggerCollection,
     getNetworkInterfaces,
-    getNetworkStats,
     getNetworkUsage,
     getIPAddresses,
     getRoutes,
@@ -247,7 +246,6 @@ router.get('/monitoring/host', verifyApiKey, getHostInfo);                    //
 
 // Network Monitoring Routes
 router.get('/monitoring/network/interfaces', verifyApiKey, getNetworkInterfaces);  // Get network interface data
-router.get('/monitoring/network/stats', verifyApiKey, getNetworkStats);            // Get network traffic statistics
 router.get('/monitoring/network/usage', verifyApiKey, getNetworkUsage);            // Get network usage accounting data
 router.get('/monitoring/network/ipaddresses', verifyApiKey, getIPAddresses);       // Get IP address assignments
 router.get('/monitoring/network/routes', verifyApiKey, getRoutes);                 // Get routing table information
