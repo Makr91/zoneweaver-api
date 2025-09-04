@@ -6,10 +6,10 @@ This directory contains the files needed to build an OmniOS IPS package for the 
 
 - **Package Name**: `system/virtualization/zoneweaver-api`
 - **Service Name**: `system/virtualization/zoneweaver-api`
-- **User/Group**: `zoneweaver-api` (UID/GID: 301)
+- **User/Group**: `zoneapi` (UID/GID: 301)
 - **Installation Path**: `/opt/zoneweaver-api`
 - **Configuration**: `/etc/zoneweaver-api`
-- **Data Directory**: `/var/lib/zoneweaver-api`
+- **Data Directory**: `/var/lib/zoneweaver-api` (also user home directory)
 - **Log Directory**: `/var/log/zoneweaver-api`
 
 ## Package Contents
@@ -73,6 +73,15 @@ SSL certificates are automatically generated during first startup if they don't 
 
 The SQLite database is stored at:
 - **Database**: `/var/lib/zoneweaver-api/database/database.sqlite`
+
+### User Account and Shell Environment
+
+The `zoneapi` user is created with the following shell initialization files in its home directory (`/var/lib/zoneweaver-api`):
+- **`.profile`** - POSIX shell initialization (copied from `/etc/skel/.profile`)
+- **`.bashrc`** - Bash-specific initialization (copied from `/etc/skel/.bashrc`)
+- **`.kshrc`** - Korn shell initialization (copied from `/etc/skel/.kshrc`)
+
+These files ensure that interactive shell sessions and shell scripts run as the `zoneapi` user have proper environment setup including PATH configuration for OmniOS/OOCE tools.
 
 ## API Access
 

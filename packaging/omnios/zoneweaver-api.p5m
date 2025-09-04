@@ -88,6 +88,19 @@ license opt/zoneweaver-api/LICENSE.md license="GPL-3.0" must-accept=false
 <transform dir path=var/lib/zoneweaver-api/database -> set group zoneapi>
 <transform dir path=var/lib/zoneweaver-api/database -> set mode 0755>
 
+# Skeleton files in zoneapi user home directory
+<transform file path=var/lib/zoneweaver-api/\\.profile -> set owner zoneapi>
+<transform file path=var/lib/zoneweaver-api/\\.profile -> set group zoneapi>
+<transform file path=var/lib/zoneweaver-api/\\.profile -> set mode 0644>
+
+<transform file path=var/lib/zoneweaver-api/\\.bashrc -> set owner zoneapi>
+<transform file path=var/lib/zoneweaver-api/\\.bashrc -> set group zoneapi>
+<transform file path=var/lib/zoneweaver-api/\\.bashrc -> set mode 0644>
+
+<transform file path=var/lib/zoneweaver-api/\\.kshrc -> set owner zoneapi>
+<transform file path=var/lib/zoneweaver-api/\\.kshrc -> set group zoneapi>
+<transform file path=var/lib/zoneweaver-api/\\.kshrc -> set mode 0644>
+
 # Log directory (packaged content to avoid permission issues)
 <transform dir path=var/log/zoneweaver-api -> set owner zoneapi>
 <transform dir path=var/log/zoneweaver-api -> set group zoneapi>

@@ -30,6 +30,7 @@ set -e
 # Simple logging functions
 logmsg() { echo "=== $*"; }
 logcmd() { echo ">>> $*"; "$@"; }
+logerr() { echo "ERROR: $*" >&2; }
 
 # Set up variables
 SRCDIR="$(pwd)"
@@ -117,6 +118,21 @@ install_app() {
     logmsg "Installing configuration files"
     logcmd mkdir -p etc/zoneweaver-api
     logcmd cp $SRCDIR/packaging/config/production-config.yaml etc/zoneweaver-api/config.yaml
+
+    # Copy skeleton files to zoneapi user home directory
+    logmsg "Installing skeleton files for zoneapi user"
+    if [ -d "/etc/skel" ]; then
+        # Copy each skeleton file if it exists
+        for skelfile in .profile .bashrc .kshrc; do
+            if [ -f "/etc/skel/$skelfile" ]; then
+                logcmd cp "/etc/skel/$skelfile" "var/lib/zoneweaver-api/" || \
+                    logerr "--- copying skeleton file $skelfile failed"
+            fi
+        done
+        logmsg "Skeleton files copied successfully"
+    else
+        logmsg "Warning: /etc/skel directory not found, skeleton files not installed"
+    fi
 
     # Create empty SSL, database, and log directories (packaged content)
     # This prevents salvaging on uninstall - files within stay in place
