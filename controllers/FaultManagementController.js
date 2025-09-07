@@ -315,7 +315,11 @@ export const acquitFault = async (req, res) => {
         });
 
         // Clear cache after administrative action
-        faultCache.isStale = true;
+        faultCache = {
+            data: null,
+            timestamp: null,
+            isStale: true
+        };
 
         res.json({
             success: true,
@@ -384,7 +388,11 @@ export const markRepaired = async (req, res) => {
         });
 
         // Clear cache after administrative action
-        faultCache.isStale = true;
+        faultCache = {
+            data: null,
+            timestamp: null,
+            isStale: true
+        };
 
         res.json({
             success: true,
@@ -452,7 +460,11 @@ export const markReplaced = async (req, res) => {
         });
 
         // Clear cache after administrative action
-        faultCache.isStale = true;
+        faultCache = {
+            data: null,
+            timestamp: null,
+            isStale: true
+        };
 
         res.json({
             success: true,
@@ -733,10 +745,10 @@ function parseDetailedFault(section) {
             continue;
         }
 
-        // Check if this line starts a new field (field names followed by colon at start of line)
+        // Check if this line starts a new field - only recognize expected fields
         let newField = false;
         
-        if (line.startsWith('Host') && line.includes(':')) {
+        if (line.match(/^Host\s*:/)) {
             // Save previous field
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
@@ -744,62 +756,65 @@ function parseDetailedFault(section) {
             currentField = 'host';
             currentValue = line.split(':')[1]?.trim() || '';
             newField = true;
-        } else if (line.startsWith('Platform') && line.includes(':')) {
+        } else if (line.match(/^Platform\s*:/)) {
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
             currentField = 'platform';
             currentValue = line.split(':')[1]?.split('Chassis_id')[0]?.trim() || '';
             newField = true;
-        } else if (line.startsWith('Fault class') && line.includes(':')) {
+        } else if (line.match(/^Fault class\s*:/)) {
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
             currentField = 'faultClass';
             currentValue = line.split(':')[1]?.trim() || '';
             newField = true;
-        } else if (line.startsWith('Affects') && line.includes(':')) {
+        } else if (line.match(/^Affects\s*:/)) {
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
             currentField = 'affects';
             currentValue = line.split(':')[1]?.trim() || '';
             newField = true;
-        } else if (line.startsWith('Problem in') && line.includes(':')) {
+        } else if (line.match(/^Problem in\s*:/)) {
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
             currentField = 'problemIn';
             currentValue = line.split(':')[1]?.trim() || '';
             newField = true;
-        } else if (line.startsWith('Description') && line.includes(':')) {
+        } else if (line.match(/^Description\s*:/)) {
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
             currentField = 'description';
             currentValue = line.split(':')[1]?.trim() || '';
             newField = true;
-        } else if (line.startsWith('Response') && line.includes(':')) {
+        } else if (line.match(/^Response\s*:/)) {
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
             currentField = 'response';
             currentValue = line.split(':')[1]?.trim() || '';
             newField = true;
-        } else if (line.startsWith('Impact') && line.includes(':')) {
+        } else if (line.match(/^Impact\s*:/)) {
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
             currentField = 'impact';
             currentValue = line.split(':')[1]?.trim() || '';
             newField = true;
-        } else if (line.startsWith('Action') && line.includes(':')) {
+        } else if (line.match(/^Action\s*:/)) {
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
             currentField = 'action';
             currentValue = line.split(':')[1]?.trim() || '';
             newField = true;
+        } else if (line.includes(':') && (line.startsWith('Product_sn') || line.startsWith('Chassis_id'))) {
+            // Skip these fields - they're not part of our fault data
+            newField = true; // Mark as new field but don't set currentField
         }
 
         // If this isn't a new field and we have a current field, it's a continuation line
