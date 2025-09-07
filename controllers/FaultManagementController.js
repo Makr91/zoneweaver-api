@@ -565,27 +565,37 @@ function parseFaultOutput(output) {
         return faults;
     }
 
-    // Split by fault entries (separated by blank lines in detailed output)
-    const sections = output.split(/\n\s*\n/);
-    
-    for (const section of sections) {
-        const lines = section.trim().split('\n');
-        if (lines.length < 2) continue;
+    const lines = output.trim().split('\n');
+    let headerFound = false;
+    let parsingTable = false;
 
-        // Check if this looks like a fault header
-        if (lines[0].includes('TIME') && lines[0].includes('EVENT-ID')) {
-            // Parse tabular format
-            for (let i = 2; i < lines.length; i++) { // Skip header lines
-                const line = lines[i];
-                if (line.trim()) {
-                    const fault = parseFaultLine(line);
-                    if (fault) faults.push(fault);
-                }
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Find the tabular header
+        if (line.includes('TIME') && line.includes('EVENT-ID') && line.includes('MSG-ID') && line.includes('SEVERITY')) {
+            headerFound = true;
+            parsingTable = true;
+            continue;
+        }
+        
+        // Skip separator line (dashes)
+        if (line.match(/^-+\s+/) || !line.trim()) {
+            continue;
+        }
+        
+        // Parse fault lines only from the tabular section
+        if (headerFound && parsingTable) {
+            // Stop parsing table when we hit detailed section or empty line
+            if (line.includes('Host') || line.includes('Platform') || line.includes('Fault class')) {
+                parsingTable = false;
+                continue;
             }
-        } else if (section.includes('Host') && section.includes('Fault class')) {
-            // Parse detailed format
-            const fault = parseDetailedFault(section);
-            if (fault) faults.push(fault);
+            
+            const fault = parseFaultLine(line);
+            if (fault) {
+                faults.push(fault);
+            }
         }
     }
 
@@ -598,15 +608,34 @@ function parseFaultOutput(output) {
  * @returns {Object|null} Parsed fault object or null
  */
 function parseFaultLine(line) {
-    // Parse tabular format: TIME EVENT-ID MSG-ID SEVERITY
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 4) return null;
+    const trimmed = line.trim();
+    
+    // Skip empty lines and lines that are clearly not fault data
+    if (!trimmed || trimmed.length < 20) return null;
+    
+    // Parse the format: "Jan 19 2025     c543b4ad-6cc7-40bc-891a-186100ef16a7  ZFS-8000-CS    Major"
+    // Use regex to match the UUID pattern
+    const uuidPattern = /([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/;
+    const match = trimmed.match(uuidPattern);
+    
+    if (!match) return null;
+    
+    const uuid = match[1];
+    const beforeUuid = trimmed.substring(0, match.index).trim();
+    const afterUuid = trimmed.substring(match.index + uuid.length).trim();
+    
+    // Split the part after UUID to get MSG-ID and SEVERITY
+    const afterParts = afterUuid.split(/\s+/);
+    if (afterParts.length < 2) return null;
+    
+    const msgId = afterParts[0];
+    const severity = afterParts[1];
 
     return {
-        time: parts[0] + (parts[1] ? ` ${parts[1]}` : ''), // Handle multi-part dates
-        uuid: parts[parts.length - 3],
-        msgId: parts[parts.length - 2],
-        severity: parts[parts.length - 1],
+        time: beforeUuid,
+        uuid: uuid,
+        msgId: msgId,
+        severity: severity,
         format: 'summary'
     };
 }
