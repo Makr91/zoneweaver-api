@@ -598,26 +598,10 @@ function parseFaultOutput(output) {
             continue;
         }
         
-        // Skip empty lines
+        // Skip empty lines BUT continue collecting details
         if (!line.trim()) {
-            if (collectingDetails && detailLines.length > 0) {
-                // End of detail section - process collected details
-                const detailedInfo = parseDetailedFault(detailLines.join('\n'));
-                if (currentFault && detailedInfo) {
-                    currentFault.details = {
-                        host: detailedInfo.host,
-                        platform: detailedInfo.platform,
-                        faultClass: detailedInfo.faultClass,
-                        affects: detailedInfo.affects,
-                        problemIn: detailedInfo.problemIn,
-                        description: detailedInfo.description,
-                        response: detailedInfo.response,
-                        impact: detailedInfo.impact,
-                        action: detailedInfo.action
-                    };
-                }
-                collectingDetails = false;
-                detailLines = [];
+            if (collectingDetails) {
+                detailLines.push(line); // Keep empty lines as part of details
             }
             continue;
         }
@@ -663,6 +647,20 @@ function parseFaultOutput(output) {
         // If we're collecting details, add this line
         if (collectingDetails) {
             detailLines.push(line);
+        }
+        
+        // Also start collecting details for any line that looks like a fault field
+        if (!collectingDetails && line.match(/^[A-Z][^:]*\s*:/) && (
+            line.includes('Platform') || 
+            line.includes('Fault class') || 
+            line.includes('Affects') ||
+            line.includes('Description') ||
+            line.includes('Response') ||
+            line.includes('Impact') ||
+            line.includes('Action')
+        )) {
+            collectingDetails = true;
+            detailLines = [line];
         }
     }
     
