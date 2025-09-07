@@ -9,6 +9,7 @@ import yj from "yieldable-json";
 import { Op } from "sequelize";
 import os from "os";
 import config from "../config/ConfigLoader.js";
+import { setRebootRequired } from "../lib/RebootManager.js";
 import {
     enableService,
     disableService,
@@ -3200,6 +3201,9 @@ const executeSetTimezoneTask = async (metadataJson) => {
         }
 
         console.log('✅ Timezone config written successfully');
+
+        // Set reboot required flag
+        await setRebootRequired('timezone_change', 'TaskQueue');
 
         // Verify the change
         const verifyResult = await executeCommand(`grep "^TZ=" ${configFile}`);

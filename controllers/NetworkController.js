@@ -11,6 +11,7 @@ import IPAddresses from "../models/IPAddressModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
 import yj from "yieldable-json";
+import { setRebootRequired } from "../lib/RebootManager.js";
 import os from "os";
 import fs from "fs";
 
@@ -207,6 +208,9 @@ export const setHostname = async (req, res) => {
                 });
             })
         });
+
+        // Set reboot required flag for hostname changes
+        await setRebootRequired('hostname_change', 'NetworkController');
 
         res.status(202).json({
             success: true,

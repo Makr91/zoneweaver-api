@@ -27,6 +27,7 @@ import Tasks from "../models/TaskModel.js";
 import Zones from "../models/ZoneModel.js";
 import db from "../config/Database.js";
 import DatabaseMigrations from "../config/DatabaseMigrations.js";
+import { getRebootStatus, checkAndClearAfterReboot } from "../lib/RebootManager.js";
 import os from "os";
 
 /**
@@ -197,6 +198,18 @@ class HostMonitoringService {
             this.systemMetricsCollector.collectSystemMetrics().catch(error => {
                 console.error('❌ Initial system metrics collection failed:', error.message);
             });
+
+            // Check and clear reboot flags if system has rebooted since flags were created
+            try {
+                const rebootCheckResult = await checkAndClearAfterReboot();
+                if (rebootCheckResult.action === 'cleared') {
+                    console.log(`🔄 Cleared reboot flags on startup: ${rebootCheckResult.reasons_cleared?.join(', ')}`);
+                } else if (rebootCheckResult.action === 'kept') {
+                    console.log(`🔄 Keeping reboot flags (system not rebooted): age ${rebootCheckResult.flag_age_minutes}min`);
+                }
+            } catch (error) {
+                console.warn('⚠️  Failed to check reboot flags on startup:', error.message);
+            }
 
             // Register cleanup tasks with CleanupService
             this.registerCleanupTasks();
@@ -474,6 +487,9 @@ class HostMonitoringService {
             const now = new Date();
             const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
 
+            // Get reboot status
+            const rebootStatus = await getRebootStatus();
+
             return {
                 status: this.isRunning ? 'healthy' : 'stopped',
                 lastUpdate: hostInfo ? hostInfo.updated_at : null,
@@ -484,6 +500,13 @@ class HostMonitoringService {
                     storage: hostInfo && hostInfo.last_storage_scan > fiveMinutesAgo
                 },
                 uptime: Math.floor(os.uptime()),
+                reboot_required: rebootStatus.reboot_required,
+                reboot_info: rebootStatus.reboot_required ? {
+                    timestamp: rebootStatus.timestamp,
+                    reasons: rebootStatus.reasons,
+                    age_minutes: rebootStatus.age_minutes,
+                    created_by: rebootStatus.created_by
+                } : null,
                 service: this.getStatus()
             };
 

@@ -182,6 +182,12 @@ import {
     getAvailableTimeSyncSystems,
     switchTimeSyncSystem
 } from "../controllers/TimeSyncController.js";
+import {
+    getARCConfig,
+    updateARCConfig,
+    validateARCConfig,
+    resetARCConfig
+} from "../controllers/ARCConfigController.js";
 import config from "../config/ConfigLoader.js";
  
 const router = express.Router();
@@ -394,6 +400,12 @@ router.post('/system/time-sync/switch', verifyApiKey, switchTimeSyncSystem);    
 router.get('/system/timezone', verifyApiKey, getTimezone);                        // Get current timezone
 router.put('/system/timezone', verifyApiKey, setTimezone);                        // Set system timezone
 router.get('/system/timezones', verifyApiKey, listTimezones);                     // List available timezones
+
+// ZFS ARC Management Routes
+router.get('/system/zfs/arc/config', verifyApiKey, getARCConfig);                 // Get ZFS ARC configuration and tunables
+router.put('/system/zfs/arc/config', verifyApiKey, updateARCConfig);              // Update ZFS ARC settings
+router.post('/system/zfs/arc/validate', verifyApiKey, validateARCConfig);         // Validate ZFS ARC configuration
+router.post('/system/zfs/arc/reset', verifyApiKey, resetARCConfig);               // Reset ZFS ARC to defaults
 
 // NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
  
