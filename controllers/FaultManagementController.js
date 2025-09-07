@@ -568,7 +568,9 @@ function parseFaultOutput(output) {
     const lines = output.trim().split('\n');
     let headerFound = false;
     let parsingTable = false;
+    let detailSectionStart = -1;
 
+    // First pass - parse the tabular section
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         
@@ -586,16 +588,38 @@ function parseFaultOutput(output) {
         
         // Parse fault lines only from the tabular section
         if (headerFound && parsingTable) {
-            // Stop parsing table when we hit detailed section or empty line
-            if (line.includes('Host') || line.includes('Platform') || line.includes('Fault class')) {
+            // Stop parsing table when we hit detailed section
+            if (line.includes('Host') && line.includes(':')) {
                 parsingTable = false;
-                continue;
+                detailSectionStart = i;
+                break;
             }
             
             const fault = parseFaultLine(line);
             if (fault) {
                 faults.push(fault);
             }
+        }
+    }
+
+    // Second pass - if we found detailed section, parse and merge it with faults
+    if (detailSectionStart > -1 && faults.length > 0) {
+        const detailSection = lines.slice(detailSectionStart).join('\n');
+        const detailedInfo = parseDetailedFault(detailSection);
+        
+        if (detailedInfo) {
+            // Merge detailed info into the first fault (since they correspond to the same fault)
+            faults[0].details = {
+                host: detailedInfo.host,
+                platform: detailedInfo.platform,
+                faultClass: detailedInfo.faultClass,
+                affects: detailedInfo.affects,
+                problemIn: detailedInfo.problemIn,
+                description: detailedInfo.description,
+                response: detailedInfo.response,
+                impact: detailedInfo.impact,
+                action: detailedInfo.action
+            };
         }
     }
 
@@ -663,6 +687,8 @@ function parseDetailedFault(section) {
             fault.problemIn = trimmed.split(':')[1]?.trim();
         } else if (trimmed.includes('Description') && trimmed.includes(':')) {
             fault.description = trimmed.split(':')[1]?.trim();
+        } else if (trimmed.includes('Response') && trimmed.includes(':')) {
+            fault.response = trimmed.split(':')[1]?.trim();
         } else if (trimmed.includes('Impact') && trimmed.includes(':')) {
             fault.impact = trimmed.split(':')[1]?.trim();
         } else if (trimmed.includes('Action') && trimmed.includes(':')) {

@@ -207,6 +207,13 @@ import {
     stopLogStream,
     getLogStreamInfo
 } from "../controllers/LogStreamController.js";
+import {
+    getSyslogConfig,
+    updateSyslogConfig,
+    getSyslogFacilities,
+    validateSyslogConfig,
+    reloadSyslogService
+} from "../controllers/SyslogController.js";
 import config from "../config/ConfigLoader.js";
  
 const router = express.Router();
@@ -444,6 +451,13 @@ router.post('/system/logs/:logname/stream/start', verifyApiKey, startLogStream);
 router.get('/system/logs/stream/sessions', verifyApiKey, listLogStreamSessions);           // List active log stream sessions  
 router.get('/system/logs/stream/:sessionId', verifyApiKey, getLogStreamInfo);              // Get log stream session info
 router.delete('/system/logs/stream/:sessionId/stop', verifyApiKey, stopLogStream);         // Stop log stream session
+
+// Syslog Configuration Management Routes
+router.get('/system/syslog/config', verifyApiKey, getSyslogConfig);                        // Get syslog configuration
+router.put('/system/syslog/config', verifyApiKey, updateSyslogConfig);                     // Update syslog configuration
+router.get('/system/syslog/facilities', verifyApiKey, getSyslogFacilities);                // Get available facilities and levels
+router.post('/system/syslog/validate', verifyApiKey, validateSyslogConfig);                // Validate syslog configuration
+router.post('/system/syslog/reload', verifyApiKey, reloadSyslogService);                   // Reload syslog service
 
 // NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
  
