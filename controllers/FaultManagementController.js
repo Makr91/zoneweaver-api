@@ -734,8 +734,13 @@ function parseFaultLine(line) {
  * @returns {Object|null} Parsed fault object or null
  */
 function parseDetailedFault(section) {
+    console.log('🔍 Detail parsing - Section length:', section.length);
+    console.log('🔍 Detail parsing - Full section:', JSON.stringify(section));
+    
     const fault = { format: 'detailed' };
     const lines = section.split('\n');
+    
+    console.log('🔍 Detail parsing - Total lines:', lines.length);
     
     let currentField = null;
     let currentValue = '';
@@ -744,11 +749,16 @@ function parseDetailedFault(section) {
         const line = lines[i];
         const trimmed = line.trim();
 
+        console.log(`🔍 Line ${i}: "${line}"`);
+        console.log(`🔍 Line ${i} trimmed: "${trimmed}"`);
+
         // Skip empty lines
         if (!trimmed) {
+            console.log(`🔍 Line ${i}: Empty line - saving current field: ${currentField}`);
             // Save current field before skipping
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
+                console.log(`🔍 Saved field: ${currentField} = ${currentValue.trim()}`);
                 currentField = null;
                 currentValue = '';
             }
@@ -757,9 +767,12 @@ function parseDetailedFault(section) {
 
         // Check if this line starts a new field (contains colon not at the start of indented line)
         if (line.match(/^[A-Z]/) && line.includes(':')) {
+            console.log(`🔍 Line ${i}: Detected field line`);
+            
             // Save previous field
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
+                console.log(`🔍 Saved previous field: ${currentField} = ${currentValue.trim()}`);
             }
 
             // Parse new field
@@ -767,54 +780,74 @@ function parseDetailedFault(section) {
             const fieldName = line.substring(0, colonIndex).trim();
             let fieldValue = line.substring(colonIndex + 1).trim();
 
+            console.log(`🔍 Field name: "${fieldName}"`);
+            console.log(`🔍 Field value: "${fieldValue}"`);
+
             // Handle special cases
             if (fieldName === 'Host') {
                 currentField = 'host';
                 currentValue = fieldValue;
+                console.log(`🔍 Set host field: ${fieldValue}`);
             } else if (fieldName === 'Platform') {
                 // Handle tab-separated fields on same line
                 currentField = 'platform';
                 currentValue = fieldValue.split('\t')[0].trim(); // Take only part before tab
+                console.log(`🔍 Set platform field: ${currentValue}`);
             } else if (fieldName === 'Fault class') {
                 currentField = 'faultClass';
                 currentValue = fieldValue;
+                console.log(`🔍 Set faultClass field: ${fieldValue}`);
             } else if (fieldName === 'Affects') {
                 currentField = 'affects';
                 currentValue = fieldValue;
+                console.log(`🔍 Set affects field: ${fieldValue}`);
             } else if (fieldName === 'Problem in') {
                 currentField = 'problemIn';
                 currentValue = fieldValue;
+                console.log(`🔍 Set problemIn field: ${fieldValue}`);
             } else if (fieldName === 'Description') {
                 currentField = 'description';
                 currentValue = fieldValue;
+                console.log(`🔍 Set description field: ${fieldValue}`);
             } else if (fieldName === 'Response') {
                 currentField = 'response';
                 currentValue = fieldValue;
+                console.log(`🔍 Set response field: ${fieldValue}`);
             } else if (fieldName === 'Impact') {
                 currentField = 'impact';
                 currentValue = fieldValue;
+                console.log(`🔍 Set impact field: ${fieldValue}`);
             } else if (fieldName === 'Action') {
                 currentField = 'action';
                 currentValue = fieldValue;
+                console.log(`🔍 Set action field: ${fieldValue}`);
             } else {
                 // Skip unknown fields like Product_sn, Chassis_id
+                console.log(`🔍 Skipping unknown field: ${fieldName}`);
                 currentField = null;
                 currentValue = '';
             }
         } else if (currentField && trimmed) {
+            console.log(`🔍 Line ${i}: Continuation line for field: ${currentField}`);
             // This is a continuation line for the current field
             if (currentValue) {
                 currentValue += ' ' + trimmed;
             } else {
                 currentValue = trimmed;
             }
+            console.log(`🔍 Updated ${currentField} value: ${currentValue}`);
+        } else {
+            console.log(`🔍 Line ${i}: Ignored (not field start, no current field, or empty)`);
         }
     }
 
     // Save the last field
     if (currentField && currentValue) {
         fault[currentField] = currentValue.trim();
+        console.log(`🔍 Saved final field: ${currentField} = ${currentValue.trim()}`);
     }
+
+    console.log('🔍 Detail parsing - Final fault object:', JSON.stringify(fault));
 
     return Object.keys(fault).length > 1 ? fault : null;
 }
