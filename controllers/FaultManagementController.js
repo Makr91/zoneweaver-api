@@ -12,12 +12,8 @@ import config from "../config/ConfigLoader.js";
 
 const execProm = util.promisify(exec);
 
-// Fault cache to store results for configured interval
-let faultCache = {
-    data: null,
-    timestamp: null,
-    isStale: true
-};
+// Fault cache to store results for configured interval - parameter-aware caching
+let faultCache = new Map();
 
 /**
  * @swagger
@@ -85,21 +81,30 @@ export const getFaults = async (req, res) => {
             });
         }
 
-        // Check cache validity
+        // Create cache key based on parameters to avoid conflicts
+        const cacheKey = `all=${all}&summary=${summary}&limit=${limit}`;
         const now = Date.now();
-        const cacheAge = faultCache.timestamp ? (now - faultCache.timestamp) / 1000 : Infinity;
-        const useCache = !force_refresh && faultCache.data && cacheAge < faultConfig.cache_interval;
+        
+        // Check cache validity for this specific parameter combination
+        let cachedEntry = faultCache.get(cacheKey);
+        const cacheAge = cachedEntry?.timestamp ? (now - cachedEntry.timestamp) / 1000 : Infinity;
+        const useCache = !force_refresh && cachedEntry?.data && cacheAge < faultConfig.cache_interval;
 
         let faultData;
         
         if (useCache) {
-            faultData = faultCache.data;
+            faultData = cachedEntry.data;
+            console.log(`🔍 Fault Management Debug - Using cached data for: ${cacheKey}`);
         } else {
             // Build fmadm command with options
             let command = 'pfexec fmadm faulty';
             if (all) command += ' -a';
             if (summary) command += ' -s';
             if (limit && limit < 50) command += ` -n ${limit}`;
+
+            console.log(`🔍 Fault Management Debug - Parameters: all=${all}, summary=${summary}, limit=${limit}`);
+            console.log(`🔍 Fault Management Debug - Command: ${command}`);
+            console.log(`🔍 Fault Management Debug - Cache key: ${cacheKey}`);
 
             const { stdout, stderr } = await execProm(command, { 
                 timeout: faultConfig.timeout * 1000 
@@ -109,6 +114,9 @@ export const getFaults = async (req, res) => {
                 console.warn('fmadm faulty stderr:', stderr);
             }
 
+            console.log(`🔍 Fault Management Debug - Raw output length: ${stdout.length} chars`);
+            console.log(`🔍 Fault Management Debug - First 200 chars: ${stdout.substring(0, 200)}`);
+
             faultData = {
                 raw_output: stdout,
                 parsed_faults: parseFaultOutput(stdout),
@@ -116,12 +124,13 @@ export const getFaults = async (req, res) => {
                 timestamp: new Date().toISOString()
             };
 
-            // Update cache
-            faultCache = {
+            console.log(`🔍 Fault Management Debug - Parsed ${faultData.parsed_faults.length} faults`);
+
+            // Update cache for this parameter combination
+            faultCache.set(cacheKey, {
                 data: faultData,
-                timestamp: now,
-                isStale: false
-            };
+                timestamp: now
+            });
         }
 
         // Generate summary
@@ -314,12 +323,8 @@ export const acquitFault = async (req, res) => {
             timeout: faultConfig.timeout * 1000 
         });
 
-        // Clear cache after administrative action
-        faultCache = {
-            data: null,
-            timestamp: null,
-            isStale: true
-        };
+        // Clear all cache entries after administrative action
+        faultCache.clear();
 
         res.json({
             success: true,
@@ -387,12 +392,8 @@ export const markRepaired = async (req, res) => {
             timeout: faultConfig.timeout * 1000 
         });
 
-        // Clear cache after administrative action
-        faultCache = {
-            data: null,
-            timestamp: null,
-            isStale: true
-        };
+        // Clear all cache entries after administrative action
+        faultCache.clear();
 
         res.json({
             success: true,
@@ -459,12 +460,8 @@ export const markReplaced = async (req, res) => {
             timeout: faultConfig.timeout * 1000 
         });
 
-        // Clear cache after administrative action
-        faultCache = {
-            data: null,
-            timestamp: null,
-            isStale: true
-        };
+        // Clear all cache entries after administrative action
+        faultCache.clear();
 
         res.json({
             success: true,
@@ -502,17 +499,20 @@ export const getFaultStatusForHealth = async () => {
             };
         }
 
-        // Check cache validity
+        // Use cache for health endpoint (default parameters: all=false)
+        const healthCacheKey = 'all=false&summary=false&limit=50';
         const now = Date.now();
-        const cacheAge = faultCache.timestamp ? (now - faultCache.timestamp) / 1000 : Infinity;
-        const useCache = faultCache.data && cacheAge < faultConfig.cache_interval;
+        
+        let cachedEntry = faultCache.get(healthCacheKey);
+        const cacheAge = cachedEntry?.timestamp ? (now - cachedEntry.timestamp) / 1000 : Infinity;
+        const useCache = cachedEntry?.data && cacheAge < faultConfig.cache_interval;
 
         let faultData;
         
         if (useCache) {
-            faultData = faultCache.data;
+            faultData = cachedEntry.data;
         } else {
-            // Refresh cache
+            // Refresh cache for health endpoint
             try {
                 const command = 'pfexec fmadm faulty';
                 const { stdout } = await execProm(command, { 
@@ -526,18 +526,17 @@ export const getFaultStatusForHealth = async () => {
                 };
 
                 // Update cache
-                faultCache = {
+                faultCache.set(healthCacheKey, {
                     data: faultData,
-                    timestamp: now,
-                    isStale: false
-                };
+                    timestamp: now
+                });
             } catch (error) {
                 console.error('Error refreshing fault cache for health check:', error);
                 return {
                     hasFaults: false,
                     faultCount: 0,
                     severityLevels: [],
-                    lastCheck: faultCache.data?.timestamp || null,
+                    lastCheck: cachedEntry?.data?.timestamp || null,
                     error: error.message
                 };
             }
