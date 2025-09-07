@@ -63,28 +63,33 @@ export const listLogFiles = async (req, res) => {
                 };
 
                 for (const file of files) {
-                    if (file.isFile() && !isFilePermitted(file.name, logsConfig)) {
+                    if (!file.isFile() || !isFilePermitted(file.name, logsConfig)) {
                         continue;
                     }
 
                     const fullPath = path.join(allowedPath, file.name);
                     const stats = await fs.stat(fullPath);
                     
-                    if (file.isFile()) {
-                        const fileInfo = {
-                            name: file.name,
-                            path: fullPath,
-                            relativePath: path.relative('/var', fullPath),
-                            size: stats.size,
-                            modified: stats.mtime,
-                            sizeFormatted: formatFileSize(stats.size),
-                            type: getLogType(file.name)
-                        };
-                        
-                        logFiles.push(fileInfo);
-                        dirInfo.files.push(fileInfo);
-                        dirInfo.fileCount++;
+                    // Skip binary files entirely
+                    const isBinary = await isBinaryFile(fullPath);
+                    if (isBinary) {
+                        console.debug(`Skipping binary file: ${fullPath}`);
+                        continue;
                     }
+                    
+                    const fileInfo = {
+                        name: file.name,
+                        path: fullPath,
+                        relativePath: path.relative('/var', fullPath),
+                        size: stats.size,
+                        modified: stats.mtime,
+                        sizeFormatted: formatFileSize(stats.size),
+                        type: getLogType(file.name)
+                    };
+                    
+                    logFiles.push(fileInfo);
+                    dirInfo.files.push(fileInfo);
+                    dirInfo.fileCount++;
                 }
 
                 directories.push(dirInfo);
@@ -181,6 +186,17 @@ export const getLogFile = async (req, res) => {
         if (!securityCheck.allowed) {
             return res.status(400).json({
                 error: securityCheck.reason
+            });
+        }
+
+        // Check if file is binary - refuse to read binary files
+        const isBinary = await isBinaryFile(logPath);
+        if (isBinary) {
+            return res.status(400).json({
+                error: `Cannot read log file '${logname}' - file contains binary data`,
+                details: 'Binary files are not supported for log viewing',
+                logname: logname,
+                suggestion: 'Use system tools like hexdump or strings for binary file analysis'
             });
         }
 
@@ -445,6 +461,50 @@ function isFilePermitted(filename, logsConfig) {
         }
     }
     return true;
+}
+
+/**
+ * Helper function to detect if a file is binary
+ * @param {string} filePath - Full path to file
+ * @returns {Promise<boolean>} True if file appears to be binary
+ */
+async function isBinaryFile(filePath) {
+    try {
+        // Read first 8KB of file to check for binary content
+        const fileHandle = await fs.open(filePath, 'r');
+        const buffer = Buffer.alloc(8192);
+        const { bytesRead } = await fileHandle.read(buffer, 0, 8192, 0);
+        await fileHandle.close();
+        
+        if (bytesRead === 0) return false; // Empty file, treat as text
+        
+        const sample = buffer.slice(0, bytesRead);
+        
+        // Count null bytes - binary files typically have many null bytes
+        const nullBytes = sample.filter(byte => byte === 0).length;
+        const nullPercentage = nullBytes / bytesRead;
+        
+        // Consider binary if >1% null bytes or high percentage of control characters
+        if (nullPercentage > 0.01) return true;
+        
+        // Check for excessive control characters (excluding common ones like \n, \r, \t)
+        const controlBytes = sample.filter(byte => 
+            (byte >= 1 && byte <= 8) || // Control chars except \t
+            (byte >= 11 && byte <= 12) || // Control chars except \n
+            (byte >= 14 && byte <= 31) || // Control chars except \r
+            byte === 127 // DEL
+        ).length;
+        
+        const controlPercentage = controlBytes / bytesRead;
+        
+        // Consider binary if >5% control characters
+        return controlPercentage > 0.05;
+        
+    } catch (error) {
+        // If we can't read the file, assume it's binary to be safe
+        console.warn(`Cannot determine file type for ${filePath}:`, error.message);
+        return true;
+    }
 }
 
 /**

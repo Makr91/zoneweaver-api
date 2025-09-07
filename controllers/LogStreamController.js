@@ -99,6 +99,17 @@ export const startLogStream = async (req, res) => {
             });
         }
 
+        // Check if file is binary - refuse to stream binary files
+        const isBinary = await isBinaryFile(logPath);
+        if (isBinary) {
+            return res.status(400).json({
+                error: `Cannot stream log file '${logname}' - file contains binary data`,
+                details: 'Binary files are not supported for streaming',
+                logname: logname,
+                suggestion: 'Use system tools like hexdump or strings for binary file analysis'
+            });
+        }
+
         // Check concurrent session limit
         if (activeSessions.size >= (logsConfig.max_concurrent_streams || 10)) {
             return res.status(429).json({
@@ -593,6 +604,50 @@ async function validateLogFileAccess(logPath, logsConfig) {
             allowed: false,
             reason: `Cannot access file: ${error.message}`
         };
+    }
+}
+
+/**
+ * Helper function to detect if a file is binary
+ * @param {string} filePath - Full path to file
+ * @returns {Promise<boolean>} True if file appears to be binary
+ */
+async function isBinaryFile(filePath) {
+    try {
+        // Read first 8KB of file to check for binary content
+        const fileHandle = await fs.open(filePath, 'r');
+        const buffer = Buffer.alloc(8192);
+        const { bytesRead } = await fileHandle.read(buffer, 0, 8192, 0);
+        await fileHandle.close();
+        
+        if (bytesRead === 0) return false; // Empty file, treat as text
+        
+        const sample = buffer.slice(0, bytesRead);
+        
+        // Count null bytes - binary files typically have many null bytes
+        const nullBytes = sample.filter(byte => byte === 0).length;
+        const nullPercentage = nullBytes / bytesRead;
+        
+        // Consider binary if >1% null bytes or high percentage of control characters
+        if (nullPercentage > 0.01) return true;
+        
+        // Check for excessive control characters (excluding common ones like \n, \r, \t)
+        const controlBytes = sample.filter(byte => 
+            (byte >= 1 && byte <= 8) || // Control chars except \t
+            (byte >= 11 && byte <= 12) || // Control chars except \n
+            (byte >= 14 && byte <= 31) || // Control chars except \r
+            byte === 127 // DEL
+        ).length;
+        
+        const controlPercentage = controlBytes / bytesRead;
+        
+        // Consider binary if >5% control characters
+        return controlPercentage > 0.05;
+        
+    } catch (error) {
+        // If we can't read the file, assume it's binary to be safe
+        console.warn(`Cannot determine file type for ${filePath}:`, error.message);
+        return true;
     }
 }
 

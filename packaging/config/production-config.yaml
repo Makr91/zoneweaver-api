@@ -94,7 +94,7 @@ system_logs:
     - "/var/adm"
     - "/var/fm/fmd"
   security:
-    max_file_size_mb: 50  # Prevent reading huge files
+    max_file_size_mb: 100  # Prevent reading huge files
     forbidden_patterns:
       - "*.pid"
       - "*.lock"
