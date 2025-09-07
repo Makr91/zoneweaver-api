@@ -72,7 +72,11 @@ let faultCache = new Map();
  */
 export const getFaults = async (req, res) => {
     try {
-        const { all = false, summary = false, limit = 50, force_refresh = false } = req.query;
+        // Explicitly parse boolean parameters to avoid string "false" being truthy
+        const all = req.query.all === 'true' || req.query.all === true;
+        const summary = req.query.summary === 'true' || req.query.summary === true;
+        const limit = parseInt(req.query.limit) || 50;
+        const force_refresh = req.query.force_refresh === 'true' || req.query.force_refresh === true;
         const faultConfig = config.getFaultManagement();
         
         if (!faultConfig?.enabled) {
