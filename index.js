@@ -23,6 +23,7 @@ import { startTaskProcessor } from "./controllers/TaskQueue.js";
 import { startVncSessionCleanup } from "./controllers/VncConsole.js";
 import { handleTerminalConnection } from "./controllers/XtermController.js";
 import { handleZloginConnection, getZloginCleanupTask } from "./controllers/ZloginController.js";
+import { handleLogStreamUpgrade, cleanupLogStreamSessions } from "./controllers/LogStreamController.js";
 import CleanupService from "./controllers/CleanupService.js";
 import { startHostMonitoring } from "./controllers/HostMonitoringService.js";
 import { checkAndInstallPackages } from "./controllers/ProvisioningController.js";
@@ -212,6 +213,17 @@ const handleWebSocketUpgrade = async (request, socket, head) => {
             socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
             socket.destroy();
         }
+        return;
+    }
+
+    // Check for log stream WebSocket requests
+    const logStreamMatch = url.pathname.match(/\/logs\/stream\/([a-fA-F0-9\-]+)/);
+    if (logStreamMatch) {
+        const sessionId = logStreamMatch[1];
+        console.log(`🔌 Log stream WebSocket upgrade request for session: ${sessionId}`);
+        
+        // Handle log stream upgrade
+        await handleLogStreamUpgrade(request, socket, head, wss);
         return;
     }
     
@@ -500,6 +512,11 @@ httpServer.listen(httpPort, () => {
       
       // Register cleanup tasks
       CleanupService.registerTask(getZloginCleanupTask());
+      CleanupService.registerTask({
+        name: 'log_stream_cleanup',
+        description: 'Clean up old log streaming session records',
+        handler: cleanupLogStreamSessions
+      });
       
       // Start cleanup service
       CleanupService.start();

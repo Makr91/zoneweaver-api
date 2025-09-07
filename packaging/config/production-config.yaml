@@ -77,32 +77,6 @@ reconciliation:
   log_level: warn
 api_docs:
   enabled: true
-time_sync:
-  enabled: true
-  auto_sync_on_startup: true
-  config_backup: true
-  default_servers:
-    - "0.pool.ntp.org"
-    - "1.pool.ntp.org"
-    - "2.pool.ntp.org"
-    - "3.pool.ntp.org"
-  sync_timeout: 30
-  monitoring:
-    enabled: true
-    check_interval: 300
-    max_offset_warning: 100  # milliseconds
-    max_offset_critical: 1000
-  ntp:
-    config_file: "/etc/inet/ntp.conf"
-    drift_file: "/etc/inet/ntp.drift"
-  chrony:
-    config_file: "/etc/chrony.conf"
-    drift_file: "/var/lib/chrony/drift"
-timezone:
-  enabled: true
-  auto_detect: false
-  default_timezone: "UTC"
-  config_file: "/etc/default/init"
 fault_management:
   enabled: true
   cache_interval: 3600  # 1 hour cache for fmadm faulty results
@@ -113,6 +87,8 @@ system_logs:
   max_lines: 1000  # Default log read limit
   default_tail_lines: 100
   timeout: 30
+  max_concurrent_streams: 10  # Maximum concurrent WebSocket log streams
+  stream_session_timeout: 3600  # Log stream session timeout in seconds
   allowed_paths:
     - "/var/log"
     - "/var/adm"

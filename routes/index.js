@@ -201,6 +201,12 @@ import {
     getLogFile,
     getFaultManagerLogs
 } from "../controllers/SystemLogsController.js";
+import {
+    startLogStream,
+    listLogStreamSessions,
+    stopLogStream,
+    getLogStreamInfo
+} from "../controllers/LogStreamController.js";
 import config from "../config/ConfigLoader.js";
  
 const router = express.Router();
@@ -432,6 +438,12 @@ router.post('/system/fault-management/actions/replaced', verifyApiKey, markRepla
 router.get('/system/logs/list', verifyApiKey, listLogFiles);                               // List available log files
 router.get('/system/logs/:logname', verifyApiKey, getLogFile);                             // Read specific log file
 router.get('/system/logs/fault-manager/:type', verifyApiKey, getFaultManagerLogs);         // Read fault manager logs via fmdump
+
+// Log Streaming Routes
+router.post('/system/logs/:logname/stream/start', verifyApiKey, startLogStream);           // Start log stream session
+router.get('/system/logs/stream/sessions', verifyApiKey, listLogStreamSessions);           // List active log stream sessions  
+router.get('/system/logs/stream/:sessionId', verifyApiKey, getLogStreamInfo);              // Get log stream session info
+router.delete('/system/logs/stream/:sessionId/stop', verifyApiKey, stopLogStream);         // Stop log stream session
 
 // NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
  
