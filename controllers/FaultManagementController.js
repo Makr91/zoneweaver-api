@@ -721,28 +721,65 @@ function parseFaultLine(line) {
 function parseDetailedFault(section) {
     const fault = { format: 'detailed' };
     const lines = section.split('\n');
+    let currentField = null;
+    let currentValue = '';
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const trimmed = line.trim();
-        if (trimmed.includes('Host') && trimmed.includes(':')) {
-            fault.host = trimmed.split(':')[1]?.trim();
-        } else if (trimmed.includes('Platform') && trimmed.includes(':')) {
-            fault.platform = trimmed.split(':')[1]?.split('Chassis_id')[0]?.trim();
-        } else if (trimmed.includes('Fault class') && trimmed.includes(':')) {
-            fault.faultClass = trimmed.split(':')[1]?.trim();
-        } else if (trimmed.includes('Affects') && trimmed.includes(':')) {
-            fault.affects = trimmed.split(':')[1]?.trim();
-        } else if (trimmed.includes('Problem in') && trimmed.includes(':')) {
-            fault.problemIn = trimmed.split(':')[1]?.trim();
-        } else if (trimmed.includes('Description') && trimmed.includes(':')) {
-            fault.description = trimmed.split(':')[1]?.trim();
-        } else if (trimmed.includes('Response') && trimmed.includes(':')) {
-            fault.response = trimmed.split(':')[1]?.trim();
-        } else if (trimmed.includes('Impact') && trimmed.includes(':')) {
-            fault.impact = trimmed.split(':')[1]?.trim();
-        } else if (trimmed.includes('Action') && trimmed.includes(':')) {
-            fault.action = trimmed.split(':')[1]?.trim();
+
+        // Check if this line starts a new field (contains colon and field name)
+        if (trimmed.includes(':') && !line.startsWith('  ') && !line.startsWith('\t')) {
+            // Save previous field if we have one
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+            }
+
+            // Start new field
+            if (trimmed.includes('Host') && trimmed.includes(':')) {
+                currentField = 'host';
+                currentValue = trimmed.split(':')[1]?.trim() || '';
+            } else if (trimmed.includes('Platform') && trimmed.includes(':')) {
+                currentField = 'platform';
+                currentValue = trimmed.split(':')[1]?.split('Chassis_id')[0]?.trim() || '';
+            } else if (trimmed.includes('Fault class') && trimmed.includes(':')) {
+                currentField = 'faultClass';
+                currentValue = trimmed.split(':')[1]?.trim() || '';
+            } else if (trimmed.includes('Affects') && trimmed.includes(':')) {
+                currentField = 'affects';
+                currentValue = trimmed.split(':')[1]?.trim() || '';
+            } else if (trimmed.includes('Problem in') && trimmed.includes(':')) {
+                currentField = 'problemIn';
+                currentValue = trimmed.split(':')[1]?.trim() || '';
+            } else if (trimmed.includes('Description') && trimmed.includes(':')) {
+                currentField = 'description';
+                currentValue = trimmed.split(':')[1]?.trim() || '';
+            } else if (trimmed.includes('Response') && trimmed.includes(':')) {
+                currentField = 'response';
+                currentValue = trimmed.split(':')[1]?.trim() || '';
+            } else if (trimmed.includes('Impact') && trimmed.includes(':')) {
+                currentField = 'impact';
+                currentValue = trimmed.split(':')[1]?.trim() || '';
+            } else if (trimmed.includes('Action') && trimmed.includes(':')) {
+                currentField = 'action';
+                currentValue = trimmed.split(':')[1]?.trim() || '';
+            } else {
+                currentField = null;
+                currentValue = '';
+            }
+        } else if (currentField && trimmed) {
+            // This is a continuation line for the current field
+            if (currentValue) {
+                currentValue += ' ' + trimmed;
+            } else {
+                currentValue = trimmed;
+            }
         }
+    }
+
+    // Don't forget the last field
+    if (currentField && currentValue) {
+        fault[currentField] = currentValue.trim();
     }
 
     return Object.keys(fault).length > 1 ? fault : null;
