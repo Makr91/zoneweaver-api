@@ -204,6 +204,34 @@ class ConfigLoader {
   getApiDocs() {
     return this.config.api_docs;
   }
+
+  /**
+   * Gets fault management configuration
+   * @description Returns fault management configuration
+   * @returns {Object} Fault management configuration object
+   * @returns {boolean} returns.enabled - Whether fault management is enabled
+   * @returns {number} returns.cache_interval - Cache interval in seconds
+   * @returns {number} returns.timeout - Command timeout in seconds
+   * @returns {number} returns.max_faults_displayed - Maximum faults to display
+   */
+  getFaultManagement() {
+    return this.config.fault_management;
+  }
+
+  /**
+   * Gets system logs configuration
+   * @description Returns system log viewing configuration
+   * @returns {Object} System logs configuration object
+   * @returns {boolean} returns.enabled - Whether system logs are enabled
+   * @returns {number} returns.max_lines - Maximum lines to read from log files
+   * @returns {number} returns.default_tail_lines - Default number of lines for tail operations
+   * @returns {number} returns.timeout - File read timeout in seconds
+   * @returns {string[]} returns.allowed_paths - Allowed log file paths
+   * @returns {Object} returns.security - Security restrictions
+   */
+  getSystemLogs() {
+    return this.config.system_logs;
+  }
 }
 
 // Export singleton instance

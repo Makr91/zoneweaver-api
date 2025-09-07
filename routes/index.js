@@ -188,6 +188,19 @@ import {
     validateARCConfig,
     resetARCConfig
 } from "../controllers/ARCConfigController.js";
+import {
+    getFaults,
+    getFaultDetails,
+    getFaultManagerConfig,
+    acquitFault,
+    markRepaired,
+    markReplaced
+} from "../controllers/FaultManagementController.js";
+import {
+    listLogFiles,
+    getLogFile,
+    getFaultManagerLogs
+} from "../controllers/SystemLogsController.js";
 import config from "../config/ConfigLoader.js";
  
 const router = express.Router();
@@ -406,6 +419,19 @@ router.get('/system/zfs/arc/config', verifyApiKey, getARCConfig);               
 router.put('/system/zfs/arc/config', verifyApiKey, updateARCConfig);              // Update ZFS ARC settings
 router.post('/system/zfs/arc/validate', verifyApiKey, validateARCConfig);         // Validate ZFS ARC configuration
 router.post('/system/zfs/arc/reset', verifyApiKey, resetARCConfig);               // Reset ZFS ARC to defaults
+
+// Fault Management Routes
+router.get('/system/fault-management/faults', verifyApiKey, getFaults);                    // List system faults
+router.get('/system/fault-management/faults/:uuid', verifyApiKey, getFaultDetails);        // Get specific fault details
+router.get('/system/fault-management/config', verifyApiKey, getFaultManagerConfig);        // Get fault manager configuration
+router.post('/system/fault-management/actions/acquit', verifyApiKey, acquitFault);         // Acquit a fault
+router.post('/system/fault-management/actions/repaired', verifyApiKey, markRepaired);      // Mark resource as repaired
+router.post('/system/fault-management/actions/replaced', verifyApiKey, markReplaced);      // Mark resource as replaced
+
+// System Log Management Routes
+router.get('/system/logs/list', verifyApiKey, listLogFiles);                               // List available log files
+router.get('/system/logs/:logname', verifyApiKey, getLogFile);                             // Read specific log file
+router.get('/system/logs/fault-manager/:type', verifyApiKey, getFaultManagerLogs);         // Read fault manager logs via fmdump
 
 // NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
  

@@ -1,0 +1,512 @@
+/**
+ * @fileoverview System Logs Controller for Zoneweaver API
+ * @description Provides API endpoints for viewing system and application logs
+ * @author makr91
+ * @license: https://zoneweaver-api.startcloud.com/license/
+ */
+
+import { exec } from "child_process";
+import util from "util";
+import fs from "fs/promises";
+import path from "path";
+import config from "../config/ConfigLoader.js";
+
+const execProm = util.promisify(exec);
+
+/**
+ * @swagger
+ * /system/logs/list:
+ *   get:
+ *     summary: List available log files
+ *     description: Returns list of available log files from configured directories
+ *     tags: [System Logs]
+ *     responses:
+ *       200:
+ *         description: Available log files
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 log_files:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 directories:
+ *                   type: array
+ *       500:
+ *         description: Failed to list log files
+ */
+export const listLogFiles = async (req, res) => {
+    try {
+        const logsConfig = config.getSystemLogs();
+        
+        if (!logsConfig?.enabled) {
+            return res.status(503).json({
+                error: 'System logs are disabled in configuration'
+            });
+        }
+
+        const logFiles = [];
+        const directories = [];
+
+        for (const allowedPath of logsConfig.allowed_paths) {
+            try {
+                const dirStats = await fs.stat(allowedPath);
+                if (!dirStats.isDirectory()) continue;
+
+                const files = await fs.readdir(allowedPath, { withFileTypes: true });
+                const dirInfo = {
+                    path: allowedPath,
+                    fileCount: 0,
+                    files: []
+                };
+
+                for (const file of files) {
+                    if (file.isFile() && !isFilePermitted(file.name, logsConfig)) {
+                        continue;
+                    }
+
+                    const fullPath = path.join(allowedPath, file.name);
+                    const stats = await fs.stat(fullPath);
+                    
+                    if (file.isFile()) {
+                        const fileInfo = {
+                            name: file.name,
+                            path: fullPath,
+                            relativePath: path.relative('/var', fullPath),
+                            size: stats.size,
+                            modified: stats.mtime,
+                            sizeFormatted: formatFileSize(stats.size),
+                            type: getLogType(file.name)
+                        };
+                        
+                        logFiles.push(fileInfo);
+                        dirInfo.files.push(fileInfo);
+                        dirInfo.fileCount++;
+                    }
+                }
+
+                directories.push(dirInfo);
+                
+            } catch (error) {
+                console.warn(`Warning: Could not read directory ${allowedPath}:`, error.message);
+            }
+        }
+
+        res.json({
+            log_files: logFiles,
+            directories: directories,
+            total_files: logFiles.length,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error listing log files:', error);
+        res.status(500).json({ 
+            error: 'Failed to list log files',
+            details: error.message 
+        });
+    }
+};
+
+/**
+ * @swagger
+ * /system/logs/{logname}:
+ *   get:
+ *     summary: Read system log file
+ *     description: Returns contents of specified log file with filtering options
+ *     tags: [System Logs]
+ *     parameters:
+ *       - in: path
+ *         name: logname
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Log file name (e.g., syslog, messages, authlog)
+ *       - in: query
+ *         name: lines
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of lines to return
+ *       - in: query
+ *         name: tail
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Read from end of file (tail) vs beginning
+ *       - in: query
+ *         name: grep
+ *         schema:
+ *           type: string
+ *         description: Filter lines containing this pattern
+ *       - in: query
+ *         name: since
+ *         schema:
+ *           type: string
+ *         description: Show entries since this timestamp (for supported formats)
+ *     responses:
+ *       200:
+ *         description: Log file contents
+ *       404:
+ *         description: Log file not found
+ *       400:
+ *         description: Invalid parameters or file too large
+ *       500:
+ *         description: Failed to read log file
+ */
+export const getLogFile = async (req, res) => {
+    try {
+        const { logname } = req.params;
+        const { lines = 100, tail = true, grep, since } = req.query;
+        const logsConfig = config.getSystemLogs();
+        
+        if (!logsConfig?.enabled) {
+            return res.status(503).json({
+                error: 'System logs are disabled in configuration'
+            });
+        }
+
+        // Find the log file in allowed paths
+        const logPath = await findLogFile(logname, logsConfig.allowed_paths);
+        if (!logPath) {
+            return res.status(404).json({
+                error: `Log file '${logname}' not found in allowed directories`
+            });
+        }
+
+        // Security check - validate path and file size
+        const securityCheck = await validateLogFileAccess(logPath, logsConfig);
+        if (!securityCheck.allowed) {
+            return res.status(400).json({
+                error: securityCheck.reason
+            });
+        }
+
+        // Build command to read log file
+        let command = '';
+        const requestedLines = Math.min(parseInt(lines) || 100, logsConfig.max_lines);
+
+        if (tail) {
+            command = `tail -n ${requestedLines} "${logPath}"`;
+        } else {
+            command = `head -n ${requestedLines} "${logPath}"`;
+        }
+
+        // Add grep filter if specified
+        if (grep) {
+            command += ` | grep "${grep.replace(/"/g, '\\"')}"`;
+        }
+
+        // Add since filter if specified (basic implementation)
+        if (since) {
+            // For logs with standard timestamp formats, use grep with date pattern
+            const datePattern = formatDateForGrep(since);
+            if (datePattern) {
+                command += ` | grep -E "${datePattern}"`;
+            }
+        }
+
+        const { stdout, stderr } = await execProm(command, { 
+            timeout: logsConfig.timeout * 1000,
+            maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+        });
+
+        if (stderr && stderr.trim()) {
+            console.warn(`Log read stderr for ${logname}:`, stderr);
+        }
+
+        const logLines = stdout.split('\n').filter(line => line.trim());
+
+        res.json({
+            logname: logname,
+            path: logPath,
+            lines: logLines,
+            totalLines: logLines.length,
+            requestedLines: requestedLines,
+            tail: tail,
+            filters: {
+                grep: grep || null,
+                since: since || null
+            },
+            raw_output: stdout,
+            fileInfo: {
+                size: securityCheck.fileSize,
+                sizeFormatted: formatFileSize(securityCheck.fileSize),
+                modified: securityCheck.modified
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error reading log file ${req.params.logname}:`, error);
+        res.status(500).json({ 
+            error: 'Failed to read log file',
+            details: error.message 
+        });
+    }
+};
+
+/**
+ * @swagger
+ * /system/logs/fault-manager/{type}:
+ *   get:
+ *     summary: Read fault manager logs
+ *     description: Returns fault manager logs via fmdump
+ *     tags: [System Logs]
+ *     parameters:
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [faults, errors, info, info-hival]
+ *         description: Type of fault manager log
+ *       - in: query
+ *         name: since
+ *         schema:
+ *           type: string
+ *         description: Show entries since this time
+ *       - in: query
+ *         name: class
+ *         schema:
+ *           type: string
+ *         description: Filter by fault class pattern
+ *       - in: query
+ *         name: uuid
+ *         schema:
+ *           type: string
+ *         description: Filter by specific UUID
+ *       - in: query
+ *         name: verbose
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Show verbose output
+ *     responses:
+ *       200:
+ *         description: Fault manager log contents
+ *       400:
+ *         description: Invalid log type
+ *       500:
+ *         description: Failed to read fault manager logs
+ */
+export const getFaultManagerLogs = async (req, res) => {
+    try {
+        const { type } = req.params;
+        const { since, class: faultClass, uuid, verbose = false } = req.query;
+        const logsConfig = config.getSystemLogs();
+        
+        if (!logsConfig?.enabled) {
+            return res.status(503).json({
+                error: 'System logs are disabled in configuration'
+            });
+        }
+
+        // Build fmdump command
+        let command = 'fmdump';
+        
+        switch (type) {
+            case 'faults':
+                // Default - fault log
+                break;
+            case 'errors':
+                command += ' -e';
+                break;
+            case 'info':
+                command += ' -i';
+                break;
+            case 'info-hival':
+                command += ' -I';
+                break;
+            default:
+                return res.status(400).json({
+                    error: `Invalid log type: ${type}. Valid types: faults, errors, info, info-hival`
+                });
+        }
+
+        // Add options
+        if (verbose) command += ' -v';
+        if (since) command += ` -t "${since}"`;
+        if (faultClass) command += ` -c "${faultClass}"`;
+        if (uuid) command += ` -u ${uuid}`;
+
+        const { stdout, stderr } = await execProm(command, { 
+            timeout: logsConfig.timeout * 1000,
+            maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+        });
+
+        if (stderr && stderr.trim()) {
+            console.warn(`fmdump stderr for ${type}:`, stderr);
+        }
+
+        const logLines = stdout.split('\n').filter(line => line.trim());
+
+        res.json({
+            logType: type,
+            lines: logLines,
+            totalLines: logLines.length,
+            filters: {
+                since: since || null,
+                class: faultClass || null,
+                uuid: uuid || null,
+                verbose: verbose
+            },
+            command: command,
+            raw_output: stdout,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error reading fault manager logs (${req.params.type}):`, error);
+        res.status(500).json({ 
+            error: 'Failed to read fault manager logs',
+            details: error.message 
+        });
+    }
+};
+
+/**
+ * Helper function to find log file in allowed paths
+ * @param {string} logname - Log file name
+ * @param {string[]} allowedPaths - Allowed directory paths
+ * @returns {string|null} Full path to log file or null if not found
+ */
+async function findLogFile(logname, allowedPaths) {
+    for (const dirPath of allowedPaths) {
+        try {
+            const fullPath = path.join(dirPath, logname);
+            await fs.access(fullPath, fs.constants.R_OK);
+            return fullPath;
+        } catch (error) {
+            // File not found in this directory, continue searching
+        }
+    }
+    return null;
+}
+
+/**
+ * Helper function to validate log file access
+ * @param {string} logPath - Full path to log file
+ * @param {Object} logsConfig - System logs configuration
+ * @returns {Object} Validation result
+ */
+async function validateLogFileAccess(logPath, logsConfig) {
+    try {
+        const stats = await fs.stat(logPath);
+        
+        // Check file size limit
+        const maxSizeBytes = logsConfig.security.max_file_size_mb * 1024 * 1024;
+        if (stats.size > maxSizeBytes) {
+            return {
+                allowed: false,
+                reason: `File too large: ${formatFileSize(stats.size)} exceeds limit of ${logsConfig.security.max_file_size_mb}MB`
+            };
+        }
+
+        // Check forbidden patterns
+        const filename = path.basename(logPath);
+        for (const pattern of logsConfig.security.forbidden_patterns) {
+            const regex = new RegExp(pattern.replace('*', '.*'));
+            if (regex.test(filename) || regex.test(logPath)) {
+                return {
+                    allowed: false,
+                    reason: `File matches forbidden pattern: ${pattern}`
+                };
+            }
+        }
+
+        return {
+            allowed: true,
+            fileSize: stats.size,
+            modified: stats.mtime
+        };
+        
+    } catch (error) {
+        return {
+            allowed: false,
+            reason: `Cannot access file: ${error.message}`
+        };
+    }
+}
+
+/**
+ * Helper function to check if file is permitted based on security rules
+ * @param {string} filename - File name
+ * @param {Object} logsConfig - System logs configuration
+ * @returns {boolean} Whether file is permitted
+ */
+function isFilePermitted(filename, logsConfig) {
+    for (const pattern of logsConfig.security.forbidden_patterns) {
+        const regex = new RegExp(pattern.replace('*', '.*'));
+        if (regex.test(filename)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Helper function to determine log type from filename
+ * @param {string} filename - Log file name
+ * @returns {string} Log type
+ */
+function getLogType(filename) {
+    const name = filename.toLowerCase();
+    
+    if (name.includes('syslog')) return 'system';
+    if (name.includes('message')) return 'system';
+    if (name.includes('kern')) return 'kernel';
+    if (name.includes('auth')) return 'authentication';
+    if (name.includes('error')) return 'error';
+    if (name.includes('debug')) return 'debug';
+    if (name.includes('audit')) return 'audit';
+    if (name.includes('sulog')) return 'switch-user';
+    if (name.includes('wtmp') || name.includes('utmp')) return 'login';
+    if (name.includes('zoneweaver')) return 'application';
+    
+    return 'other';
+}
+
+/**
+ * Helper function to format file size
+ * @param {number} bytes - File size in bytes
+ * @returns {string} Formatted file size
+ */
+function formatFileSize(bytes) {
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    if (bytes === 0) return '0 B';
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+}
+
+/**
+ * Helper function to format date for grep pattern
+ * @param {string} since - Since parameter
+ * @returns {string|null} Grep-compatible date pattern or null
+ */
+function formatDateForGrep(since) {
+    try {
+        const date = new Date(since);
+        if (isNaN(date.getTime())) return null;
+        
+        // Format for common log timestamp patterns
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = monthNames[date.getMonth()];
+        const day = date.getDate().toString().padStart(2, ' ');
+        
+        // Return pattern that matches "Jan 19" format common in logs
+        return `${month} ${day}`;
+        
+    } catch (error) {
+        return null;
+    }
+}
+
+export default {
+    listLogFiles,
+    getLogFile,
+    getFaultManagerLogs
+};

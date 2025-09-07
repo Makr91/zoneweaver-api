@@ -28,6 +28,7 @@ import Zones from "../models/ZoneModel.js";
 import db from "../config/Database.js";
 import DatabaseMigrations from "../config/DatabaseMigrations.js";
 import { getRebootStatus, checkAndClearAfterReboot } from "../lib/RebootManager.js";
+import { getFaultStatusForHealth } from "./FaultManagementController.js";
 import os from "os";
 
 /**
@@ -490,11 +491,38 @@ class HostMonitoringService {
             // Get reboot status
             const rebootStatus = await getRebootStatus();
 
+            // Get fault status
+            const faultStatus = await getFaultStatusForHealth();
+
+            // Calculate overall system health status
+            let overallStatus = this.isRunning ? 'healthy' : 'stopped';
+            
+            if (faultStatus.hasFaults) {
+                const hasCritical = faultStatus.severityLevels.includes('Critical');
+                const hasMajor = faultStatus.severityLevels.includes('Major');
+                
+                if (hasCritical) {
+                    overallStatus = 'critical';
+                } else if (hasMajor) {
+                    overallStatus = 'faulted';
+                } else {
+                    overallStatus = 'degraded';
+                }
+            }
+
             return {
-                status: this.isRunning ? 'healthy' : 'stopped',
+                status: overallStatus,
                 lastUpdate: hostInfo ? hostInfo.updated_at : null,
                 networkErrors: hostInfo ? hostInfo.network_scan_errors : 0,
                 storageErrors: hostInfo ? hostInfo.storage_scan_errors : 0,
+                faultStatus: {
+                    hasFaults: faultStatus.hasFaults,
+                    faultCount: faultStatus.faultCount,
+                    severityLevels: faultStatus.severityLevels,
+                    lastCheck: faultStatus.lastCheck,
+                    faults: faultStatus.faults || [],
+                    error: faultStatus.error || null
+                },
                 recentActivity: {
                     network: hostInfo && hostInfo.last_network_scan > fiveMinutesAgo,
                     storage: hostInfo && hostInfo.last_storage_scan > fiveMinutesAgo

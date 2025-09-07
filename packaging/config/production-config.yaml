@@ -103,3 +103,23 @@ timezone:
   auto_detect: false
   default_timezone: "UTC"
   config_file: "/etc/default/init"
+fault_management:
+  enabled: true
+  cache_interval: 3600  # 1 hour cache for fmadm faulty results
+  timeout: 30
+  max_faults_displayed: 50
+system_logs:
+  enabled: true
+  max_lines: 1000  # Default log read limit
+  default_tail_lines: 100
+  timeout: 30
+  allowed_paths:
+    - "/var/log"
+    - "/var/adm"
+    - "/var/fm/fmd"
+  security:
+    max_file_size_mb: 50  # Prevent reading huge files
+    forbidden_patterns:
+      - "*.pid"
+      - "*.lock"
+      - "*/private/*"
