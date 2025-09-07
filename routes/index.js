@@ -212,7 +212,8 @@ import {
     updateSyslogConfig,
     getSyslogFacilities,
     validateSyslogConfig,
-    reloadSyslogService
+    reloadSyslogService,
+    switchSyslogService
 } from "../controllers/SyslogController.js";
 import config from "../config/ConfigLoader.js";
  
@@ -458,6 +459,7 @@ router.put('/system/syslog/config', verifyApiKey, updateSyslogConfig);          
 router.get('/system/syslog/facilities', verifyApiKey, getSyslogFacilities);                // Get available facilities and levels
 router.post('/system/syslog/validate', verifyApiKey, validateSyslogConfig);                // Validate syslog configuration
 router.post('/system/syslog/reload', verifyApiKey, reloadSyslogService);                   // Reload syslog service
+router.post('/system/syslog/switch', verifyApiKey, switchSyslogService);                   // Switch between syslog implementations
 
 // NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
  

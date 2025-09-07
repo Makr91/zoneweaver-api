@@ -9,6 +9,7 @@ import { exec } from "child_process";
 import util from "util";
 import fs from "fs/promises";
 import config from "../config/ConfigLoader.js";
+import { getServiceDetails } from "../lib/ServiceManager.js";
 
 const execProm = util.promisify(exec);
 
@@ -48,7 +49,19 @@ export const getSyslogConfig = async (req, res) => {
             });
         }
 
-        const configFile = '/etc/syslog.conf';
+        // Auto-detect syslog service and corresponding config file
+        let syslogService = 'svc:/system/system-log:default';
+        let configFile = '/etc/syslog.conf';
+        
+        try {
+            const { stdout: serviceCheck } = await execProm('svcs svc:/system/system-log:rsyslog 2>/dev/null');
+            if (serviceCheck && serviceCheck.includes('online')) {
+                syslogService = 'svc:/system/system-log:rsyslog';
+                configFile = '/etc/rsyslog.conf';
+            }
+        } catch (error) {
+            // If rsyslog check fails, stick with default syslog
+        }
 
         // Read current configuration
         let configContent = '';
@@ -63,10 +76,8 @@ export const getSyslogConfig = async (req, res) => {
             }
         }
 
-        // Get syslog service status
-        const { stdout: serviceStatus } = await execProm('svcs -l svc:/system/system-log:default', {
-            timeout: 10000
-        });
+        // Get syslog service status using existing ServiceManager
+        const serviceStatus = await getServiceDetails(syslogService);
 
         // Parse configuration into structured rules
         const parsedRules = parseSyslogConfig(configContent);
@@ -76,7 +87,8 @@ export const getSyslogConfig = async (req, res) => {
             parsed_rules: parsedRules,
             config_exists: configExists,
             config_file: configFile,
-            service_status: parseServiceStatus(serviceStatus),
+            service_fmri: syslogService,
+            service_status: serviceStatus,
             timestamp: new Date().toISOString()
         });
 
@@ -139,6 +151,20 @@ export const updateSyslogConfig = async (req, res) => {
             });
         }
 
+        // Auto-detect syslog service and corresponding config file (same logic as GET)
+        let syslogService = 'svc:/system/system-log:default';
+        let configFile = '/etc/syslog.conf';
+        
+        try {
+            const { stdout: serviceCheck } = await execProm('svcs svc:/system/system-log:rsyslog 2>/dev/null');
+            if (serviceCheck && serviceCheck.includes('online')) {
+                syslogService = 'svc:/system/system-log:rsyslog';
+                configFile = '/etc/rsyslog.conf';
+            }
+        } catch (error) {
+            // If rsyslog check fails, stick with default syslog
+        }
+
         // Validate configuration syntax
         const validationResult = validateSyslogConfigContent(config_content);
         if (!validationResult.valid) {
@@ -148,12 +174,13 @@ export const updateSyslogConfig = async (req, res) => {
             });
         }
 
-        const configFile = '/etc/syslog.conf';
         const results = {
             backup_created: false,
             config_updated: false,
             service_reloaded: false,
-            warnings: []
+            warnings: [],
+            service_fmri: syslogService,
+            config_file: configFile
         };
 
         // Create backup if requested and file exists
@@ -184,7 +211,7 @@ export const updateSyslogConfig = async (req, res) => {
         // Reload syslog service if requested
         if (reload_service) {
             try {
-                const { stdout, stderr } = await execProm('pfexec svcadm restart svc:/system/system-log:default', {
+                const { stdout, stderr } = await execProm(`pfexec svcadm restart ${syslogService}`, {
                     timeout: 30000
                 });
                 results.service_reloaded = true;
@@ -379,19 +406,31 @@ export const reloadSyslogService = async (req, res) => {
             });
         }
 
-        // Restart syslog service to reload configuration
-        const { stdout, stderr } = await execProm('pfexec svcadm restart svc:/system/system-log:default', {
+        // Auto-detect syslog service (same logic as GET and PUT)
+        let syslogService = 'svc:/system/system-log:default';
+        try {
+            const { stdout: serviceCheck } = await execProm('svcs svc:/system/system-log:rsyslog 2>/dev/null');
+            if (serviceCheck && serviceCheck.includes('online')) {
+                syslogService = 'svc:/system/system-log:rsyslog';
+            }
+        } catch (error) {
+            // If rsyslog check fails, stick with default syslog
+        }
+
+        // Restart detected syslog service to reload configuration
+        const { stdout, stderr } = await execProm(`pfexec svcadm restart ${syslogService}`, {
             timeout: 30000
         });
 
         // Wait a moment and check service status
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const { stdout: statusOutput } = await execProm('svcs svc:/system/system-log:default');
+        const { stdout: statusOutput } = await execProm(`svcs ${syslogService}`);
 
         res.json({
             success: true,
-            message: 'Syslog service reloaded successfully',
+            message: `Syslog service reloaded successfully (${syslogService})`,
+            service_fmri: syslogService,
             service_status: statusOutput.trim(),
             stdout: stdout,
             stderr: stderr || null,
@@ -402,6 +441,125 @@ export const reloadSyslogService = async (req, res) => {
         console.error('Error reloading syslog service:', error);
         res.status(500).json({ 
             error: 'Failed to reload syslog service',
+            details: error.message 
+        });
+    }
+};
+
+/**
+ * @swagger
+ * /system/syslog/switch:
+ *   post:
+ *     summary: Switch between syslog implementations
+ *     description: Switches between traditional syslog and rsyslog
+ *     tags: [Syslog Management]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               target:
+ *                 type: string
+ *                 enum: [syslog, rsyslog]
+ *                 description: Target syslog implementation
+ *     responses:
+ *       200:
+ *         description: Syslog service switched successfully
+ *       400:
+ *         description: Invalid target or already using target
+ *       500:
+ *         description: Failed to switch syslog service
+ */
+export const switchSyslogService = async (req, res) => {
+    try {
+        const { target } = req.body;
+        const logsConfig = config.getSystemLogs();
+        
+        if (!logsConfig?.enabled) {
+            return res.status(503).json({
+                error: 'System logs are disabled in configuration'
+            });
+        }
+
+        if (!target || !['syslog', 'rsyslog'].includes(target)) {
+            return res.status(400).json({
+                error: 'target is required and must be either "syslog" or "rsyslog"'
+            });
+        }
+
+        // Check current service
+        let currentService = 'syslog';
+        try {
+            const { stdout: serviceCheck } = await execProm('svcs svc:/system/system-log:rsyslog 2>/dev/null');
+            if (serviceCheck && serviceCheck.includes('online')) {
+                currentService = 'rsyslog';
+            }
+        } catch (error) {
+            // If rsyslog check fails, assume default syslog
+        }
+
+        if (currentService === target) {
+            return res.status(400).json({
+                error: `Already using ${target}`,
+                current_service: currentService
+            });
+        }
+
+        const results = {
+            current_service: currentService,
+            target_service: target,
+            old_service_disabled: false,
+            new_service_enabled: false,
+            warnings: []
+        };
+
+        try {
+            // Disable current service
+            const currentFmri = currentService === 'rsyslog' 
+                ? 'svc:/system/system-log:rsyslog'
+                : 'svc:/system/system-log:default';
+            
+            await execProm(`pfexec svcadm disable ${currentFmri}`);
+            results.old_service_disabled = true;
+
+            // Enable target service  
+            const targetFmri = target === 'rsyslog'
+                ? 'svc:/system/system-log:rsyslog'
+                : 'svc:/system/system-log:default';
+                
+            await execProm(`pfexec svcadm enable ${targetFmri}`);
+            results.new_service_enabled = true;
+
+            // Wait for service to come online
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            res.json({
+                success: true,
+                message: `Successfully switched from ${currentService} to ${target}`,
+                results: results,
+                new_service_fmri: targetFmri,
+                config_file: target === 'rsyslog' ? '/etc/rsyslog.conf' : '/etc/syslog.conf',
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            results.warnings.push(`Switch operation failed: ${error.message}`);
+            
+            res.status(500).json({
+                success: false,
+                error: 'Failed to switch syslog service',
+                details: error.message,
+                partial_results: results,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+    } catch (error) {
+        console.error('Error switching syslog service:', error);
+        res.status(500).json({ 
+            error: 'Failed to switch syslog service',
             details: error.message 
         });
     }
@@ -587,26 +745,6 @@ function validateSyslogConfigContent(configContent) {
         warnings: warnings.length > 0 ? warnings : undefined,
         parsed_rules: parsedRules
     };
-}
-
-/**
- * Helper function to parse service status
- * @param {string} serviceOutput - Output from svcs -l command
- * @returns {Object} Parsed service status
- */
-function parseServiceStatus(serviceOutput) {
-    const status = {};
-    const lines = serviceOutput.split('\n');
-    
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.includes(':')) {
-            const [key, value] = trimmed.split(':', 2);
-            status[key.trim()] = value.trim();
-        }
-    }
-    
-    return status;
 }
 
 export default {
