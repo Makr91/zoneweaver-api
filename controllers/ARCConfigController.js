@@ -9,7 +9,7 @@ import { exec } from "child_process";
 import util from "util";
 import os from "os";
 import fs from "fs/promises";
-import { setRebootRequired } from "../lib/RebootManager.js";
+import { setRebootRequired, getRebootStatus } from "../lib/RebootManager.js";
 
 const execProm = util.promisify(exec);
 
@@ -94,6 +94,9 @@ export const getARCConfig = async (req, res) => {
         // Check for persistent configuration
         const configInfo = await getPersistentConfigInfo();
         
+        // Get actual reboot status from RebootManager
+        const rebootStatus = await getRebootStatus();
+        
         // Calculate system constraints
         const maxSafeARCBytes = Math.floor(physicalMemoryBytes * 0.85);
         const minRecommendedARCBytes = Math.floor(physicalMemoryBytes * 0.01);
@@ -105,28 +108,72 @@ export const getARCConfig = async (req, res) => {
                 effective_value: arcStats.arc_max_bytes,
                 min_safe: minRecommendedARCBytes,
                 max_safe: maxSafeARCBytes,
-                description: "Maximum ARC size in bytes (0 = auto-calculated)"
+                description: "Maximum ARC size in bytes (0 = auto-calculated)",
+                dynamic: false,
+                requires_reboot: true
             },
             zfs_arc_min: {
                 current_value: tunableParams.zfs_arc_min || 0,
                 effective_value: arcStats.arc_min_bytes,
                 min_safe: 134217728, // 128MB
                 max_safe: Math.floor(physicalMemoryBytes * 0.1), // 10% of system memory
-                description: "Minimum ARC size in bytes (0 = auto-calculated)"
+                description: "Minimum ARC size in bytes (0 = auto-calculated)",
+                dynamic: false,
+                requires_reboot: true
+            },
+            zfs_arc_max_percent: {
+                current_value: tunableParams.zfs_arc_max_percent || 90,
+                effective_value: Math.round((arcStats.arc_max_bytes / physicalMemoryBytes) * 100),
+                min_safe: 1,
+                max_safe: 100,
+                description: "Maximum ARC size as percentage of physical memory",
+                dynamic: true,
+                requires_reboot: false
+            },
+            zfs_vdev_max_pending: {
+                current_value: tunableParams.zfs_vdev_max_pending || 10,
+                effective_value: tunableParams.zfs_vdev_max_pending || 10,
+                min_safe: 1,
+                max_safe: 100,
+                description: "Maximum number of concurrent I/Os pending to each device",
+                dynamic: true,
+                requires_reboot: false
+            },
+            user_reserve_hint_pct: {
+                current_value: tunableParams.user_reserve_hint_pct || 0,
+                effective_value: tunableParams.user_reserve_hint_pct || 0,
+                min_safe: 0,
+                max_safe: 99,
+                description: "Percentage of memory reserved for application use (alternative to zfs_arc_max)",
+                dynamic: true,
+                requires_reboot: false
+            },
+            zfs_prefetch_disable: {
+                current_value: tunableParams.zfs_prefetch_disable || 0,
+                effective_value: tunableParams.zfs_prefetch_disable || 0,
+                min_safe: 0,
+                max_safe: 1,
+                description: "Disable ZFS file-level prefetching (0=enabled, 1=disabled)",
+                dynamic: true,
+                requires_reboot: false
             },
             zfs_arc_meta_limit: {
                 current_value: tunableParams.zfs_arc_meta_limit || 0,
                 effective_value: arcStats.arc_meta_limit_bytes,
                 min_safe: 67108864, // 64MB
                 max_safe: Math.floor(physicalMemoryBytes * 0.25), // 25% of system memory
-                description: "ARC metadata limit in bytes (0 = auto-calculated)"
+                description: "ARC metadata limit in bytes (0 = auto-calculated)",
+                dynamic: false,
+                requires_reboot: true
             },
             zfs_arc_meta_min: {
                 current_value: tunableParams.zfs_arc_meta_min || 0,
                 effective_value: arcStats.arc_meta_min_bytes,
                 min_safe: 16777216, // 16MB
                 max_safe: Math.floor(physicalMemoryBytes * 0.05), // 5% of system memory
-                description: "Minimum ARC metadata size in bytes (0 = auto-calculated)"
+                description: "Minimum ARC metadata size in bytes (0 = auto-calculated)",
+                dynamic: false,
+                requires_reboot: true
             }
         };
 
@@ -148,7 +195,7 @@ export const getARCConfig = async (req, res) => {
             available_tunables: availableTunables,
             config_source: configInfo.source,
             config_file_path: configInfo.filePath,
-            reboot_required: configInfo.rebootRequired,
+            reboot_required: rebootStatus.required,
             last_collected: arcStats.scan_timestamp
         });
 
@@ -191,11 +238,27 @@ export const getARCConfig = async (req, res) => {
  *                 type: integer
  *                 format: int64
  *                 description: ARC minimum size in bytes (alternative to arc_min_gb)
+ *               arc_max_percent:
+ *                 type: number
+ *                 description: ARC maximum size as percentage of physical memory (1-100)
+ *                 example: 75
+ *               vdev_max_pending:
+ *                 type: integer
+ *                 description: Maximum concurrent I/Os per device (1-100)
+ *                 example: 35
+ *               user_reserve_hint_pct:
+ *                 type: number
+ *                 description: Percentage of memory reserved for applications (0-99)
+ *                 example: 25
+ *               prefetch_disable:
+ *                 type: boolean
+ *                 description: Disable ZFS file-level prefetching
+ *                 example: false
  *               apply_method:
  *                 type: string
- *                 enum: [runtime, persistent, both]
- *                 default: both
- *                 description: How to apply the configuration
+ *                 enum: [persistent, runtime, both]
+ *                 default: persistent
+ *                 description: How to apply the configuration. Note - Runtime changes are only supported for dynamic parameters (arc_max_percent, vdev_max_pending, user_reserve_hint_pct, prefetch_disable).
  *     responses:
  *       200:
  *         description: ARC configuration updated successfully
@@ -211,16 +274,25 @@ export const updateARCConfig = async (req, res) => {
             arc_min_gb, 
             arc_max_bytes, 
             arc_min_bytes,
-            apply_method = 'both'
+            arc_max_percent,
+            vdev_max_pending,
+            user_reserve_hint_pct,
+            prefetch_disable,
+            apply_method = 'persistent'
         } = req.body;
 
         // Convert GB to bytes if provided in GB
         const arcMaxBytes = arc_max_bytes || (arc_max_gb ? arc_max_gb * (1024**3) : null);
         const arcMinBytes = arc_min_bytes || (arc_min_gb ? arc_min_gb * (1024**3) : null);
 
-        if (!arcMaxBytes && !arcMinBytes) {
+        // Check if at least one parameter is provided
+        const hasAnyParam = arcMaxBytes || arcMinBytes || arc_max_percent !== undefined || 
+                           vdev_max_pending !== undefined || user_reserve_hint_pct !== undefined || 
+                           prefetch_disable !== undefined;
+
+        if (!hasAnyParam) {
             return res.status(400).json({
-                error: 'At least one parameter (arc_max or arc_min) must be provided'
+                error: 'At least one ZFS parameter must be provided'
             });
         }
 
@@ -228,11 +300,15 @@ export const updateARCConfig = async (req, res) => {
         const physicalMemoryBytes = await getPhysicalMemoryBytes();
         const currentConfig = await getCurrentARCStats();
         
-        // Perform validation
-        const validationResult = await validateARCSettings({
-            arc_max_bytes: arcMaxBytes || currentConfig.arc_max_bytes,
-            arc_min_bytes: arcMinBytes || currentConfig.arc_min_bytes
-        }, physicalMemoryBytes);
+        // Perform validation for all parameters
+        const validationResult = await validateAllZFSSettings({
+            arc_max_bytes: arcMaxBytes,
+            arc_min_bytes: arcMinBytes,
+            arc_max_percent: arc_max_percent,
+            vdev_max_pending: vdev_max_pending,
+            user_reserve_hint_pct: user_reserve_hint_pct,
+            prefetch_disable: prefetch_disable
+        }, physicalMemoryBytes, currentConfig);
 
         if (!validationResult.valid) {
             return res.status(400).json({
@@ -248,37 +324,98 @@ export const updateARCConfig = async (req, res) => {
             warnings: validationResult.warnings || []
         };
 
+        // Separate dynamic and non-dynamic parameters for appropriate warnings
+        const nonDynamicParams = [];
+        const dynamicParams = [];
+
+        if (arcMaxBytes || arcMinBytes) nonDynamicParams.push('zfs_arc_max/zfs_arc_min');
+        if (arc_max_percent !== undefined) dynamicParams.push('zfs_arc_max_percent');
+        if (vdev_max_pending !== undefined) dynamicParams.push('zfs_vdev_max_pending');
+        if (user_reserve_hint_pct !== undefined) dynamicParams.push('user_reserve_hint_pct');
+        if (prefetch_disable !== undefined) dynamicParams.push('zfs_prefetch_disable');
+
+        // Add appropriate warnings
+        if (apply_method === 'runtime' || apply_method === 'both') {
+            if (nonDynamicParams.length > 0) {
+                results.warnings.push(`WARNING: ${nonDynamicParams.join(', ')} are NOT dynamic parameters and require system reboot to take effect.`);
+            }
+            if (dynamicParams.length > 0) {
+                results.warnings.push(`INFO: ${dynamicParams.join(', ')} are dynamic parameters and will take effect immediately.`);
+            }
+        }
+
         // Apply runtime configuration
         if (apply_method === 'runtime' || apply_method === 'both') {
+            // Non-dynamic parameters (will not take effect until reboot)
             if (arcMaxBytes) {
-                await applyRuntimeARCSetting('zfs_arc_max', arcMaxBytes);
-                results.changes.push(`Runtime: Set ARC max to ${formatBytes(arcMaxBytes)}`);
+                await applyRuntimeZFSSetting('zfs_arc_max', arcMaxBytes);
+                results.changes.push(`Runtime: Set ARC max to ${formatBytes(arcMaxBytes)} (requires reboot)`);
             }
             if (arcMinBytes) {
-                await applyRuntimeARCSetting('zfs_arc_min', arcMinBytes);
-                results.changes.push(`Runtime: Set ARC min to ${formatBytes(arcMinBytes)}`);
+                await applyRuntimeZFSSetting('zfs_arc_min', arcMinBytes);
+                results.changes.push(`Runtime: Set ARC min to ${formatBytes(arcMinBytes)} (requires reboot)`);
             }
+            
+            // Dynamic parameters (will work immediately)
+            if (arc_max_percent !== undefined) {
+                await applyRuntimeZFSSetting('zfs_arc_max_percent', arc_max_percent);
+                results.changes.push(`Runtime: Set ARC max percent to ${arc_max_percent}%`);
+            }
+            if (vdev_max_pending !== undefined) {
+                await applyRuntimeZFSSetting('zfs_vdev_max_pending', vdev_max_pending);
+                results.changes.push(`Runtime: Set vdev max pending to ${vdev_max_pending}`);
+            }
+            if (user_reserve_hint_pct !== undefined) {
+                await applyRuntimeZFSSetting('user_reserve_hint_pct', user_reserve_hint_pct);
+                results.changes.push(`Runtime: Set user reserve hint to ${user_reserve_hint_pct}%`);
+            }
+            if (prefetch_disable !== undefined) {
+                const prefetchValue = prefetch_disable ? 1 : 0;
+                await applyRuntimeZFSSetting('zfs_prefetch_disable', prefetchValue);
+                results.changes.push(`Runtime: ${prefetch_disable ? 'Disabled' : 'Enabled'} ZFS prefetching`);
+            }
+            
             results.runtime_applied = true;
         }
 
         // Apply persistent configuration  
         if (apply_method === 'persistent' || apply_method === 'both') {
-            await applyPersistentARCSettings({
+            await applyPersistentZFSSettings({
                 arc_max_bytes: arcMaxBytes,
-                arc_min_bytes: arcMinBytes
+                arc_min_bytes: arcMinBytes,
+                arc_max_percent: arc_max_percent,
+                vdev_max_pending: vdev_max_pending,
+                user_reserve_hint_pct: user_reserve_hint_pct,
+                prefetch_disable: prefetch_disable
             });
             
-            // Set reboot required flag
-            await setRebootRequired('zfs_arc_config', 'ARCConfigController');
+            // Set reboot required flag only if non-dynamic parameters were changed
+            if (nonDynamicParams.length > 0) {
+                await setRebootRequired('zfs_arc_config', 'ARCConfigController');
+                results.reboot_required = true;
+            }
             
+            // Add persistent change messages
             if (arcMaxBytes) {
                 results.changes.push(`Persistent: Set ARC max to ${formatBytes(arcMaxBytes)}`);
             }
             if (arcMinBytes) {
                 results.changes.push(`Persistent: Set ARC min to ${formatBytes(arcMinBytes)}`);
             }
+            if (arc_max_percent !== undefined) {
+                results.changes.push(`Persistent: Set ARC max percent to ${arc_max_percent}%`);
+            }
+            if (vdev_max_pending !== undefined) {
+                results.changes.push(`Persistent: Set vdev max pending to ${vdev_max_pending}`);
+            }
+            if (user_reserve_hint_pct !== undefined) {
+                results.changes.push(`Persistent: Set user reserve hint to ${user_reserve_hint_pct}%`);
+            }
+            if (prefetch_disable !== undefined) {
+                results.changes.push(`Persistent: ${prefetch_disable ? 'Disabled' : 'Enabled'} ZFS prefetching`);
+            }
+            
             results.persistent_applied = true;
-            results.reboot_required = true;
         }
 
         // Trigger immediate ARC stats collection to update database
@@ -292,15 +429,15 @@ export const updateARCConfig = async (req, res) => {
 
         res.json({
             success: true,
-            message: 'ZFS ARC configuration updated successfully',
+            message: 'ZFS configuration updated successfully',
             apply_method: apply_method,
             results: results
         });
 
     } catch (error) {
-        console.error('Error updating ZFS ARC configuration:', error);
+        console.error('Error updating ZFS configuration:', error);
         res.status(500).json({ 
-            error: 'Failed to update ZFS ARC configuration',
+            error: 'Failed to update ZFS configuration',
             details: error.message 
         });
     }
@@ -427,8 +564,8 @@ export const resetARCConfig = async (req, res) => {
 
         // Apply runtime reset (set to 0 = auto-calculate)
         if (apply_method === 'runtime' || apply_method === 'both') {
-            await applyRuntimeARCSetting('zfs_arc_max', 0);
-            await applyRuntimeARCSetting('zfs_arc_min', 0);
+            await applyRuntimeZFSSetting('zfs_arc_max', 0);
+            await applyRuntimeZFSSetting('zfs_arc_min', 0);
             results.changes.push('Runtime: Reset ARC max and min to auto-calculated defaults');
             results.runtime_applied = true;
         }
@@ -657,40 +794,131 @@ async function validateARCSettings(settings, physicalMemoryBytes) {
 }
 
 /**
- * Helper function to apply runtime ARC setting
- * @param {string} parameter - Parameter name (e.g., 'zfs_arc_max')
+ * Helper function to validate all ZFS settings
+ * @param {Object} settings - Settings to validate
+ * @param {number} physicalMemoryBytes - Physical memory in bytes
+ * @param {Object} currentConfig - Current configuration for context
+ * @returns {Object} Validation result
+ */
+async function validateAllZFSSettings(settings, physicalMemoryBytes, currentConfig) {
+    const errors = [];
+    const warnings = [];
+    
+    const maxSafeARC = Math.floor(physicalMemoryBytes * 0.85);
+    const minRecommendedARC = Math.floor(physicalMemoryBytes * 0.01);
+    
+    // Validate ARC max bytes
+    if (settings.arc_max_bytes) {
+        if (settings.arc_max_bytes > maxSafeARC) {
+            errors.push(`ARC max ${formatBytes(settings.arc_max_bytes)} exceeds safe limit of ${formatBytes(maxSafeARC)} (85% of ${formatBytes(physicalMemoryBytes)} physical memory)`);
+        }
+        
+        if (settings.arc_max_bytes < minRecommendedARC) {
+            warnings.push(`ARC max ${formatBytes(settings.arc_max_bytes)} is below recommended minimum of ${formatBytes(minRecommendedARC)}`);
+        }
+    }
+    
+    // Validate ARC min bytes
+    if (settings.arc_min_bytes) {
+        if (settings.arc_min_bytes < 134217728) { // 128MB
+            errors.push(`ARC min ${formatBytes(settings.arc_min_bytes)} is below absolute minimum of 128MB`);
+        }
+        
+        if (settings.arc_min_bytes > Math.floor(physicalMemoryBytes * 0.1)) {
+            warnings.push(`ARC min ${formatBytes(settings.arc_min_bytes)} exceeds 10% of system memory`);
+        }
+    }
+    
+    // Validate ARC max percent
+    if (settings.arc_max_percent !== undefined) {
+        if (settings.arc_max_percent < 1 || settings.arc_max_percent > 100) {
+            errors.push(`ARC max percent ${settings.arc_max_percent}% must be between 1 and 100`);
+        }
+        
+        if (settings.arc_max_percent > 85) {
+            warnings.push(`ARC max percent ${settings.arc_max_percent}% exceeds recommended maximum of 85%`);
+        }
+    }
+    
+    // Validate vdev max pending
+    if (settings.vdev_max_pending !== undefined) {
+        if (settings.vdev_max_pending < 1 || settings.vdev_max_pending > 100) {
+            errors.push(`Vdev max pending ${settings.vdev_max_pending} must be between 1 and 100`);
+        }
+        
+        if (settings.vdev_max_pending > 50) {
+            warnings.push(`Vdev max pending ${settings.vdev_max_pending} is quite high - may increase latency for synchronous writes`);
+        }
+    }
+    
+    // Validate user reserve hint
+    if (settings.user_reserve_hint_pct !== undefined) {
+        if (settings.user_reserve_hint_pct < 0 || settings.user_reserve_hint_pct > 99) {
+            errors.push(`User reserve hint ${settings.user_reserve_hint_pct}% must be between 0 and 99`);
+        }
+        
+        if (settings.user_reserve_hint_pct > 50) {
+            warnings.push(`User reserve hint ${settings.user_reserve_hint_pct}% is quite high - may severely limit ARC effectiveness`);
+        }
+    }
+    
+    // Validate prefetch disable
+    if (settings.prefetch_disable !== undefined) {
+        if (typeof settings.prefetch_disable !== 'boolean') {
+            errors.push(`Prefetch disable must be a boolean value (true/false)`);
+        }
+    }
+    
+    // Validate relationship between min and max
+    if (settings.arc_min_bytes && settings.arc_max_bytes) {
+        if (settings.arc_min_bytes >= settings.arc_max_bytes) {
+            errors.push(`ARC min ${formatBytes(settings.arc_min_bytes)} must be less than ARC max ${formatBytes(settings.arc_max_bytes)}`);
+        }
+    }
+    
+    return {
+        valid: errors.length === 0,
+        errors: errors.length > 0 ? errors : undefined,
+        warnings: warnings.length > 0 ? warnings : undefined
+    };
+}
+
+/**
+ * Helper function to apply runtime ZFS setting
+ * @param {string} parameter - Parameter name (e.g., 'zfs_arc_max', 'zfs_vdev_max_pending')
  * @param {number} value - Value to set
  */
-async function applyRuntimeARCSetting(parameter, value) {
+async function applyRuntimeZFSSetting(parameter, value) {
     try {
         const command = `echo "${parameter}/W0t${value}" | pfexec mdb -kw`;
-        console.log(`Applying runtime ARC setting: ${command}`);
+        console.log(`Applying runtime ZFS setting: ${command}`);
         
         const { stdout, stderr } = await execProm(command, { timeout: 10000 });
         
         if (stderr && stderr.trim()) {
-            console.warn(`Runtime ARC setting stderr for ${parameter}:`, stderr);
+            console.warn(`Runtime ZFS setting stderr for ${parameter}:`, stderr);
         }
         
         console.log(`Successfully applied runtime setting: ${parameter} = ${value}`);
         
     } catch (error) {
-        throw new Error(`Failed to apply runtime ARC setting ${parameter}: ${error.message}`);
+        throw new Error(`Failed to apply runtime ZFS setting ${parameter}: ${error.message}`);
     }
 }
 
 /**
- * Helper function to apply persistent ARC settings
+ * Helper function to apply persistent ZFS settings
  * @param {Object} settings - Settings to apply
  */
-async function applyPersistentARCSettings(settings) {
+async function applyPersistentZFSSettings(settings) {
     const configPath = '/etc/system.d/zfs-arc.conf';
     
     try {
-        let configContent = `# ZFS ARC Configuration - Generated by Zoneweaver API\n`;
+        let configContent = `# ZFS Configuration - Generated by Zoneweaver API\n`;
         configContent += `# Created: ${new Date().toISOString()}\n`;
         configContent += `# WARNING: This file is managed by the Zoneweaver API\n\n`;
         
+        // ARC memory settings (non-dynamic)
         if (settings.arc_max_bytes) {
             configContent += `set zfs:zfs_arc_max = ${settings.arc_max_bytes}\n`;
         }
@@ -699,18 +927,36 @@ async function applyPersistentARCSettings(settings) {
             configContent += `set zfs:zfs_arc_min = ${settings.arc_min_bytes}\n`;
         }
         
+        // Dynamic parameters (can be set persistently for boot-time defaults)
+        if (settings.arc_max_percent !== undefined) {
+            configContent += `set zfs:zfs_arc_max_percent = ${settings.arc_max_percent}\n`;
+        }
+        
+        if (settings.vdev_max_pending !== undefined) {
+            configContent += `set zfs:zfs_vdev_max_pending = ${settings.vdev_max_pending}\n`;
+        }
+        
+        if (settings.user_reserve_hint_pct !== undefined) {
+            configContent += `set zfs:user_reserve_hint_pct = ${settings.user_reserve_hint_pct}\n`;
+        }
+        
+        if (settings.prefetch_disable !== undefined) {
+            const prefetchValue = settings.prefetch_disable ? 1 : 0;
+            configContent += `set zfs:zfs_prefetch_disable = ${prefetchValue}\n`;
+        }
+        
         // Use pfexec to write the file with proper permissions
         const command = `echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configPath}`;
         const { stdout, stderr } = await execProm(command, { timeout: 10000 });
         
         if (stderr && stderr.trim()) {
-            console.warn(`Persistent ARC config stderr: ${stderr}`);
+            console.warn(`Persistent ZFS config stderr: ${stderr}`);
         }
         
-        console.log(`Successfully created persistent ARC configuration: ${configPath}`);
+        console.log(`Successfully created persistent ZFS configuration: ${configPath}`);
         
     } catch (error) {
-        throw new Error(`Failed to create persistent ARC configuration: ${error.message}`);
+        throw new Error(`Failed to create persistent ZFS configuration: ${error.message}`);
     }
 }
 
