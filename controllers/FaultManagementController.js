@@ -732,6 +732,7 @@ function parseFaultLine(line) {
 function parseDetailedFault(section) {
     const fault = { format: 'detailed' };
     const lines = section.split('\n');
+    
     let currentField = null;
     let currentValue = '';
 
@@ -741,83 +742,63 @@ function parseDetailedFault(section) {
 
         // Skip empty lines
         if (!trimmed) {
+            // Save current field before skipping
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+                currentField = null;
+                currentValue = '';
+            }
             continue;
         }
 
-        // Check if this line starts a new field - only recognize expected fields
-        let newField = false;
-        
-        if (line.match(/^Host\s*:/)) {
+        // Check if this line starts a new field (contains colon not at the start of indented line)
+        if (line.match(/^[A-Z]/) && line.includes(':')) {
             // Save previous field
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
-            currentField = 'host';
-            currentValue = line.split(':')[1]?.trim() || '';
-            newField = true;
-        } else if (line.match(/^Platform\s*:/)) {
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-            }
-            currentField = 'platform';
-            currentValue = line.split(':')[1]?.split('Chassis_id')[0]?.trim() || '';
-            newField = true;
-        } else if (line.match(/^Fault class\s*:/)) {
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-            }
-            currentField = 'faultClass';
-            currentValue = line.split(':')[1]?.trim() || '';
-            newField = true;
-        } else if (line.match(/^Affects\s*:/)) {
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-            }
-            currentField = 'affects';
-            currentValue = line.split(':')[1]?.trim() || '';
-            newField = true;
-        } else if (line.match(/^Problem in\s*:/)) {
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-            }
-            currentField = 'problemIn';
-            currentValue = line.split(':')[1]?.trim() || '';
-            newField = true;
-        } else if (line.match(/^Description\s*:/)) {
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-            }
-            currentField = 'description';
-            currentValue = line.split(':')[1]?.trim() || '';
-            newField = true;
-        } else if (line.match(/^Response\s*:/)) {
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-            }
-            currentField = 'response';
-            currentValue = line.split(':')[1]?.trim() || '';
-            newField = true;
-        } else if (line.match(/^Impact\s*:/)) {
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-            }
-            currentField = 'impact';
-            currentValue = line.split(':')[1]?.trim() || '';
-            newField = true;
-        } else if (line.match(/^Action\s*:/)) {
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-            }
-            currentField = 'action';
-            currentValue = line.split(':')[1]?.trim() || '';
-            newField = true;
-        } else if (line.includes(':') && (line.startsWith('Product_sn') || line.startsWith('Chassis_id'))) {
-            // Skip these fields - they're not part of our fault data
-            newField = true; // Mark as new field but don't set currentField
-        }
 
-        // If this isn't a new field and we have a current field, it's a continuation line
-        if (!newField && currentField && trimmed) {
+            // Parse new field
+            const colonIndex = line.indexOf(':');
+            const fieldName = line.substring(0, colonIndex).trim();
+            let fieldValue = line.substring(colonIndex + 1).trim();
+
+            // Handle special cases
+            if (fieldName === 'Host') {
+                currentField = 'host';
+                currentValue = fieldValue;
+            } else if (fieldName === 'Platform') {
+                // Handle tab-separated fields on same line
+                currentField = 'platform';
+                currentValue = fieldValue.split('\t')[0].trim(); // Take only part before tab
+            } else if (fieldName === 'Fault class') {
+                currentField = 'faultClass';
+                currentValue = fieldValue;
+            } else if (fieldName === 'Affects') {
+                currentField = 'affects';
+                currentValue = fieldValue;
+            } else if (fieldName === 'Problem in') {
+                currentField = 'problemIn';
+                currentValue = fieldValue;
+            } else if (fieldName === 'Description') {
+                currentField = 'description';
+                currentValue = fieldValue;
+            } else if (fieldName === 'Response') {
+                currentField = 'response';
+                currentValue = fieldValue;
+            } else if (fieldName === 'Impact') {
+                currentField = 'impact';
+                currentValue = fieldValue;
+            } else if (fieldName === 'Action') {
+                currentField = 'action';
+                currentValue = fieldValue;
+            } else {
+                // Skip unknown fields like Product_sn, Chassis_id
+                currentField = null;
+                currentValue = '';
+            }
+        } else if (currentField && trimmed) {
+            // This is a continuation line for the current field
             if (currentValue) {
                 currentValue += ' ' + trimmed;
             } else {
