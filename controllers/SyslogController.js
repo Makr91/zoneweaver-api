@@ -140,7 +140,7 @@ export const updateSyslogConfig = async (req, res) => {
         }
 
         // Validate configuration syntax
-        const validationResult = validateSyslogConfig(config_content);
+        const validationResult = validateSyslogConfigContent(config_content);
         if (!validationResult.valid) {
             return res.status(400).json({
                 error: 'Invalid syslog configuration',
@@ -337,7 +337,7 @@ export const validateSyslogConfig = async (req, res) => {
             });
         }
 
-        const validationResult = validateSyslogConfig(config_content);
+        const validationResult = validateSyslogConfigContent(config_content);
 
         res.json({
             valid: validationResult.valid,
@@ -505,7 +505,7 @@ function parseSelectorAndAction(selector, action) {
  * @param {string} configContent - Configuration content to validate
  * @returns {Object} Validation result
  */
-function validateSyslogConfig(configContent) {
+function validateSyslogConfigContent(configContent) {
     const errors = [];
     const warnings = [];
     const parsedRules = [];

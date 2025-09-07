@@ -566,61 +566,110 @@ function parseFaultOutput(output) {
     }
 
     const lines = output.trim().split('\n');
-    let headerFound = false;
-    let parsingTable = false;
-    let detailSectionStart = -1;
-
-    // First pass - parse the tabular section
+    let currentFault = null;
+    let collectingDetails = false;
+    let detailLines = [];
+    
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         
-        // Find the tabular header
+        // Skip dash separator lines
+        if (line.match(/^-{15,}/)) {
+            continue;
+        }
+        
+        // Skip table header lines
         if (line.includes('TIME') && line.includes('EVENT-ID') && line.includes('MSG-ID') && line.includes('SEVERITY')) {
-            headerFound = true;
-            parsingTable = true;
             continue;
         }
         
-        // Skip separator line (dashes)
-        if (line.match(/^-+\s+/) || !line.trim()) {
+        // Skip empty lines
+        if (!line.trim()) {
+            if (collectingDetails && detailLines.length > 0) {
+                // End of detail section - process collected details
+                const detailedInfo = parseDetailedFault(detailLines.join('\n'));
+                if (currentFault && detailedInfo) {
+                    currentFault.details = {
+                        host: detailedInfo.host,
+                        platform: detailedInfo.platform,
+                        faultClass: detailedInfo.faultClass,
+                        affects: detailedInfo.affects,
+                        problemIn: detailedInfo.problemIn,
+                        description: detailedInfo.description,
+                        response: detailedInfo.response,
+                        impact: detailedInfo.impact,
+                        action: detailedInfo.action
+                    };
+                }
+                collectingDetails = false;
+                detailLines = [];
+            }
             continue;
         }
         
-        // Parse fault lines only from the tabular section
-        if (headerFound && parsingTable) {
-            // Stop parsing table when we hit detailed section
-            if (line.includes('Host') && line.includes(':')) {
-                parsingTable = false;
-                detailSectionStart = i;
-                break;
+        // Try to parse as fault line (contains UUID)
+        const possibleFault = parseFaultLine(line);
+        if (possibleFault) {
+            // Save previous fault if we were working on one
+            if (currentFault) {
+                if (collectingDetails && detailLines.length > 0) {
+                    const detailedInfo = parseDetailedFault(detailLines.join('\n'));
+                    if (detailedInfo) {
+                        currentFault.details = {
+                            host: detailedInfo.host,
+                            platform: detailedInfo.platform,
+                            faultClass: detailedInfo.faultClass,
+                            affects: detailedInfo.affects,
+                            problemIn: detailedInfo.problemIn,
+                            description: detailedInfo.description,
+                            response: detailedInfo.response,
+                            impact: detailedInfo.impact,
+                            action: detailedInfo.action
+                        };
+                    }
+                }
+                faults.push(currentFault);
             }
             
-            const fault = parseFaultLine(line);
-            if (fault) {
-                faults.push(fault);
-            }
+            // Start new fault
+            currentFault = possibleFault;
+            collectingDetails = false;
+            detailLines = [];
+            continue;
+        }
+        
+        // Check if this is start of detailed section
+        if (line.includes('Host') && line.includes(':')) {
+            collectingDetails = true;
+            detailLines = [line];
+            continue;
+        }
+        
+        // If we're collecting details, add this line
+        if (collectingDetails) {
+            detailLines.push(line);
         }
     }
-
-    // Second pass - if we found detailed section, parse and merge it with faults
-    if (detailSectionStart > -1 && faults.length > 0) {
-        const detailSection = lines.slice(detailSectionStart).join('\n');
-        const detailedInfo = parseDetailedFault(detailSection);
-        
-        if (detailedInfo) {
-            // Merge detailed info into the first fault (since they correspond to the same fault)
-            faults[0].details = {
-                host: detailedInfo.host,
-                platform: detailedInfo.platform,
-                faultClass: detailedInfo.faultClass,
-                affects: detailedInfo.affects,
-                problemIn: detailedInfo.problemIn,
-                description: detailedInfo.description,
-                response: detailedInfo.response,
-                impact: detailedInfo.impact,
-                action: detailedInfo.action
-            };
+    
+    // Don't forget the last fault
+    if (currentFault) {
+        if (collectingDetails && detailLines.length > 0) {
+            const detailedInfo = parseDetailedFault(detailLines.join('\n'));
+            if (detailedInfo) {
+                currentFault.details = {
+                    host: detailedInfo.host,
+                    platform: detailedInfo.platform,
+                    faultClass: detailedInfo.faultClass,
+                    affects: detailedInfo.affects,
+                    problemIn: detailedInfo.problemIn,
+                    description: detailedInfo.description,
+                    response: detailedInfo.response,
+                    impact: detailedInfo.impact,
+                    action: detailedInfo.action
+                };
+            }
         }
+        faults.push(currentFault);
     }
 
     return faults;
