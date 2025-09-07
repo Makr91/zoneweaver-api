@@ -437,12 +437,16 @@ export const resetARCConfig = async (req, res) => {
         if (apply_method === 'persistent' || apply_method === 'both') {
             const configPath = '/etc/system.d/zfs-arc.conf';
             try {
-                await fs.unlink(configPath);
+                // Use pfexec to remove the file with proper permissions
+                const { stdout, stderr } = await execProm(`pfexec rm -f ${configPath}`, { timeout: 5000 });
+                
+                if (stderr && stderr.trim()) {
+                    console.warn(`Remove config file stderr: ${stderr}`);
+                }
+                
                 results.changes.push(`Persistent: Removed configuration file ${configPath}`);
             } catch (error) {
-                if (error.code !== 'ENOENT') {
-                    throw error;
-                }
+                console.warn(`Failed to remove config file: ${error.message}`);
                 results.changes.push(`Persistent: No configuration file to remove (${configPath})`);
             }
             
@@ -695,7 +699,14 @@ async function applyPersistentARCSettings(settings) {
             configContent += `set zfs:zfs_arc_min = ${settings.arc_min_bytes}\n`;
         }
         
-        await fs.writeFile(configPath, configContent, 'utf8');
+        // Use pfexec to write the file with proper permissions
+        const command = `echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configPath}`;
+        const { stdout, stderr } = await execProm(command, { timeout: 10000 });
+        
+        if (stderr && stderr.trim()) {
+            console.warn(`Persistent ARC config stderr: ${stderr}`);
+        }
+        
         console.log(`Successfully created persistent ARC configuration: ${configPath}`);
         
     } catch (error) {
