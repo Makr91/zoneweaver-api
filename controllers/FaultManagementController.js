@@ -708,7 +708,7 @@ function parseFaultLine(line) {
         time: beforeUuid,
         uuid: uuid,
         msgId: msgId,
-        severity: severity,
+        severity: normalizeSeverity(severity),
         format: 'summary'
     };
 }
@@ -728,47 +728,82 @@ function parseDetailedFault(section) {
         const line = lines[i];
         const trimmed = line.trim();
 
-        // Check if this line starts a new field (contains colon and field name)
-        if (trimmed.includes(':') && !line.startsWith('  ') && !line.startsWith('\t')) {
-            // Save previous field if we have one
+        // Skip empty lines
+        if (!trimmed) {
+            continue;
+        }
+
+        // Check if this line starts a new field (field names followed by colon at start of line)
+        let newField = false;
+        
+        if (line.startsWith('Host') && line.includes(':')) {
+            // Save previous field
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
             }
-
-            // Start new field
-            if (trimmed.includes('Host') && trimmed.includes(':')) {
-                currentField = 'host';
-                currentValue = trimmed.split(':')[1]?.trim() || '';
-            } else if (trimmed.includes('Platform') && trimmed.includes(':')) {
-                currentField = 'platform';
-                currentValue = trimmed.split(':')[1]?.split('Chassis_id')[0]?.trim() || '';
-            } else if (trimmed.includes('Fault class') && trimmed.includes(':')) {
-                currentField = 'faultClass';
-                currentValue = trimmed.split(':')[1]?.trim() || '';
-            } else if (trimmed.includes('Affects') && trimmed.includes(':')) {
-                currentField = 'affects';
-                currentValue = trimmed.split(':')[1]?.trim() || '';
-            } else if (trimmed.includes('Problem in') && trimmed.includes(':')) {
-                currentField = 'problemIn';
-                currentValue = trimmed.split(':')[1]?.trim() || '';
-            } else if (trimmed.includes('Description') && trimmed.includes(':')) {
-                currentField = 'description';
-                currentValue = trimmed.split(':')[1]?.trim() || '';
-            } else if (trimmed.includes('Response') && trimmed.includes(':')) {
-                currentField = 'response';
-                currentValue = trimmed.split(':')[1]?.trim() || '';
-            } else if (trimmed.includes('Impact') && trimmed.includes(':')) {
-                currentField = 'impact';
-                currentValue = trimmed.split(':')[1]?.trim() || '';
-            } else if (trimmed.includes('Action') && trimmed.includes(':')) {
-                currentField = 'action';
-                currentValue = trimmed.split(':')[1]?.trim() || '';
-            } else {
-                currentField = null;
-                currentValue = '';
+            currentField = 'host';
+            currentValue = line.split(':')[1]?.trim() || '';
+            newField = true;
+        } else if (line.startsWith('Platform') && line.includes(':')) {
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
             }
-        } else if (currentField && trimmed) {
-            // This is a continuation line for the current field
+            currentField = 'platform';
+            currentValue = line.split(':')[1]?.split('Chassis_id')[0]?.trim() || '';
+            newField = true;
+        } else if (line.startsWith('Fault class') && line.includes(':')) {
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+            }
+            currentField = 'faultClass';
+            currentValue = line.split(':')[1]?.trim() || '';
+            newField = true;
+        } else if (line.startsWith('Affects') && line.includes(':')) {
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+            }
+            currentField = 'affects';
+            currentValue = line.split(':')[1]?.trim() || '';
+            newField = true;
+        } else if (line.startsWith('Problem in') && line.includes(':')) {
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+            }
+            currentField = 'problemIn';
+            currentValue = line.split(':')[1]?.trim() || '';
+            newField = true;
+        } else if (line.startsWith('Description') && line.includes(':')) {
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+            }
+            currentField = 'description';
+            currentValue = line.split(':')[1]?.trim() || '';
+            newField = true;
+        } else if (line.startsWith('Response') && line.includes(':')) {
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+            }
+            currentField = 'response';
+            currentValue = line.split(':')[1]?.trim() || '';
+            newField = true;
+        } else if (line.startsWith('Impact') && line.includes(':')) {
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+            }
+            currentField = 'impact';
+            currentValue = line.split(':')[1]?.trim() || '';
+            newField = true;
+        } else if (line.startsWith('Action') && line.includes(':')) {
+            if (currentField && currentValue) {
+                fault[currentField] = currentValue.trim();
+            }
+            currentField = 'action';
+            currentValue = line.split(':')[1]?.trim() || '';
+            newField = true;
+        }
+
+        // If this isn't a new field and we have a current field, it's a continuation line
+        if (!newField && currentField && trimmed) {
             if (currentValue) {
                 currentValue += ' ' + trimmed;
             } else {
@@ -777,7 +812,7 @@ function parseDetailedFault(section) {
         }
     }
 
-    // Don't forget the last field
+    // Save the last field
     if (currentField && currentValue) {
         fault[currentField] = currentValue.trim();
     }
@@ -812,6 +847,18 @@ function parseFaultManagerConfig(output) {
 }
 
 /**
+ * Helper function to normalize severity levels
+ * @param {string} severity - Raw severity from fmadm
+ * @returns {string} Normalized severity
+ */
+function normalizeSeverity(severity) {
+    if (!severity) return severity;
+    
+    // Normalize case - capitalize first letter, lowercase rest
+    return severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase();
+}
+
+/**
  * Helper function to generate faults summary
  * @param {Array} faults - Array of parsed faults
  * @returns {Object} Summary statistics
@@ -833,14 +880,16 @@ function generateFaultsSummary(faults) {
             severityCount[fault.severity] = (severityCount[fault.severity] || 0) + 1;
         }
 
-        // Count fault classes
-        if (fault.faultClass) {
-            classCount[fault.faultClass] = (classCount[fault.faultClass] || 0) + 1;
+        // Count fault classes from details if available, otherwise from fault object
+        const faultClass = fault.details?.faultClass || fault.faultClass;
+        if (faultClass) {
+            classCount[faultClass] = (classCount[faultClass] || 0) + 1;
         }
 
-        // Track affected resources
-        if (fault.affects && !summary.affectedResources.includes(fault.affects)) {
-            summary.affectedResources.push(fault.affects);
+        // Track affected resources from details if available
+        const affects = fault.details?.affects || fault.affects;
+        if (affects && !summary.affectedResources.includes(affects)) {
+            summary.affectedResources.push(affects);
         }
     }
 
