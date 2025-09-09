@@ -55,7 +55,7 @@ import Tasks, { TaskPriority } from '../models/TaskModel.js';
  *         schema:
  *           type: boolean
  *           default: false
- *         description: Include detailed CPU and memory statistics
+ *         description: Include detailed CPU and memory statistics (instant response using ps auxww)
  *       - in: query
  *         name: limit
  *         schema:
@@ -92,9 +92,24 @@ import Tasks, { TaskPriority } from '../models/TaskModel.js';
  *                   cpu_percent:
  *                     type: number
  *                     description: CPU usage percentage (if detailed=true)
+ *                   memory_percent:
+ *                     type: number
+ *                     description: Memory usage percentage (if detailed=true)
+ *                   vsz:
+ *                     type: integer
+ *                     description: Virtual memory size in KB (if detailed=true)
  *                   rss:
+ *                     type: integer
+ *                     description: Resident memory size in KB (if detailed=true)
+ *                   state:
  *                     type: string
- *                     description: Resident memory size (if detailed=true)
+ *                     description: Process state (if detailed=true)
+ *                   start_time:
+ *                     type: string
+ *                     description: Process start time (if detailed=true)
+ *                   cpu_time:
+ *                     type: string
+ *                     description: Total CPU time used (if detailed=true)
  *       500:
  *         description: Failed to retrieve processes
  */
