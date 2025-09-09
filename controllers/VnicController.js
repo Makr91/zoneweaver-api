@@ -1,7 +1,7 @@
 /**
  * @fileoverview VNIC Management Controller for Zoneweaver API
  * @description Handles VNIC creation, deletion, and management via dladm commands
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

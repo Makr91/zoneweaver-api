@@ -282,6 +282,8 @@ const executeTask = async (task) => {
                 return await executeRepositoryEnableTask(task.metadata);
             case 'repository_disable':
                 return await executeRepositoryDisableTask(task.metadata);
+            case 'process_trace':
+                return await executeProcessTraceTask(task.metadata);
             default:
                 return { success: false, error: `Unknown operation: ${operation}` };
         }
@@ -3538,6 +3540,60 @@ ${servers.map(server => `restrict ${server} nomodify noquery notrap`).join('\n')
     }
     
     return baseConfig;
+};
+
+/**
+ * Execute process trace task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeProcessTraceTask = async (metadataJson) => {
+    console.log('🔧 === PROCESS TRACE TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { pid, duration = 30 } = metadata;
+
+        console.log('📋 Process trace task parameters:');
+        console.log('   - pid:', pid);
+        console.log('   - duration:', duration);
+
+        // Use truss (OmniOS equivalent of strace) to trace the process
+        const command = `pfexec truss -p ${pid}`;
+        console.log('🔧 Executing trace command:', command);
+        
+        // Start tracing for the specified duration
+        const traceResult = await executeCommand(command, duration * 1000);
+        
+        if (traceResult.success || traceResult.output) {
+            // truss may exit with non-zero when the process ends, but still provide useful output
+            const outputLength = traceResult.output ? traceResult.output.length : 0;
+            console.log(`✅ Process trace completed for PID ${pid} (${outputLength} characters captured)`);
+            
+            return { 
+                success: true, 
+                message: `Process trace completed for PID ${pid} over ${duration} seconds (${outputLength} characters captured)`,
+                trace_output: traceResult.output?.substring(0, 10000) || '', // Limit output size
+                duration_seconds: duration,
+                pid: parseInt(pid)
+            };
+        } else {
+            console.error('❌ Process trace command failed:', traceResult.error);
+            return { 
+                success: false, 
+                error: `Failed to trace process ${pid}: ${traceResult.error}` 
+            };
+        }
+
+    } catch (error) {
+        console.error('❌ Process trace task exception:', error);
+        return { success: false, error: `Process trace task failed: ${error.message}` };
+    }
 };
 
 /**

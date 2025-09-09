@@ -1,7 +1,7 @@
 /**
  * @fileoverview Host Monitoring API Controller for Zoneweaver API
  * @description Provides API endpoints for accessing collected host monitoring data
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

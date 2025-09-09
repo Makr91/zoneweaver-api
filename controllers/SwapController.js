@@ -1,7 +1,7 @@
 /**
  * @fileoverview Swap Management Controller for Zoneweaver API
  * @description Provides API endpoints for swap area monitoring and management on OmniOS systems
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

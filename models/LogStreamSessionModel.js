@@ -1,7 +1,7 @@
 /**
  * @fileoverview Log Stream Session Model for Zoneweaver API
  * @description Database model for tracking log streaming sessions
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

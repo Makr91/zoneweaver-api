@@ -1,7 +1,7 @@
 /**
  * @fileoverview Syslog Configuration Controller for Zoneweaver API
  * @description Provides API endpoints for managing syslog configuration
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

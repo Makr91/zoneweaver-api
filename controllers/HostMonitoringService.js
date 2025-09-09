@@ -1,7 +1,7 @@
 /**
  * @fileoverview Host Monitoring Service for Zoneweaver API
  * @description Coordinates network and storage data collection with configurable intervals
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

@@ -1,7 +1,7 @@
 /**
  * @fileoverview Time Synchronization Controller for Zoneweaver API
  * @description Handles NTP and Chrony service management, configuration, and timezone management on OmniOS
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

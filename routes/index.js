@@ -215,6 +215,19 @@ import {
     reloadSyslogService,
     switchSyslogService
 } from "../controllers/SyslogController.js";
+import {
+    listProcesses,
+    getProcessDetailsController,
+    sendSignalToProcess,
+    killProcessController,
+    getProcessFilesController,
+    getProcessStackController,
+    getProcessLimitsController,
+    findProcessesController,
+    batchKillProcesses,
+    getProcessStatsController,
+    startProcessTrace
+} from "../controllers/ProcessController.js";
 import config from "../config/ConfigLoader.js";
  
 const router = express.Router();
@@ -460,6 +473,19 @@ router.get('/system/syslog/facilities', verifyApiKey, getSyslogFacilities);     
 router.post('/system/syslog/validate', verifyApiKey, validateSyslogConfig);                // Validate syslog configuration
 router.post('/system/syslog/reload', verifyApiKey, reloadSyslogService);                   // Reload syslog service
 router.post('/system/syslog/switch', verifyApiKey, switchSyslogService);                   // Switch between syslog implementations
+
+// Process Management Routes
+router.get('/system/processes', verifyApiKey, listProcesses);                              // List system processes
+router.get('/system/processes/find', verifyApiKey, findProcessesController);               // Find processes by pattern
+router.get('/system/processes/stats', verifyApiKey, getProcessStatsController);            // Get real-time process statistics
+router.post('/system/processes/batch-kill', verifyApiKey, batchKillProcesses);             // Kill multiple processes by pattern
+router.post('/system/processes/trace/start', verifyApiKey, startProcessTrace);             // Start process tracing (async task)
+router.get('/system/processes/:pid', verifyApiKey, getProcessDetailsController);           // Get detailed process information
+router.post('/system/processes/:pid/signal', verifyApiKey, sendSignalToProcess);           // Send signal to process
+router.post('/system/processes/:pid/kill', verifyApiKey, killProcessController);           // Kill a process
+router.get('/system/processes/:pid/files', verifyApiKey, getProcessFilesController);       // Get open files for process
+router.get('/system/processes/:pid/stack', verifyApiKey, getProcessStackController);       // Get process stack trace
+router.get('/system/processes/:pid/limits', verifyApiKey, getProcessLimitsController);     // Get process resource limits
 
 // NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
  

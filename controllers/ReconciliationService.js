@@ -1,7 +1,7 @@
 /**
  * @fileoverview Reconciliation Service for Zoneweaver API
  * @description Periodically scans the host system and reconciles the database with the actual state of the system.
- * @author Cline
+ * @author Mark Gilbert
 
  * @license: https://zoneweaver-api.startcloud.com/license/
  */

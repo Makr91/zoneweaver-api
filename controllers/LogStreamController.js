@@ -1,7 +1,7 @@
 /**
  * @fileoverview Log Stream Controller for Zoneweaver API
  * @description Provides WebSocket streaming for real-time log file monitoring
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

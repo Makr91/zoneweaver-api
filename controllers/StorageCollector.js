@@ -1,7 +1,7 @@
 /**
  * @fileoverview Storage Data Collection Controller for Zoneweaver API
  * @description Collects ZFS pool and dataset information from OmniOS zpool and zfs commands
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

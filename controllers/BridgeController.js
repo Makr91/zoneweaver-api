@@ -1,7 +1,7 @@
 /**
  * @fileoverview Bridge Management Controller for Zoneweaver API
  * @description Handles 802.1D bridge creation, deletion, and management via dladm commands
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

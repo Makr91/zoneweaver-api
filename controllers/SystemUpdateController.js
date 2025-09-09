@@ -1,7 +1,7 @@
 /**
  * @fileoverview System Update Controller for Zoneweaver API
  * @description Handles system update operations via pkg update commands
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 

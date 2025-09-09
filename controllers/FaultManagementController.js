@@ -1,7 +1,7 @@
 /**
  * @fileoverview Fault Management Controller for Zoneweaver API
  * @description Provides API endpoints for managing system faults via fmadm
- * @author makr91
+ * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
