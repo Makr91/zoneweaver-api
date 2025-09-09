@@ -228,6 +228,25 @@ import {
     getProcessStatsController,
     startProcessTrace
 } from "../controllers/ProcessController.js";
+import {
+    browseDirectory,
+    createFolder,
+    uploadFile,
+    downloadFile,
+    readFile,
+    writeFile,
+    moveFileItem,
+    copyFileItem,
+    renameItem,
+    deleteFileItem,
+    createArchiveTask,
+    extractArchiveTask
+} from "../controllers/FileSystemController.js";
+import { 
+    uploadSingle,
+    validateUploadRequest,
+    handleUploadError 
+} from "../middleware/FileUpload.js";
 import config from "../config/ConfigLoader.js";
  
 const router = express.Router();
@@ -486,6 +505,20 @@ router.post('/system/processes/:pid/kill', verifyApiKey, killProcessController);
 router.get('/system/processes/:pid/files', verifyApiKey, getProcessFilesController);       // Get open files for process
 router.get('/system/processes/:pid/stack', verifyApiKey, getProcessStackController);       // Get process stack trace
 router.get('/system/processes/:pid/limits', verifyApiKey, getProcessLimitsController);     // Get process resource limits
+
+// File System Management Routes
+router.get('/filesystem', verifyApiKey, browseDirectory);                                  // Browse directory contents
+router.post('/filesystem/folder', verifyApiKey, createFolder);                             // Create directory
+router.post('/filesystem/upload', validateUploadRequest, uploadSingle('file'), uploadFile, handleUploadError); // Upload file
+router.get('/filesystem/download', verifyApiKey, downloadFile);                            // Download file
+router.get('/filesystem/content', verifyApiKey, readFile);                                 // Read text file content
+router.put('/filesystem/content', verifyApiKey, writeFile);                                // Write text file content
+router.put('/filesystem/move', verifyApiKey, moveFileItem);                                // Move/rename item (async task)
+router.post('/filesystem/copy', verifyApiKey, copyFileItem);                               // Copy item (async task)
+router.patch('/filesystem/rename', verifyApiKey, renameItem);                              // Rename item
+router.delete('/filesystem', verifyApiKey, deleteFileItem);                                // Delete item
+router.post('/filesystem/archive/create', verifyApiKey, createArchiveTask);                // Create archive (async task)
+router.post('/filesystem/archive/extract', verifyApiKey, extractArchiveTask);              // Extract archive (async task)
 
 // NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
  

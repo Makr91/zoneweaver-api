@@ -232,6 +232,19 @@ class ConfigLoader {
   getSystemLogs() {
     return this.config.system_logs;
   }
+
+  /**
+   * Gets file browser configuration
+   * @description Returns file browser configuration
+   * @returns {Object} File browser configuration object
+   * @returns {boolean} returns.enabled - Whether file browser is enabled
+   * @returns {number} returns.upload_size_limit_gb - Maximum upload size in GB
+   * @returns {Object} returns.security - Security restrictions and limits
+   * @returns {Object} returns.archive - Archive operation settings
+   */
+  getFileBrowser() {
+    return this.config.file_browser;
+  }
 }
 
 // Export singleton instance

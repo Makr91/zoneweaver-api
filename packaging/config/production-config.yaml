@@ -99,3 +99,29 @@ system_logs:
       - "*.pid"
       - "*.lock"
       - "*/private/*"
+file_browser:
+  enabled: true
+  upload_size_limit_gb: 50  # Maximum file upload size
+  security:
+    max_file_size_mb: 51200  # 50GB for uploads
+    max_edit_size_mb: 100    # 100MB for text editing
+    max_directory_entries: 1000  # Prevent huge directory listings
+    prevent_traversal: true
+    forbidden_paths:
+      - "/dev"
+      - "/devices" 
+      - "/system"
+      - "/platform"
+      - "/kernel"
+      - "/proc"              # Virtual filesystem - confusing in browser
+    forbidden_patterns:
+      - "*/dev/*"
+      - "*/devices/*"
+      - "/system/*"
+      - "*/platform/*"
+      - "*/kernel/*"
+      - "*/proc/*"
+  archive:
+    enabled: true
+    max_archive_size_mb: 10240  # 10GB max archive size
+    supported_formats: ["zip", "tar", "tar.gz", "tar.bz2", "gz"]

@@ -284,6 +284,14 @@ const executeTask = async (task) => {
                 return await executeRepositoryDisableTask(task.metadata);
             case 'process_trace':
                 return await executeProcessTraceTask(task.metadata);
+            case 'file_move':
+                return await executeFileMoveTask(task.metadata);
+            case 'file_copy':
+                return await executeFileCopyTask(task.metadata);
+            case 'file_archive_create':
+                return await executeFileArchiveCreateTask(task.metadata);
+            case 'file_archive_extract':
+                return await executeFileArchiveExtractTask(task.metadata);
             default:
                 return { success: false, error: `Unknown operation: ${operation}` };
         }
@@ -3593,6 +3601,147 @@ const executeProcessTraceTask = async (metadataJson) => {
     } catch (error) {
         console.error('❌ Process trace task exception:', error);
         return { success: false, error: `Process trace task failed: ${error.message}` };
+    }
+};
+
+/**
+ * Execute file move task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeFileMoveTask = async (metadataJson) => {
+    console.log('🔧 === FILE MOVE TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { source, destination } = metadata;
+
+        console.log('📋 File move task parameters:');
+        console.log('   - source:', source);
+        console.log('   - destination:', destination);
+
+        const { moveItem } = await import('../lib/FileSystemManager.js');
+        await moveItem(source, destination);
+
+        return { 
+            success: true, 
+            message: `Successfully moved '${source}' to '${destination}'` 
+        };
+
+    } catch (error) {
+        console.error('❌ File move task exception:', error);
+        return { success: false, error: `File move task failed: ${error.message}` };
+    }
+};
+
+/**
+ * Execute file copy task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeFileCopyTask = async (metadataJson) => {
+    console.log('🔧 === FILE COPY TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { source, destination } = metadata;
+
+        console.log('📋 File copy task parameters:');
+        console.log('   - source:', source);
+        console.log('   - destination:', destination);
+
+        const { copyItem } = await import('../lib/FileSystemManager.js');
+        await copyItem(source, destination);
+
+        return { 
+            success: true, 
+            message: `Successfully copied '${source}' to '${destination}'` 
+        };
+
+    } catch (error) {
+        console.error('❌ File copy task exception:', error);
+        return { success: false, error: `File copy task failed: ${error.message}` };
+    }
+};
+
+/**
+ * Execute file archive creation task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeFileArchiveCreateTask = async (metadataJson) => {
+    console.log('🔧 === FILE ARCHIVE CREATE TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { sources, archive_path, format } = metadata;
+
+        console.log('📋 Archive creation task parameters:');
+        console.log('   - sources:', sources);
+        console.log('   - archive_path:', archive_path);
+        console.log('   - format:', format);
+
+        const { createArchive } = await import('../lib/FileSystemManager.js');
+        await createArchive(sources, archive_path, format);
+
+        return { 
+            success: true, 
+            message: `Successfully created ${format} archive '${archive_path}' with ${sources.length} items` 
+        };
+
+    } catch (error) {
+        console.error('❌ Archive creation task exception:', error);
+        return { success: false, error: `Archive creation task failed: ${error.message}` };
+    }
+};
+
+/**
+ * Execute file archive extraction task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeFileArchiveExtractTask = async (metadataJson) => {
+    console.log('🔧 === FILE ARCHIVE EXTRACT TASK STARTING ===');
+    
+    try {
+        const metadata = await new Promise((resolve, reject) => {
+            yj.parseAsync(metadataJson, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            });
+        });
+        const { archive_path, extract_path } = metadata;
+
+        console.log('📋 Archive extraction task parameters:');
+        console.log('   - archive_path:', archive_path);
+        console.log('   - extract_path:', extract_path);
+
+        const { extractArchive } = await import('../lib/FileSystemManager.js');
+        await extractArchive(archive_path, extract_path);
+
+        return { 
+            success: true, 
+            message: `Successfully extracted archive '${archive_path}' to '${extract_path}'` 
+        };
+
+    } catch (error) {
+        console.error('❌ Archive extraction task exception:', error);
+        return { success: false, error: `Archive extraction task failed: ${error.message}` };
     }
 };
 

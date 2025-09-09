@@ -183,6 +183,99 @@ const options = {
             },
           },
         },
+        FileSystemItem: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'File or directory name',
+              example: 'document.txt'
+            },
+            path: {
+              type: 'string',
+              description: 'Full file path',
+              example: '/home/user/document.txt'
+            },
+            isDirectory: {
+              type: 'boolean',
+              description: 'Whether this item is a directory',
+              example: false
+            },
+            size: {
+              type: 'integer',
+              nullable: true,
+              description: 'File size in bytes (null for directories)',
+              example: 1024
+            },
+            mimeType: {
+              type: 'string',
+              nullable: true,
+              description: 'MIME type of the file',
+              example: 'text/plain'
+            },
+            isBinary: {
+              type: 'boolean',
+              description: 'Whether the file contains binary data',
+              example: false
+            },
+            syntax: {
+              type: 'string',
+              nullable: true,
+              description: 'Syntax highlighting type for text files',
+              example: 'javascript'
+            },
+            permissions: {
+              type: 'object',
+              properties: {
+                octal: {
+                  type: 'string',
+                  description: 'Permissions in octal format',
+                  example: '644'
+                },
+                readable: {
+                  type: 'boolean',
+                  description: 'File is readable'
+                },
+                writable: {
+                  type: 'boolean', 
+                  description: 'File is writable'
+                },
+                executable: {
+                  type: 'boolean',
+                  description: 'File is executable'
+                }
+              }
+            },
+            uid: {
+              type: 'integer',
+              description: 'File owner user ID',
+              example: 1000
+            },
+            gid: {
+              type: 'integer',
+              description: 'File owner group ID',
+              example: 1000
+            },
+            mtime: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Last modified time',
+              example: '2025-06-08T17:19:19.921Z'
+            },
+            atime: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Last access time',
+              example: '2025-06-08T17:19:19.921Z'
+            },
+            ctime: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Creation/change time',
+              example: '2025-06-08T17:19:19.921Z'
+            }
+          }
+        },
       },
     },
     security: [
