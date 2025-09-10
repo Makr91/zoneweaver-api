@@ -1,7 +1,6 @@
 import fs from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
-import { log } from '../lib/Logger.js';
 
 /**
  * @fileoverview Configuration loader for Zoneweaver API
@@ -31,20 +30,14 @@ class ConfigLoader {
     try {
       // Check environment variable first (set by SMF), then fallback to local config
       const configPath = process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
-      log.app.info('Loading configuration', {
-        config_path: configPath,
-        source: process.env.CONFIG_PATH ? 'environment' : 'default'
-      });
+      console.log(`Loading configuration from: ${configPath}`);
       const fileContents = fs.readFileSync(configPath, 'utf8');
       const fullConfig = yaml.load(fileContents);
       this.config = fullConfig.zoneweaver_api_backend || fullConfig;
     } catch (error) {
       const attemptedPath = process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
-      log.app.error('Failed to load configuration file', {
-        config_path: attemptedPath,
-        error: error.message,
-        stack: error.stack
-      });
+      console.error('Error loading config file:', error);
+      console.error('Tried path:', attemptedPath);
       throw new Error('Failed to load configuration');
     }
   }

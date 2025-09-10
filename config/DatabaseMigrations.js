@@ -27,7 +27,11 @@ class DatabaseMigrations {
             const [results] = await db.query(`PRAGMA table_info(${tableName})`);
             return results.some(col => col.name === columnName);
         } catch (error) {
-            console.warn(`Failed to check column ${columnName} in table ${tableName}:`, error.message);
+            log.database.warn('Failed to check column existence', {
+                table: tableName,
+                column: columnName,
+                error: error.message
+            });
             return false;
         }
     }
@@ -50,7 +54,12 @@ class DatabaseMigrations {
             return true;
 
         } catch (error) {
-            console.error(`❌ Failed to add column ${tableName}.${columnName}:`, error.message);
+            log.database.error('Failed to add column to table', {
+                table: tableName,
+                column: columnName,
+                definition: columnDefinition,
+                error: error.message
+            });
             return false;
         }
     }
@@ -102,8 +111,16 @@ class DatabaseMigrations {
             }
         }
 
-        if (allSuccessful) {
-            console.warn('⚠️  Network interfaces aggregate fields migration completed with some errors');
+        if (!allSuccessful) {
+            log.database.warn('Network usage table migration completed with some errors', {
+                table: tableName,
+                columns_attempted: columnsToAdd.length
+            });
+        } else {
+            log.database.info('Network usage table migration completed successfully', {
+                table: tableName,
+                columns_added: columnsToAdd.length
+            });
         }
 
         return allSuccessful;
@@ -143,7 +160,10 @@ class DatabaseMigrations {
             return true;
             
         } catch (error) {
-            console.error('❌ Failed to migrate disk table:', error.message);
+            log.database.error('Failed to migrate disk table', {
+                error: error.message,
+                stack: error.stack
+            });
             return false;
         }
     }
@@ -170,9 +190,16 @@ class DatabaseMigrations {
             }
         }
 
-        if (allSuccessful) {
+        if (!allSuccessful) {
+            log.database.warn('ZFS dataset table migration completed with some errors', {
+                table: tableName,
+                columns_attempted: columnsToAdd.length
+            });
         } else {
-            console.warn('⚠️  Tasks table migration completed with some errors');
+            log.database.info('ZFS dataset table migration completed successfully', {
+                table: tableName,
+                columns_added: columnsToAdd.length
+            });
         }
 
         return allSuccessful;
@@ -193,7 +220,11 @@ class DatabaseMigrations {
             return true;
             
         } catch (error) {
-            console.error('❌ Failed to create system metrics tables:', error.message);
+            log.database.error('Failed to create system metrics tables', {
+                error: error.message,
+                stack: error.stack,
+                tables: ['cpu_stats', 'memory_stats']
+            });
             return false;
         }
     }
@@ -209,7 +240,9 @@ class DatabaseMigrations {
             // Create disk_io_stats table
             const diskIOTableExists = await this.tableExists('disk_io_stats');
             if (!diskIOTableExists) {
-                console.log('🔧 Creating disk_io_stats table...');
+                log.database.info('Creating disk_io_stats table', {
+                    table: 'disk_io_stats'
+                });
                 await db.query(`
                     CREATE TABLE disk_io_stats (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -333,7 +366,11 @@ class DatabaseMigrations {
             return true;
             
         } catch (error) {
-            console.error('❌ Failed to create new storage tables:', error.message);
+            log.database.error('Failed to create new storage tables', {
+                error: error.message,
+                stack: error.stack,
+                tables: ['disk_io_stats', 'arc_stats', 'pool_io_stats']
+            });
             return false;
         }
     }
@@ -351,7 +388,10 @@ class DatabaseMigrations {
             `);
             return results.length > 0;
         } catch (error) {
-            console.warn(`Failed to check if table ${tableName} exists:`, error.message);
+            log.database.warn('Failed to check if table exists', {
+                table: tableName,
+                error: error.message
+            });
             return false;
         }
     }
@@ -377,9 +417,16 @@ class DatabaseMigrations {
             }
         }
 
-        if (allSuccessful) {
+        if (!allSuccessful) {
+            log.database.warn('PCI devices table migration completed with some errors', {
+                table: tableName,
+                columns_attempted: columnsToAdd.length
+            });
         } else {
-            console.warn('⚠️  Network interfaces aggregate fields migration completed with some errors');
+            log.database.info('PCI devices table migration completed successfully', {
+                table: tableName,
+                columns_added: columnsToAdd.length
+            });
         }
 
         return allSuccessful;
@@ -409,9 +456,16 @@ class DatabaseMigrations {
             }
         }
 
-        if (allSuccessful) {
+        if (!allSuccessful) {
+            log.database.warn('CPU stats table migration completed with some errors', {
+                table: tableName,
+                columns_attempted: columnsToAdd.length
+            });
         } else {
-            console.warn('⚠️  CPU stats table migration completed with some errors');
+            log.database.info('CPU stats table migration completed successfully', {
+                table: tableName,
+                columns_added: columnsToAdd.length
+            });
         }
 
         return allSuccessful;
@@ -440,9 +494,16 @@ class DatabaseMigrations {
             }
         }
 
-        if (allSuccessful) {
+        if (!allSuccessful) {
+            log.database.warn('Host info table migration completed with some errors', {
+                table: tableName,
+                columns_attempted: columnsToAdd.length
+            });
         } else {
-            console.warn('⚠️  Host info table migration completed with some errors');
+            log.database.info('Host info table migration completed successfully', {
+                table: tableName,
+                columns_added: columnsToAdd.length
+            });
         }
 
         return allSuccessful;
@@ -505,7 +566,11 @@ class DatabaseMigrations {
             return true;
             
         } catch (error) {
-            console.error('❌ Failed to migrate zlogin_sessions table:', error.message);
+            log.database.error('Failed to migrate zlogin_sessions table', {
+                error: error.message,
+                stack: error.stack,
+                operation: 'make_pid_nullable'
+            });
             return false;
         }
     }
@@ -566,7 +631,11 @@ class DatabaseMigrations {
             return true;
             
         } catch (error) {
-            console.error('❌ Failed to clean up network interface headers:', error.message);
+            log.database.error('Failed to clean up network interface headers', {
+                error: error.message,
+                stack: error.stack,
+                table: 'network_interfaces'
+            });
             return false;
         }
     }
@@ -591,9 +660,16 @@ class DatabaseMigrations {
             }
         }
 
-        if (allSuccessful) {
+        if (!allSuccessful) {
+            log.database.warn('Tasks table migration completed with some errors', {
+                table: tableName,
+                columns_attempted: columnsToAdd.length
+            });
         } else {
-            console.warn('⚠️  Tasks table migration completed with some errors');
+            log.database.info('Tasks table migration completed successfully', {
+                table: tableName,
+                columns_added: columnsToAdd.length
+            });
         }
 
         return allSuccessful;

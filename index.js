@@ -15,6 +15,7 @@ import cors from "cors";
 import WebSocket, { WebSocketServer } from "ws";
 import crypto from "crypto";
 import config from "./config/ConfigLoader.js";
+import { log, createTimer } from "./lib/Logger.js";
 import db from "./config/Database.js";
 import DatabaseMigrations from "./config/DatabaseMigrations.js";
 import router from "./routes/index.js";
@@ -31,7 +32,6 @@ import ReconciliationService from "./controllers/ReconciliationService.js";
 import TerminalSessions from "./models/TerminalSessionModel.js";
 import ZloginSessions from "./models/ZloginSessionModel.js";
 import yj from "yieldable-json";
-import { log, createTimer } from "./lib/Logger.js";
 
 /**
  * Express application instance
