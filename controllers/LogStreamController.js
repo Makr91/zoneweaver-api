@@ -13,6 +13,7 @@ import fs from "fs/promises";
 import path from "path";
 import config from "../config/ConfigLoader.js";
 import LogStreamSession from "../models/LogStreamSessionModel.js";
+import { log, createTimer } from "../lib/Logger.js";
 
 /**
  * Active log stream sessions
@@ -134,7 +135,13 @@ export const startLogStream = async (req, res) => {
 
         const websocketUrl = `/logs/stream/${sessionId}`;
 
-        console.log(`📊 Created log stream session: ${sessionId} for ${logname}`);
+        log.websocket.info('Log stream session created', {
+            session_id: sessionId,
+            logname: logname,
+            log_path: logPath,
+            follow_lines: follow_lines,
+            grep_pattern: grep_pattern
+        });
 
         res.json({
             session_id: sessionId,
@@ -148,7 +155,10 @@ export const startLogStream = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error starting log stream:', error);
+        log.websocket.error('Error starting log stream', {
+            error: error.message,
+            logname: req.params.logname
+        });
         res.status(500).json({ 
             error: 'Failed to start log stream',
             details: error.message 
@@ -192,7 +202,9 @@ export const listLogStreamSessions = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error listing log stream sessions:', error);
+        log.database.error('Error listing log stream sessions', {
+            error: error.message
+        });
         res.status(500).json({ 
             error: 'Failed to list log stream sessions',
             details: error.message 
@@ -255,7 +267,9 @@ export const stopLogStream = async (req, res) => {
             stopped_at: new Date()
         });
 
-        console.log(`🔌 Stopped log stream session: ${sessionId}`);
+        log.websocket.info('Log stream session stopped', {
+            session_id: sessionId
+        });
 
         res.json({
             success: true,
@@ -265,7 +279,10 @@ export const stopLogStream = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error stopping log stream:', error);
+        log.websocket.error('Error stopping log stream', {
+            error: error.message,
+            session_id: req.params.sessionId
+        });
         res.status(500).json({ 
             error: 'Failed to stop log stream',
             details: error.message 
@@ -298,19 +315,25 @@ export const handleLogStreamUpgrade = async (request, socket, head, wss) => {
         });
 
         if (!sessionRecord) {
-            console.warn(`❌ Log stream session not found: ${sessionId}`);
+            log.websocket.warn('Log stream session not found for WebSocket upgrade', {
+                session_id: sessionId
+            });
             socket.destroy();
             return;
         }
 
         // Handle WebSocket upgrade
         wss.handleUpgrade(request, socket, head, (ws) => {
-            console.log(`🔌 WebSocket upgrade request for log stream: ${sessionId}`);
+            log.websocket.debug('WebSocket upgrade request for log stream', {
+                session_id: sessionId
+            });
             handleLogStreamConnection(ws, sessionRecord);
         });
 
     } catch (error) {
-        console.error('Error handling log stream upgrade:', error);
+        log.websocket.error('Error handling log stream upgrade', {
+            error: error.message
+        });
         socket.destroy();
     }
 };
@@ -357,7 +380,11 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
         
         activeSessions.set(sessionId, sessionData);
 
-        console.log(`✅ WebSocket connected to log stream: ${sessionId} (${sessionRecord.logname}), status: active`);
+        log.websocket.info('WebSocket connected to log stream', {
+            session_id: sessionId,
+            logname: sessionRecord.logname,
+            client_ip: sessionData.clientIP
+        });
 
         // Send initial status message
         ws.send(JSON.stringify({
@@ -404,7 +431,10 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
 
         // Handle tail process exit
         tailProcess.on('exit', (code) => {
-            console.log(`📊 Tail process exited for session ${sessionId} with code: ${code}`);
+            log.websocket.info('Tail process exited for log stream session', {
+                session_id: sessionId,
+                exit_code: code
+            });
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'process_exit',
@@ -417,7 +447,10 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
 
         // Handle WebSocket close
         ws.on('close', async () => {
-            console.log(`🔌 WebSocket closed for log stream: ${sessionId}`);
+            log.websocket.info('WebSocket closed for log stream', {
+                session_id: sessionId,
+                lines_sent: sessionData.linesSent
+            });
             
             // Kill tail process
             if (tailProcess && !tailProcess.killed) {
@@ -435,13 +468,19 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
                     disconnected_at: new Date()
                 });
             } catch (error) {
-                console.warn(`Warning: Failed to update session record for ${sessionId}:`, error.message);
+                log.database.warn('Failed to update session record on close', {
+                    session_id: sessionId,
+                    error: error.message
+                });
             }
         });
 
         // Handle WebSocket errors
         ws.on('error', (error) => {
-            console.error(`❌ WebSocket error for log stream ${sessionId}:`, error.message);
+            log.websocket.error('WebSocket error for log stream', {
+                session_id: sessionId,
+                error: error.message
+            });
             
             // Kill tail process on error
             if (tailProcess && !tailProcess.killed) {
@@ -472,15 +511,24 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
                         }
                         break;
                     default:
-                        console.warn(`Unknown message type from log stream client: ${message.type}`);
+                        log.websocket.warn('Unknown WebSocket message type', {
+                            session_id: sessionId,
+                            message_type: message.type
+                        });
                 }
             } catch (error) {
-                console.warn(`Error processing WebSocket message for session ${sessionId}:`, error.message);
+                log.websocket.warn('Error processing WebSocket message', {
+                    session_id: sessionId,
+                    error: error.message
+                });
             }
         });
 
     } catch (error) {
-        console.error(`Error setting up log stream connection for ${sessionId}:`, error);
+        log.websocket.error('Error setting up log stream connection', {
+            session_id: sessionId,
+            error: error.message
+        });
         ws.close();
         
         // Update session record on error
@@ -491,7 +539,10 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
                 disconnected_at: new Date()
             });
         } catch (updateError) {
-            console.warn(`Warning: Failed to update session record on error for ${sessionId}:`, updateError.message);
+            log.database.warn('Failed to update session record on error', {
+                session_id: sessionId,
+                error: updateError.message
+            });
         }
     }
 };
@@ -535,7 +586,10 @@ export const getLogStreamInfo = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting log stream info:', error);
+        log.database.error('Error getting log stream info', {
+            error: error.message,
+            session_id: req.params.sessionId
+        });
         res.status(500).json({ 
             error: 'Failed to get log stream info',
             details: error.message 
@@ -646,7 +700,10 @@ async function isBinaryFile(filePath) {
         
     } catch (error) {
         // If we can't read the file, assume it's binary to be safe
-        console.warn(`Cannot determine file type for ${filePath}:`, error.message);
+        log.filesystem.warn('Cannot determine file type', {
+            file_path: filePath,
+            error: error.message
+        });
         return true;
     }
 }
@@ -668,6 +725,7 @@ function formatFileSize(bytes) {
  * @description Removes old or inactive session records
  */
 export const cleanupLogStreamSessions = async () => {
+    const timer = createTimer('log_stream_cleanup');
     try {
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
         
@@ -680,22 +738,36 @@ export const cleanupLogStreamSessions = async () => {
         });
 
         if (deletedCount > 0) {
-            console.log(`🧹 Cleaned up ${deletedCount} old log stream session records`);
+            log.database.info('Log stream session cleanup completed', {
+                deleted_records: deletedCount
+            });
         }
 
         // Clean up orphaned active sessions
+        let orphanedCount = 0;
         for (const [sessionId, session] of activeSessions) {
             if (!session.ws || session.ws.readyState !== WebSocket.OPEN) {
-                console.log(`🧹 Cleaning up orphaned active session: ${sessionId}`);
                 if (session.tailProcess && !session.tailProcess.killed) {
                     session.tailProcess.kill();
                 }
                 activeSessions.delete(sessionId);
+                orphanedCount++;
             }
         }
 
+        if (orphanedCount > 0) {
+            log.websocket.info('Orphaned log stream sessions cleaned up', {
+                orphaned_sessions: orphanedCount
+            });
+        }
+
+        timer.end();
+
     } catch (error) {
-        console.error('Error during log stream cleanup:', error);
+        timer.end();
+        log.database.error('Error during log stream cleanup', {
+            error: error.message
+        });
     }
 };
 
