@@ -1,5 +1,6 @@
 import { Sequelize } from "sequelize";
 import config from "./ConfigLoader.js";
+import { log } from "../lib/Logger.js";
 
 /**
  * @fileoverview Database connection configuration for Zoneweaver API
@@ -17,9 +18,15 @@ let sequelizeOptions = {
     logging: dbConfig.logging ? (sql, timing) => {
         // Log slow queries for performance monitoring
         if (timing && timing > 100) {
-            console.warn(`⚠️  Slow query (${timing}ms): ${sql.substring(0, 100)}...`);
+            log.database.warn('Slow query detected', {
+                duration_ms: timing,
+                query: sql.substring(0, 200),
+                performance_threshold: 100
+            });
         } else if (!timing && dbConfig.logging) {
-            console.log(sql);
+            log.database.debug('SQL query', {
+                query: sql.substring(0, 200)
+            });
         }
     } : false,
     benchmark: true, // Enable query timing
@@ -81,10 +88,28 @@ switch (dbConfig.dialect) {
             backoffExponent: retryOpts.backoff_exponent || 1.5
         };
         
-        console.log(`🚀 SQLite configured with performance optimizations:`);
-        console.log(`   - Journal mode: ${sqliteOpts.journal_mode || 'WAL'}`);
-        console.log(`   - Cache size: ${sqliteOpts.cache_size_mb || 128}MB`);
-        console.log(`   - Memory mapping: ${sqliteOpts.mmap_size_mb || 512}MB`);
+        log.database.info('SQLite configured with performance optimizations', {
+            journal_mode: sqliteOpts.journal_mode || 'WAL',
+            synchronous: sqliteOpts.synchronous || 'NORMAL',
+            cache_size_mb: sqliteOpts.cache_size_mb || 128,
+            mmap_size_mb: sqliteOpts.mmap_size_mb || 512,
+            temp_store: sqliteOpts.temp_store || 'MEMORY',
+            busy_timeout_ms: sqliteOpts.busy_timeout_ms || 30000,
+            wal_autocheckpoint: sqliteOpts.wal_autocheckpoint || 1000,
+            optimize_enabled: sqliteOpts.optimize !== false,
+            pool_config: {
+                max: poolOpts.max || 10,
+                min: poolOpts.min || 2,
+                acquire_timeout_ms: poolOpts.acquire_timeout_ms || 60000,
+                idle_timeout_ms: poolOpts.idle_timeout_ms || 30000,
+                evict_interval_ms: poolOpts.evict_interval_ms || 5000
+            },
+            retry_config: {
+                max_retries: retryOpts.max_retries || 5,
+                backoff_base_ms: retryOpts.backoff_base_ms || 100,
+                backoff_exponent: retryOpts.backoff_exponent || 1.5
+            }
+        });
         break;
     
     case 'postgres':
@@ -131,9 +156,17 @@ const db = new Sequelize(sequelizeOptions);
 (async () => {
     try {
         await db.authenticate();
-        console.log(`Database connection established successfully (${dbConfig.dialect})`);
+        log.database.info('Database connection established successfully', {
+            dialect: dbConfig.dialect,
+            host: dbConfig.host || 'local',
+            database: dbConfig.database || dbConfig.storage
+        });
     } catch (error) {
-        console.error('Unable to connect to the database:', error);
+        log.database.error('Unable to connect to the database', {
+            dialect: dbConfig.dialect,
+            error: error.message,
+            stack: error.stack
+        });
     }
 })();
  
