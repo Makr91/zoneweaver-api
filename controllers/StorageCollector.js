@@ -17,6 +17,7 @@ import DiskIOStats from "../models/DiskIOStatsModel.js";
 import ARCStats from "../models/ARCStatsModel.js";
 import PoolIOStats from "../models/PoolIOStatsModel.js";
 import HostInfo from "../models/HostInfoModel.js";
+import { log, createTimer } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -52,7 +53,11 @@ class StorageCollector {
                 updated_at: new Date()
             });
         } catch (error) {
-            console.error('❌ Failed to update host info:', error.message);
+            log.database.error('Failed to update host info', {
+                error: error.message,
+                hostname: this.hostname,
+                updates: Object.keys(updates)
+            });
         }
     }
 
@@ -77,7 +82,13 @@ class StorageCollector {
         const maxErrors = this.hostMonitoringConfig.error_handling.max_consecutive_errors;
         const errorMessage = `${operation} failed: ${error.message}`;
         
-        console.error(`❌ Storage collection error (${this.errorCount}/${maxErrors}): ${errorMessage}`);
+        log.monitoring.error('Storage collection error', {
+            error: error.message,
+            operation: operation,
+            error_count: this.errorCount,
+            max_errors: maxErrors,
+            hostname: this.hostname
+        });
 
         await this.updateHostInfo({
             storage_scan_errors: this.errorCount,
@@ -85,7 +96,12 @@ class StorageCollector {
         });
 
         if (this.errorCount >= maxErrors) {
-            console.error(`🚫 Storage collector disabled due to ${maxErrors} consecutive errors`);
+            log.monitoring.error('Storage collector disabled due to consecutive errors', {
+                error_count: this.errorCount,
+                max_errors: maxErrors,
+                operation: operation,
+                hostname: this.hostname
+            });
             return false; // Signal to disable collector
         }
 
@@ -129,7 +145,10 @@ class StorageCollector {
             return pools;
             
         } catch (error) {
-            console.warn('⚠️  Failed to discover pools dynamically:', error.message);
+            log.monitoring.warn('Failed to discover pools dynamically', {
+                error: error.message,
+                hostname: this.hostname
+            });
             return new Set();
         }
     }
@@ -165,7 +184,10 @@ class StorageCollector {
             return zones;
             
         } catch (error) {
-            console.warn('⚠️  Failed to discover zones dynamically:', error.message);
+            log.monitoring.warn('Failed to discover zones dynamically', {
+                error: error.message,
+                hostname: this.hostname
+            });
             return new Set();
         }
     }

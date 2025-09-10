@@ -8,13 +8,13 @@
 import { exec } from "child_process";
 import util from "util";
 import os from "os";
-import yj from "yieldable-json";
 import config from "../config/ConfigLoader.js";
 import CPUStats from "../models/CPUStatsModel.js";
 import MemoryStats from "../models/MemoryStatsModel.js";
 import SwapArea from "../models/SwapAreaModel.js";
 import HostInfo from "../models/HostInfoModel.js";
 import { Op } from "sequelize";
+import { log, createTimer } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -49,7 +49,11 @@ class SystemMetricsCollector {
                 updated_at: new Date()
             });
         } catch (error) {
-            console.error('❌ Failed to update host info:', error.message);
+            log.database.error('Failed to update host info', {
+                error: error.message,
+                hostname: this.hostname,
+                updates: Object.keys(updates)
+            });
         }
     }
 
@@ -74,7 +78,13 @@ class SystemMetricsCollector {
         const maxErrors = this.hostMonitoringConfig.error_handling.max_consecutive_errors;
         const errorMessage = `${operation} failed: ${error.message}`;
         
-        console.error(`❌ System metrics collection error (${this.errorCount}/${maxErrors}): ${errorMessage}`);
+        log.monitoring.error('System metrics collection error', {
+            error: error.message,
+            operation: operation,
+            error_count: this.errorCount,
+            max_errors: maxErrors,
+            hostname: this.hostname
+        });
 
         await this.updateHostInfo({
             system_scan_errors: this.errorCount,
@@ -82,7 +92,12 @@ class SystemMetricsCollector {
         });
 
         if (this.errorCount >= maxErrors) {
-            console.error(`🚫 System metrics collector disabled due to ${maxErrors} consecutive errors`);
+            log.monitoring.error('System metrics collector disabled due to consecutive errors', {
+                error_count: this.errorCount,
+                max_errors: maxErrors,
+                operation: operation,
+                hostname: this.hostname
+            });
             return false; // Signal to disable collector
         }
 
@@ -150,7 +165,10 @@ class SystemMetricsCollector {
                 stats.cpu.idle_pct = parseFloat(values[values.length - 1]) || 0;
             }
         } catch (error) {
-            console.warn('⚠️  Failed to parse vmstat output:', error.message);
+            log.monitoring.warn('Failed to parse vmstat output', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
 
         return stats;
@@ -230,7 +248,10 @@ class SystemMetricsCollector {
                 stats.swap_total_kb = stats.swap_used_kb + stats.swap_available_kb;
             }
         } catch (error) {
-            console.warn('⚠️  Failed to parse swap output:', error.message);
+            log.monitoring.warn('Failed to parse swap output', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
 
         return stats;
@@ -523,7 +544,9 @@ class SystemMetricsCollector {
             const swapAreas = this.parseSwapListOutput(swapListOutput);
             
             if (swapAreas.length === 0) {
-                console.warn('⚠️  No swap areas found in swap -l output');
+                log.monitoring.warn('No swap areas found in swap -l output', {
+                    hostname: this.hostname
+                });
                 return true; // Not necessarily an error
             }
             
@@ -557,7 +580,10 @@ class SystemMetricsCollector {
                 );
             }
             
-            console.log(`✅ Swap area collection completed: ${swapAreas.length} active swap device(s) found`);
+            log.monitoring.debug('Swap area collection completed', {
+                count: swapAreas.length,
+                hostname: this.hostname
+            });
             
             await this.updateHostInfo({
                 last_swap_scan: new Date()
@@ -590,7 +616,12 @@ class SystemMetricsCollector {
                 await this.resetErrorCount();
                 return true;
             } else {
-                console.warn('⚠️  System metrics collection completed with some errors');
+                log.monitoring.warn('System metrics collection completed with some errors', {
+                    cpu_success: cpuSuccess,
+                    memory_success: memorySuccess,
+                    swap_success: swapSuccess,
+                    hostname: this.hostname
+                });
                 return false;
             }
             
@@ -604,6 +635,7 @@ class SystemMetricsCollector {
      * Clean up old system metrics data based on retention policies
      */
     async cleanupOldData() {
+        const timer = createTimer('system_metrics_cleanup');
         try {
             const retentionConfig = this.hostMonitoringConfig.retention;
             const now = new Date();
@@ -632,12 +664,24 @@ class SystemMetricsCollector {
                 }
             });
 
+            const duration = timer.end();
+
             if (deletedCPU > 0 || deletedMemory > 0 || deletedSwapAreas > 0) {
-                console.log(`🧹 System metrics cleanup completed: ${deletedCPU} CPU stats, ${deletedMemory} memory stats, ${deletedSwapAreas} swap areas deleted`);
+                log.database.info('System metrics cleanup completed', {
+                    deleted_cpu: deletedCPU,
+                    deleted_memory: deletedMemory,
+                    deleted_swap_areas: deletedSwapAreas,
+                    duration_ms: duration,
+                    hostname: this.hostname
+                });
             }
 
         } catch (error) {
-            console.error('❌ Failed to cleanup old system metrics data:', error.message);
+            timer.end();
+            log.database.error('Failed to cleanup old system metrics data', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
     }
 }
