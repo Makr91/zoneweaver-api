@@ -8,6 +8,7 @@
 import db from "./Database.js";
 import CPUStats from "../models/CPUStatsModel.js";
 import MemoryStats from "../models/MemoryStatsModel.js";
+import { log } from "../lib/Logger.js";
 
 /**
  * Database Migration Helper Class

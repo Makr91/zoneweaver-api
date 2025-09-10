@@ -17,6 +17,28 @@ database:
   dialect: sqlite
   storage: /var/lib/zoneweaver-api/database/database.sqlite
   logging: false
+  sqlite_options:
+    # SQLite-specific performance and reliability settings
+    journal_mode: WAL              # Write-Ahead Logging for concurrent reads (WAL, DELETE, TRUNCATE, PERSIST, MEMORY, OFF)
+    synchronous: NORMAL            # Synchronization level (OFF, NORMAL, FULL, EXTRA)
+    cache_size_mb: 128             # Cache size in MB (will be converted to negative KB value for SQLite)
+    temp_store: MEMORY             # Temporary table storage (MEMORY, FILE, DEFAULT)
+    mmap_size_mb: 512              # Memory-mapped I/O size in MB
+    busy_timeout_ms: 30000         # Timeout for locked database in milliseconds
+    wal_autocheckpoint: 1000       # Checkpoint WAL after N pages
+    optimize: true                 # Run PRAGMA optimize on connection
+    # Connection pool settings for SQLite
+    pool:
+      max: 10                      # Maximum connections (multiple readers allowed with WAL)
+      min: 2                       # Minimum connections to keep ready
+      acquire_timeout_ms: 60000    # Timeout to acquire connection
+      idle_timeout_ms: 30000       # Idle connection timeout
+      evict_interval_ms: 5000      # Check for idle connections interval
+    # Retry configuration for busy database
+    retry:
+      max_retries: 5               # Maximum retry attempts for SQLITE_BUSY/LOCKED
+      backoff_base_ms: 100         # Initial retry delay
+      backoff_exponent: 1.5        # Exponential backoff multiplier
 api_keys:
   bootstrap_enabled: true
   bootstrap_auto_disable: true

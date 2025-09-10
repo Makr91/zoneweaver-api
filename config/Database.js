@@ -1,5 +1,6 @@
 import { Sequelize } from "sequelize";
 import config from "./ConfigLoader.js";
+import { log } from "../lib/Logger.js";
 
 /**
  * @fileoverview Database connection configuration for Zoneweaver API
@@ -17,9 +18,15 @@ let sequelizeOptions = {
     logging: dbConfig.logging ? (sql, timing) => {
         // Log slow queries for performance monitoring
         if (timing && timing > 100) {
-            console.warn(`⚠️  Slow query (${timing}ms): ${sql.substring(0, 100)}...`);
+            log.database.warn('Slow query detected', {
+                duration_ms: timing,
+                query: sql.substring(0, 200),
+                performance_threshold: 100
+            });
         } else if (!timing && dbConfig.logging) {
-            console.log(sql);
+            log.database.debug('SQL query', {
+                query: sql.substring(0, 200)
+            });
         }
     } : false,
     benchmark: true, // Enable query timing
@@ -41,42 +48,68 @@ switch (dbConfig.dialect) {
         /**
          * SQLite configuration
          * @description File-based database, ideal for development and single-host deployments
-         * Optimized with WAL mode for concurrent reads during writes
+         * Optimized with configurable performance parameters
          */
         sequelizeOptions.storage = dbConfig.storage;
         
-        // Optimize connection pool for SQLite with WAL mode
+        // Get SQLite-specific options from configuration (with defaults)
+        const sqliteOpts = dbConfig.sqlite_options || {};
+        const poolOpts = sqliteOpts.pool || {};
+        const retryOpts = sqliteOpts.retry || {};
+        
+        // Configure connection pool for SQLite
         sequelizeOptions.pool = {
-            max: 10,       // Multiple readers allowed with WAL mode
-            min: 2,        // Keep some connections ready
-            acquire: 60000, // 60s timeout for busy database
-            idle: 30000,   // 30s idle timeout
-            evict: 5000,   // Check for idle connections every 5s
+            max: poolOpts.max || 10,
+            min: poolOpts.min || 2,
+            acquire: poolOpts.acquire_timeout_ms || 60000,
+            idle: poolOpts.idle_timeout_ms || 30000,
+            evict: poolOpts.evict_interval_ms || 5000,
         };
         
-        // Enable WAL mode and performance optimizations
+        // Enable configurable SQLite optimizations
         sequelizeOptions.dialectOptions = {
             pragma: {
-                journal_mode: 'WAL',           // Enable Write-Ahead Logging for concurrent reads
-                synchronous: 'NORMAL',         // Faster than FULL, safer than OFF
-                cache_size: -128000,           // 128MB cache (negative = KB)
-                temp_store: 'MEMORY',          // Keep temp tables in RAM
-                mmap_size: 536870912,          // 512MB memory-mapped I/O (doubled)
-                busy_timeout: 30000,           // 30s timeout for locked database
-                wal_autocheckpoint: 1000,      // Checkpoint WAL after 1000 pages
-                optimize: true,                // Run PRAGMA optimize on connection
+                journal_mode: sqliteOpts.journal_mode || 'WAL',
+                synchronous: sqliteOpts.synchronous || 'NORMAL',
+                cache_size: -(sqliteOpts.cache_size_mb || 128) * 1024,  // Convert MB to negative KB
+                temp_store: sqliteOpts.temp_store || 'MEMORY',
+                mmap_size: (sqliteOpts.mmap_size_mb || 512) * 1024 * 1024,  // Convert MB to bytes
+                busy_timeout: sqliteOpts.busy_timeout_ms || 30000,
+                wal_autocheckpoint: sqliteOpts.wal_autocheckpoint || 1000,
+                optimize: sqliteOpts.optimize !== false,  // Default to true unless explicitly false
             }
         };
         
-        // Retry configuration for busy database
+        // Configurable retry configuration for busy database
         sequelizeOptions.retry = {
             match: [/SQLITE_BUSY/, /SQLITE_LOCKED/],
-            max: 5,                            // Retry up to 5 times
-            backoffBase: 100,                  // Start with 100ms delay
-            backoffExponent: 1.5               // Exponential backoff
+            max: retryOpts.max_retries || 5,
+            backoffBase: retryOpts.backoff_base_ms || 100,
+            backoffExponent: retryOpts.backoff_exponent || 1.5
         };
         
-        console.log('🚀 SQLite configured with WAL mode and performance optimizations');
+        log.database.info('SQLite configured with performance optimizations', {
+            journal_mode: sqliteOpts.journal_mode || 'WAL',
+            synchronous: sqliteOpts.synchronous || 'NORMAL',
+            cache_size_mb: sqliteOpts.cache_size_mb || 128,
+            mmap_size_mb: sqliteOpts.mmap_size_mb || 512,
+            temp_store: sqliteOpts.temp_store || 'MEMORY',
+            busy_timeout_ms: sqliteOpts.busy_timeout_ms || 30000,
+            wal_autocheckpoint: sqliteOpts.wal_autocheckpoint || 1000,
+            optimize_enabled: sqliteOpts.optimize !== false,
+            pool_config: {
+                max: poolOpts.max || 10,
+                min: poolOpts.min || 2,
+                acquire_timeout_ms: poolOpts.acquire_timeout_ms || 60000,
+                idle_timeout_ms: poolOpts.idle_timeout_ms || 30000,
+                evict_interval_ms: poolOpts.evict_interval_ms || 5000
+            },
+            retry_config: {
+                max_retries: retryOpts.max_retries || 5,
+                backoff_base_ms: retryOpts.backoff_base_ms || 100,
+                backoff_exponent: retryOpts.backoff_exponent || 1.5
+            }
+        });
         break;
     
     case 'postgres':
@@ -123,9 +156,17 @@ const db = new Sequelize(sequelizeOptions);
 (async () => {
     try {
         await db.authenticate();
-        console.log(`Database connection established successfully (${dbConfig.dialect})`);
+        log.database.info('Database connection established successfully', {
+            dialect: dbConfig.dialect,
+            host: dbConfig.host || 'local',
+            database: dbConfig.database || dbConfig.storage
+        });
     } catch (error) {
-        console.error('Unable to connect to the database:', error);
+        log.database.error('Unable to connect to the database', {
+            dialect: dbConfig.dialect,
+            error: error.message,
+            stack: error.stack
+        });
     }
 })();
  

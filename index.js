@@ -90,7 +90,10 @@ app.use(router);
  */
 const apiDocsConfig = config.getApiDocs();
 if (apiDocsConfig && apiDocsConfig.enabled) {
-  console.log('API documentation endpoint enabled at /api-docs');
+  log.app.info('API documentation endpoint enabled', {
+    endpoint: '/api-docs',
+    enabled: true
+  });
   
   app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
     // Dynamically set the server URL based on the current request
@@ -128,7 +131,9 @@ if (apiDocsConfig && apiDocsConfig.enabled) {
     })(req, res, next);
   });
 } else {
-  console.log('API documentation endpoint disabled by configuration');
+  log.app.info('API documentation endpoint disabled by configuration', {
+    enabled: false
+  });
 }
 
 /**
@@ -459,12 +464,18 @@ async function generateSSLCertificatesIfNeeded() {
 
   // Check if certificates already exist
   if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-    console.log('SSL certificates already exist, skipping generation');
+    log.app.info('SSL certificates already exist, skipping generation', {
+      key_path: keyPath,
+      cert_path: certPath
+    });
     return false; // Certificates exist, no need to generate
   }
 
   try {
-    console.log('Generating SSL certificates...');
+    log.app.info('Generating SSL certificates', {
+      key_path: keyPath,
+      cert_path: certPath
+    });
     
     // Import child_process for running openssl
     const { execSync } = await import('child_process');
@@ -485,14 +496,19 @@ async function generateSSLCertificatesIfNeeded() {
     fs.chmodSync(keyPath, 0o600);
     fs.chmodSync(certPath, 0o600);
     
-    console.log('SSL certificates generated successfully');
-    console.log(`Key: ${keyPath}`);
-    console.log(`Certificate: ${certPath}`);
+    log.app.info('SSL certificates generated successfully', {
+      key_path: keyPath,
+      cert_path: certPath,
+      validity_days: 365
+    });
     
     return true; // Certificates generated successfully
   } catch (error) {
-    console.error('Failed to generate SSL certificates:', error.message);
-    console.error('Continuing with HTTP fallback...');
+    log.app.error('Failed to generate SSL certificates', {
+      error: error.message,
+      stack: error.stack,
+      fallback: 'HTTP only'
+    });
     return false; // Generation failed
   }
 }
@@ -518,10 +534,12 @@ async function generateSSLCertificatesIfNeeded() {
       httpsServer.on('upgrade', handleWebSocketUpgrade);
       
       httpsServer.listen(httpsPort, () => {
-        console.log(`HTTPS Server running on port ${httpsPort}`);
-        // Fix API documentation URL to use configured host
         const host = serverConfig.hostname || 'localhost';
-        console.log(`API Documentation: https://${host}:${httpsPort}/api-docs`);
+        log.app.info('HTTPS server started', {
+          port: httpsPort,
+          host: host,
+          api_docs_url: `https://${host}:${httpsPort}/api-docs`
+        });
       });
       
     } catch (error) {
@@ -530,13 +548,17 @@ async function generateSSLCertificatesIfNeeded() {
         key_path: sslConfig.key_path,
         cert_path: sslConfig.cert_path
       });
-      console.log('HTTPS server not started due to SSL certificate issues');
-      console.log(`To enable HTTPS, ensure SSL certificates are available at:`);
-      console.log(`- Key: ${sslConfig.key_path}`);
-      console.log(`- Cert: ${sslConfig.cert_path}`);
+      log.app.warn('HTTPS server not started due to SSL certificate issues', {
+        required_key_path: sslConfig.key_path,
+        required_cert_path: sslConfig.cert_path,
+        suggestion: 'Ensure SSL certificates are available or enable generate_ssl'
+      });
     }
   } else {
-    console.log('SSL disabled in configuration - HTTPS server not started');
+    log.app.info('SSL disabled in configuration', {
+      https_enabled: false,
+      server_mode: 'HTTP only'
+    });
   }
 })();
 
@@ -599,7 +621,16 @@ httpServer.listen(httpPort, () => {
       // Start reconciliation service
       ReconciliationService.start();
       
-      console.log('Zoneweaver API fully initialized and ready for zone management!');
+      log.app.info('Zoneweaver API fully initialized and ready for zone management', {
+        services_started: [
+          'task_processor',
+          'vnc_session_cleanup', 
+          'cleanup_service',
+          'host_monitoring',
+          'reconciliation_service'
+        ],
+        ready: true
+      });
     } else {
       log.app.error('Database setup failed - some features may not work correctly');
     }
