@@ -13,12 +13,8 @@ import {
     createDirectory,
     deleteItem,
     moveItem,
-    copyItem,
-    createArchive,
-    extractArchive,
     validatePath
 } from '../lib/FileSystemManager.js';
-import { saveUploadedFile } from '../middleware/FileUpload.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import config from '../config/ConfigLoader.js';
 import yj from 'yieldable-json';
@@ -344,31 +340,52 @@ export const uploadFile = async (req, res) => {
         const filePath = req.file.path;
         const filename = req.file.filename;
         
-        // Set ownership and permissions if specified using pfexec
+        console.log(`📁 [UPLOAD] File upload request:`, {
+            filename: req.file.originalname,
+            size: req.file.size,
+            mimetype: req.file.mimetype,
+            destination: filePath,
+            uploadPath: req.body.uploadPath,
+            overwrite: req.body.overwrite,
+            uid: uid,
+            gid: gid,
+            mode: mode,
+            user: req.entity.name
+        });
+        
+        // Set ownership and permissions quickly (skip on failure, don't block response)
         if (uid !== undefined || gid !== undefined) {
             const { executeCommand } = await import('../lib/FileSystemManager.js');
             const uidVal = parseInt(uid) || -1;
             const gidVal = parseInt(gid) || -1;
-            const chownResult = await executeCommand(`pfexec chown ${uidVal}:${gidVal} "${filePath}"`);
-            if (!chownResult.success) {
-                console.warn(`Failed to set ownership on ${filePath}: ${chownResult.error}`);
-            }
+            executeCommand(`pfexec chown ${uidVal}:${gidVal} "${filePath}"`).catch(err => 
+                console.warn(`Failed to set ownership: ${err.message}`)
+            );
         }
         
         if (mode !== undefined) {
             const { executeCommand } = await import('../lib/FileSystemManager.js');
-            const chmodResult = await executeCommand(`pfexec chmod ${mode} "${filePath}"`);
-            if (!chmodResult.success) {
-                console.warn(`Failed to set permissions on ${filePath}: ${chmodResult.error}`);
-            }
+            executeCommand(`pfexec chmod ${mode} "${filePath}"`).catch(err => 
+                console.warn(`Failed to set permissions: ${err.message}`)
+            );
         }
 
-        const itemInfo = await getItemInfo(filePath);
+        // Return basic info immediately without expensive operations
+        const basicItemInfo = {
+            name: filename,
+            path: filePath,
+            isDirectory: false,
+            size: req.file.size,
+            mimeType: req.file.mimetype || 'application/octet-stream',
+            originalname: req.file.originalname
+        };
+
+        console.log(`✅ [UPLOAD] Upload completed: ${filename} (${req.file.size} bytes)`);
 
         res.status(201).json({
             success: true,
             message: `File '${filename}' uploaded successfully`,
-            file: itemInfo
+            file: basicItemInfo
         });
 
     } catch (error) {
@@ -1027,9 +1044,44 @@ export const deleteFileItem = async (req, res) => {
             });
         }
 
-        const itemInfo = await getItemInfo(itemPath);
+        console.log(`🗑️ [DELETE] File deletion request:`, {
+            path: itemPath,
+            recursive: recursive,
+            force: force,
+            user: req.entity.name
+        });
+
+        // Fast path validation without expensive operations
+        const validation = validatePath(itemPath);
+        if (!validation.valid) {
+            return res.status(403).json({ error: validation.error });
+        }
+
+        // Get basic item info quickly (no binary detection)
+        let itemInfo;
+        try {
+            const stats = await fs.promises.stat(validation.normalizedPath);
+            itemInfo = {
+                name: path.basename(itemPath),
+                path: itemPath,
+                isDirectory: stats.isDirectory(),
+                size: stats.isDirectory() ? null : stats.size
+            };
+            console.log(`🗑️ [DELETE] Item: ${itemInfo.isDirectory ? 'directory' : 'file'} (${itemInfo.size || 'N/A'} bytes)`);
+        } catch (infoError) {
+            console.warn(`⚠️ [DELETE] Could not stat ${itemPath}: ${infoError.message}`);
+            itemInfo = { 
+                name: path.basename(itemPath), 
+                isDirectory: false, 
+                path: itemPath,
+                size: null
+            };
+        }
         
+        // Perform the actual deletion immediately
         await deleteItem(itemPath, { recursive, force });
+
+        console.log(`✅ [DELETE] Successfully deleted ${itemInfo.isDirectory ? 'directory' : 'file'}: ${itemPath}`);
 
         res.json({
             success: true,
@@ -1038,7 +1090,7 @@ export const deleteFileItem = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error deleting item:', error);
+        console.error(`❌ [DELETE] Error deleting item:`, error);
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
             return res.status(403).json({ error: error.message });
