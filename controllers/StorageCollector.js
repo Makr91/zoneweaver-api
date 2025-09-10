@@ -492,7 +492,10 @@ class StorageCollector {
                 const iostatData = this.parsePoolIostatOutput(iostatOutput);
                 allPools.push(...iostatData);
             } catch (error) {
-                console.warn('⚠️  Failed to collect pool iostat data:', error.message);
+                log.monitoring.warn('Failed to collect pool iostat data', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Collect pool status data
@@ -515,7 +518,10 @@ class StorageCollector {
                 });
                 
             } catch (error) {
-                console.warn('⚠️  Failed to collect pool status data:', error.message);
+                log.monitoring.warn('Failed to collect pool status data', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Store pool data in database
@@ -530,7 +536,10 @@ class StorageCollector {
             return allPools;
 
         } catch (error) {
-            console.error('❌ Failed to collect pool data:', error.message);
+            log.monitoring.error('Failed to collect pool data', {
+                error: error.message,
+                hostname: this.hostname
+            });
             throw error;
         }
     }
@@ -609,7 +618,10 @@ class StorageCollector {
                     await execProm(`zfs list -H "${dataset.name}"`, { timeout });
                     datasetExists = true;
                 } catch (listError) {
-                    console.warn(`⚠️  Dataset ${dataset.name} no longer exists, skipping detailed property collection`);
+                    log.monitoring.debug('Dataset no longer exists, skipping detailed properties', {
+                        dataset: dataset.name,
+                        hostname: this.hostname
+                    });
                     datasetExists = false;
                 }
                 
@@ -635,7 +647,11 @@ class StorageCollector {
                     });
                     
                 } catch (error) {
-                    console.warn(`⚠️  Failed to get detailed properties for ${dataset.name}:`, error.message);
+                    log.monitoring.warn('Failed to get detailed properties for dataset', {
+                        dataset: dataset.name,
+                        error: error.message,
+                        hostname: this.hostname
+                    });
                     // Still include basic dataset info
                     detailedDatasets.push({
                         ...dataset,
@@ -658,7 +674,10 @@ class StorageCollector {
             return detailedDatasets;
 
         } catch (error) {
-            console.error('❌ Failed to collect dataset data:', error.message);
+            log.monitoring.error('Failed to collect dataset data', {
+                error: error.message,
+                hostname: this.hostname
+            });
             throw error;
         }
     }
@@ -760,7 +779,10 @@ class StorageCollector {
                 const { stdout: zpoolStatusOutput } = await execProm('zpool status', { timeout });
                 await this.assignDisksToePools(diskData, zpoolStatusOutput);
             } catch (error) {
-                console.warn('⚠️  Failed to cross-reference disk assignments with zpool status:', error.message);
+                log.monitoring.warn('Failed to cross-reference disk assignments with zpool status', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Store disk data in database with proper upsert
@@ -780,7 +802,10 @@ class StorageCollector {
             return diskData;
 
         } catch (error) {
-            console.error('❌ Failed to collect disk data:', error.message);
+            log.monitoring.error('Failed to collect disk data', {
+                error: error.message,
+                hostname: this.hostname
+            });
             throw error;
         }
     }
@@ -833,7 +858,10 @@ class StorageCollector {
                 const listData = this.parsePoolListOutput(listOutput);
                 extendedData.push(...listData);
             } catch (error) {
-                console.warn('⚠️  Failed to collect zpool list data:', error.message);
+                log.monitoring.warn('Failed to collect zpool list data', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Store extended pool data
@@ -850,7 +878,10 @@ class StorageCollector {
             return extendedData;
 
         } catch (error) {
-            console.error('❌ Failed to collect extended pool data:', error.message);
+            log.monitoring.error('Failed to collect extended pool data', {
+                error: error.message,
+                hostname: this.hostname
+            });
             throw error;
         }
     }
@@ -1105,7 +1136,10 @@ class StorageCollector {
             return arcStatsData;
 
         } catch (error) {
-            console.error('❌ Failed to collect ARC statistics:', error.message);
+            log.monitoring.error('Failed to collect ARC statistics', {
+                error: error.message,
+                hostname: this.hostname
+            });
             throw error;
         }
     }
@@ -1314,7 +1348,10 @@ class StorageCollector {
             return { poolStats, diskStats };
 
         } catch (error) {
-            console.error('❌ Failed to collect comprehensive I/O statistics:', error.message);
+            log.monitoring.error('Failed to collect comprehensive I/O statistics', {
+                error: error.message,
+                hostname: this.hostname
+            });
             throw error;
         }
     }
@@ -1392,11 +1429,22 @@ class StorageCollector {
             });
 
             if (deletedPools > 0 || deletedDatasets > 0 || deletedDisks > 0 || deletedDiskIO > 0 || deletedPoolIO > 0 || deletedARC > 0) {
-                console.log(`🧹 Storage cleanup completed: ${deletedPools} pools, ${deletedDatasets} datasets, ${deletedDisks} disks, ${deletedDiskIO} disk I/O, ${deletedPoolIO} pool I/O, ${deletedARC} ARC stats deleted`);
+                log.database.info('Storage cleanup completed', {
+                    deleted_pools: deletedPools,
+                    deleted_datasets: deletedDatasets,
+                    deleted_disks: deletedDisks,
+                    deleted_disk_io: deletedDiskIO,
+                    deleted_pool_io: deletedPoolIO,
+                    deleted_arc: deletedARC,
+                    hostname: this.hostname
+                });
             }
 
         } catch (error) {
-            console.error('❌ Failed to cleanup old storage data:', error.message);
+            log.database.error('Failed to cleanup old storage data', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
     }
 }

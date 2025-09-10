@@ -9,13 +9,13 @@ import { exec, execSync } from "child_process";
 import util from "util";
 import os from "os";
 import { Op } from "sequelize";
-import yj from "yieldable-json";
 import config from "../config/ConfigLoader.js";
 import PCIDevices from "../models/PCIDeviceModel.js";
 import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import Disks from "../models/DiskModel.js";
 import Zones from "../models/ZoneModel.js";
 import HostInfo from "../models/HostInfoModel.js";
+import { log, createTimer } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -49,7 +49,11 @@ class DeviceCollector {
                 updated_at: new Date()
             });
         } catch (error) {
-            console.error('❌ Failed to update host info:', error.message);
+            log.database.error('Failed to update host info', {
+                error: error.message,
+                hostname: this.hostname,
+                updates: Object.keys(updates)
+            });
         }
     }
 
@@ -74,7 +78,13 @@ class DeviceCollector {
         const maxErrors = this.hostMonitoringConfig.error_handling.max_consecutive_errors;
         const errorMessage = `${operation} failed: ${error.message}`;
         
-        console.error(`❌ Device collection error (${this.errorCount}/${maxErrors}): ${errorMessage}`);
+        log.monitoring.error('Device collection error', {
+            error: error.message,
+            operation: operation,
+            error_count: this.errorCount,
+            max_errors: maxErrors,
+            hostname: this.hostname
+        });
 
         await this.updateHostInfo({
             device_scan_errors: this.errorCount,
@@ -82,7 +92,12 @@ class DeviceCollector {
         });
 
         if (this.errorCount >= maxErrors) {
-            console.error(`🚫 Device collector disabled due to ${maxErrors} consecutive errors`);
+            log.monitoring.error('Device collector disabled due to consecutive errors', {
+                error_count: this.errorCount,
+                max_errors: maxErrors,
+                operation: operation,
+                hostname: this.hostname
+            });
             return false; // Signal to disable collector
         }
 
@@ -289,7 +304,10 @@ class DeviceCollector {
                 });
             }
         } catch (error) {
-            console.warn('⚠️  Failed to parse pptadm JSON output:', error.message);
+            log.monitoring.warn('Failed to parse pptadm JSON output', {
+                error: error.message,
+                hostname: this.hostname
+            });
             // Try to parse text format as fallback
             const lines = output.trim().split('\n');
             for (let i = 1; i < lines.length; i++) { // Skip header
@@ -331,7 +349,10 @@ class DeviceCollector {
                     const { stdout: pptOutput } = await execProm('pfexec pptadm list -a', { timeout });
                     pptDevices = await this.parsePPTOutput(pptOutput);
                 } catch (fallbackError) {
-                    console.warn('⚠️  Failed to get PPT status:', fallbackError.message);
+                    log.monitoring.warn('Failed to get PPT status', {
+                        error: fallbackError.message,
+                        hostname: this.hostname
+                    });
                     return;
                 }
             }
@@ -350,7 +371,10 @@ class DeviceCollector {
             }
             
         } catch (error) {
-            console.warn('⚠️  Failed to check PPT status:', error.message);
+            log.monitoring.warn('Failed to check PPT status', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
     }
 
@@ -370,11 +394,18 @@ class DeviceCollector {
             // Zone configuration parsing will be enhanced when we have actual zone configs with device assignments
             for (const zone of zones) {
                 if (zone.brand === 'bhyve') {
+                    log.monitoring.debug('Found bhyve zone for device assignment check', {
+                        zone_name: zone.name,
+                        hostname: this.hostname
+                    });
                 }
             }
             
         } catch (error) {
-            console.warn('⚠️  Failed to check zone assignments:', error.message);
+            log.database.warn('Failed to check zone assignments', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
     }
 
@@ -430,7 +461,10 @@ class DeviceCollector {
             }
             
         } catch (error) {
-            console.warn('⚠️  Failed to cross-reference with collectors:', error.message);
+            log.database.warn('Failed to cross-reference with collectors', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
     }
 
@@ -510,11 +544,17 @@ class DeviceCollector {
             });
 
             if (deletedDevices > 0) {
-                console.log(`🧹 Device cleanup completed: ${deletedDevices} PCI devices deleted`);
+                log.database.info('Device cleanup completed', {
+                    deleted_devices: deletedDevices,
+                    hostname: this.hostname
+                });
             }
 
         } catch (error) {
-            console.error('❌ Failed to cleanup old device data:', error.message);
+            log.database.error('Failed to cleanup old device data', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
     }
 }
