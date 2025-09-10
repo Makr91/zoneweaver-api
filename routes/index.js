@@ -524,7 +524,7 @@ router.get('/system/group-lookup', verifyApiKey, lookupGroup);                  
 // File System Management Routes
 router.get('/filesystem', verifyApiKey, browseDirectory);                                  // Browse directory contents
 router.post('/filesystem/folder', verifyApiKey, createFolder);                             // Create directory
-router.post('/filesystem/upload', validateUploadRequest, uploadSingle('file'), uploadFile, handleUploadError); // Upload file
+router.post('/filesystem/upload', verifyApiKey, validateUploadRequest, uploadSingle('file'), uploadFile, handleUploadError); // Upload file
 router.get('/filesystem/download', verifyApiKey, downloadFile);                            // Download file
 router.get('/filesystem/content', verifyApiKey, readFile);                                 // Read text file content
 router.put('/filesystem/content', verifyApiKey, writeFile);                                // Write text file content
