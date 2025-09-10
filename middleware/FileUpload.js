@@ -15,7 +15,7 @@ import { validatePath } from '../lib/FileSystemManager.js';
  * Storage configuration for multer
  */
 const storage = multer.diskStorage({
-    destination: async (req, file, cb) => {
+    destination: (req, file, cb) => {
         try {
             const fileBrowserConfig = config.getFileBrowser();
             
@@ -46,7 +46,7 @@ const storage = multer.diskStorage({
             
             // Check if file already exists
             const fullFilePath = path.join(destinationPath, file.originalname);
-            if (fs.existsSync(fullFilePath) && !req.body.overwrite) {
+            if (fs.existsSync(fullFilePath) && req.body.overwrite !== 'true') {
                 return cb(new multer.MulterError('File already exists! Use overwrite=true to replace.', 'FILE_EXISTS'), false);
             }
             

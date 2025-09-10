@@ -344,14 +344,22 @@ export const uploadFile = async (req, res) => {
         const filePath = req.file.path;
         const filename = req.file.filename;
         
-        // Set ownership and permissions if specified
-        if (uid !== undefined || gid !== undefined || mode !== undefined) {
-            if (uid !== undefined || gid !== undefined) {
-                await fs.promises.chown(filePath, parseInt(uid) || -1, parseInt(gid) || -1);
+        // Set ownership and permissions if specified using pfexec
+        if (uid !== undefined || gid !== undefined) {
+            const { executeCommand } = await import('../lib/FileSystemManager.js');
+            const uidVal = parseInt(uid) || -1;
+            const gidVal = parseInt(gid) || -1;
+            const chownResult = await executeCommand(`pfexec chown ${uidVal}:${gidVal} "${filePath}"`);
+            if (!chownResult.success) {
+                console.warn(`Failed to set ownership on ${filePath}: ${chownResult.error}`);
             }
-            
-            if (mode !== undefined) {
-                await fs.promises.chmod(filePath, parseInt(mode, 8));
+        }
+        
+        if (mode !== undefined) {
+            const { executeCommand } = await import('../lib/FileSystemManager.js');
+            const chmodResult = await executeCommand(`pfexec chmod ${mode} "${filePath}"`);
+            if (!chmodResult.success) {
+                console.warn(`Failed to set permissions on ${filePath}: ${chmodResult.error}`);
             }
         }
 
