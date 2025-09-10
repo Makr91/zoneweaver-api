@@ -7,6 +7,7 @@ import db from "../config/Database.js";
 import fs from 'fs';
 import path from 'path';
 import yj from "yieldable-json";
+import { log, createTimer } from "../lib/Logger.js";
 
 /**
  * @fileoverview VNC Console controller for Zoneweaver API
@@ -31,7 +32,11 @@ class VncConnectionTracker {
             this.connections.set(zoneName, new Set());
         }
         this.connections.get(zoneName).add(connectionId);
-        console.log(`📊 Added connection ${connectionId} for ${zoneName}. Total: ${this.connections.get(zoneName).size}`);
+        log.websocket.debug('VNC client connection added', {
+            zone_name: zoneName,
+            connection_id: connectionId,
+            total_connections: this.connections.get(zoneName).size
+        });
     }
     
     /**
@@ -49,11 +54,18 @@ class VncConnectionTracker {
         zoneConnections.delete(connectionId);
         
         const remainingConnections = zoneConnections.size;
-        console.log(`📊 Removed connection ${connectionId} for ${zoneName}. Remaining: ${remainingConnections}`);
+        log.websocket.debug('VNC client connection removed', {
+            zone_name: zoneName,
+            connection_id: connectionId,
+            remaining_connections: remainingConnections
+        });
         
         if (remainingConnections === 0) {
             this.connections.delete(zoneName);
-            console.log(`📊 Last client disconnected from ${zoneName} - eligible for smart cleanup`);
+            log.websocket.info('Last VNC client disconnected', {
+                zone_name: zoneName,
+                eligible_for_cleanup: true
+            });
             return true;
         }
         
