@@ -683,7 +683,10 @@ class NetworkCollector {
                     await IPAddresses.bulkCreate(batch);
                 }
                 
-                console.log(`🌐 IP Addresses updated: ${ipData.length} current addresses for ${this.hostname}`);
+                log.monitoring.debug('IP addresses updated', {
+                    count: ipData.length,
+                    hostname: this.hostname
+                });
             } else {
                 // No IP addresses found - clear existing records
                 await IPAddresses.destroy({
@@ -691,13 +694,18 @@ class NetworkCollector {
                         host: this.hostname
                     }
                 });
-                console.log(`🌐 IP Addresses cleared: no addresses found for ${this.hostname}`);
+                log.monitoring.debug('IP addresses cleared (none found)', {
+                    hostname: this.hostname
+                });
             }
 
             return ipData;
 
         } catch (error) {
-            console.warn('⚠️  Failed to collect IP addresses:', error.message);
+            log.monitoring.warn('Failed to collect IP addresses', {
+                error: error.message,
+                hostname: this.hostname
+            });
             return [];
         }
     }
@@ -728,7 +736,10 @@ class NetworkCollector {
                     await Routes.bulkCreate(batch);
                 }
                 
-                console.log(`🛣️  Routes updated: ${routeData.length} current routes for ${this.hostname}`);
+                log.monitoring.debug('Routes updated', {
+                    count: routeData.length,
+                    hostname: this.hostname
+                });
             } else {
                 // No routes found - clear existing records
                 await Routes.destroy({
@@ -736,13 +747,18 @@ class NetworkCollector {
                         host: this.hostname
                     }
                 });
-                console.log(`🛣️  Routes cleared: no routes found for ${this.hostname}`);
+                log.monitoring.debug('Routes cleared (none found)', {
+                    hostname: this.hostname
+                });
             }
 
             return routeData;
 
         } catch (error) {
-            console.warn('⚠️  Failed to collect routing table:', error.message);
+            log.monitoring.warn('Failed to collect routing table', {
+                error: error.message,
+                hostname: this.hostname
+            });
             return [];
         }
     }
@@ -1385,7 +1401,10 @@ class NetworkCollector {
                 interfaceConfigs = speedMap;
                 
             } catch (error) {
-                console.warn('⚠️  Could not fetch interface configuration for speed data:', error.message);
+                log.database.warn('Could not fetch interface configuration for speed data', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
                 interfaceConfigs = new Map();
             }
 
@@ -1414,10 +1433,17 @@ class NetworkCollector {
                 });
                 previousStatsMap = grouped;
                 
-                console.log(`📊 Found ${previousStatsMap.size} previous usage records for ${currentStats.length} current interfaces`);
+                log.monitoring.debug('Previous usage records found', {
+                    previous_records: previousStatsMap.size,
+                    current_interfaces: currentStats.length,
+                    hostname: this.hostname
+                });
                 
             } catch (error) {
-                console.warn('⚠️  Could not fetch previous usage statistics for bandwidth calculation:', error.message);
+                log.database.warn('Could not fetch previous usage statistics', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             const usageDataResults = [];
@@ -1605,11 +1631,20 @@ class NetworkCollector {
             });
 
             if (deletedUsage > 0 || deletedConfig > 0 || deletedIPAddresses > 0 || deletedRoutes > 0) {
-                console.log(`🧹 Network cleanup completed: ${deletedUsage} usage, ${deletedConfig} interfaces, ${deletedIPAddresses} IP addresses, ${deletedRoutes} routes deleted`);
+                log.database.info('Network cleanup completed', {
+                    deleted_usage: deletedUsage,
+                    deleted_config: deletedConfig,
+                    deleted_ip_addresses: deletedIPAddresses,
+                    deleted_routes: deletedRoutes,
+                    hostname: this.hostname
+                });
             }
 
         } catch (error) {
-            console.error('❌ Failed to cleanup old network data:', error.message);
+            log.database.error('Failed to cleanup old network data', {
+                error: error.message,
+                hostname: this.hostname
+            });
         }
     }
 }
