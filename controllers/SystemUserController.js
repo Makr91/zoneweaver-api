@@ -225,8 +225,10 @@ export const getSystemUsers = async (req, res) => {
                 shell: fields[6] || ''
             };
             
-            // Filter system users if requested
-            if (!include_system && user.uid < 1000) {
+            // No filtering by default - return all users unless explicitly excluded
+            // Only skip if include_system is explicitly set to false AND it's a very low UID
+            if (include_system === 'false' && user.uid < 10) {
+                // Only filter out daemon, bin, sys (UIDs 1-9) if explicitly requested
                 continue;
             }
             
@@ -330,8 +332,9 @@ export const getSystemGroups = async (req, res) => {
                 members: fields[3] ? fields[3].split(',').filter(m => m.trim()) : []
             };
             
-            // Filter system groups if requested
-            if (!include_system && group.gid < 1000) {
+            // No filtering by default - return all groups unless explicitly excluded
+            if (include_system === 'false' && group.gid < 10) {
+                // Only filter out very low system GIDs if explicitly requested
                 continue;
             }
             
