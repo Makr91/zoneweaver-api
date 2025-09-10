@@ -338,16 +338,16 @@ export const uploadFile = async (req, res) => {
             });
         }
 
-        const { uploadPath = '/tmp', overwrite = false, uid, gid, mode } = req.body;
+        const { uid, gid, mode } = req.body;
         
-        const result = await saveUploadedFile(req.file, uploadPath, overwrite === 'true');
+        // Multer already saved the file, just get its path
+        const filePath = req.file.path;
+        const filename = req.file.filename;
         
         // Set ownership and permissions if specified
         if (uid !== undefined || gid !== undefined || mode !== undefined) {
-            const filePath = result.path;
-            
             if (uid !== undefined || gid !== undefined) {
-                await fs.promises.chown(filePath, uid || -1, gid || -1);
+                await fs.promises.chown(filePath, parseInt(uid) || -1, parseInt(gid) || -1);
             }
             
             if (mode !== undefined) {
@@ -355,11 +355,11 @@ export const uploadFile = async (req, res) => {
             }
         }
 
-        const itemInfo = await getItemInfo(result.path);
+        const itemInfo = await getItemInfo(filePath);
 
         res.status(201).json({
             success: true,
-            message: `File '${result.filename}' uploaded successfully`,
+            message: `File '${filename}' uploaded successfully`,
             file: itemInfo
         });
 
