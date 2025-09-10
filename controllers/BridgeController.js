@@ -11,6 +11,7 @@ import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
 import yj from "yieldable-json";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -182,7 +183,12 @@ export const getBridges = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting bridges:', error);
+        log.api.error('Error getting bridges', {
+            error: error.message,
+            stack: error.stack,
+            live: live,
+            name: name
+        });
         res.status(500).json({ 
             error: 'Failed to get bridges',
             details: error.message 
@@ -344,7 +350,12 @@ export const getBridgeDetails = async (req, res) => {
         res.json(bridgeData);
 
     } catch (error) {
-        console.error('Error getting bridge details:', error);
+        log.api.error('Error getting bridge details', {
+            error: error.message,
+            stack: error.stack,
+            bridge: bridge,
+            live: live
+        });
         res.status(500).json({ 
             error: 'Failed to get bridge details',
             details: error.message 
@@ -572,7 +583,12 @@ export const createBridge = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating bridge:', error);
+        log.api.error('Error creating bridge', {
+            error: error.message,
+            stack: error.stack,
+            name: name,
+            protection: protection
+        });
         res.status(500).json({ 
             error: 'Failed to create bridge task',
             details: error.message 
@@ -630,26 +646,14 @@ export const createBridge = async (req, res) => {
  *         description: Failed to create bridge deletion task
  */
 export const deleteBridge = async (req, res) => {
-    console.log('🔧 === BRIDGE DELETION REQUEST STARTING ===');
-    console.log('📋 Bridge to delete:', req.params.bridge);
-    console.log('📋 Query parameters:', req.query);
-    
     try {
         const { bridge } = req.params;
         const { force = false, created_by = 'api' } = req.query;
 
-        console.log('✅ Bridge deletion - parsed parameters:');
-        console.log('   - bridge:', bridge);
-        console.log('   - force:', force);
-        console.log('   - created_by:', created_by);
-
         // Check if bridge exists
-        console.log('🔍 Checking if bridge exists...');
         const existsResult = await executeCommand(`pfexec dladm show-bridge ${bridge}`);
-        console.log('📋 Bridge existence check result:', existsResult.success ? 'EXISTS' : 'NOT FOUND');
         
         if (!existsResult.success) {
-            console.log('❌ Bridge not found, returning 404');
             return res.status(404).json({ 
                 error: `Bridge ${bridge} not found`,
                 details: existsResult.error
@@ -659,23 +663,16 @@ export const deleteBridge = async (req, res) => {
         // Check for attached links unless force is specified
         const forceParam = force === 'true' || force === true;
         if (!forceParam) {
-            console.log('🔍 Checking for attached links on bridge...');
             const linksResult = await executeCommand(`pfexec dladm show-bridge ${bridge} -l -p -o link`);
             if (linksResult.success && linksResult.output.trim()) {
                 const attachedLinks = linksResult.output.trim().split('\n');
-                console.log('❌ Links found attached to bridge, cannot delete without force');
                 return res.status(400).json({ 
                     error: `Cannot delete bridge ${bridge}. Links are still attached: ${attachedLinks.join(', ')}`,
                     attached_links: attachedLinks,
                     suggestion: 'Remove links first or use force=true'
                 });
             }
-            console.log('✅ No links attached to bridge');
-        } else {
-            console.log('⚠️  Force deletion enabled - will remove any attached links');
         }
-
-        console.log('✅ Bridge can be deleted, creating deletion task...');
 
         // Create task for bridge deletion
         const task = await Tasks.create({
@@ -695,10 +692,12 @@ export const deleteBridge = async (req, res) => {
             })
         });
 
-        console.log('✅ Bridge deletion task created successfully:');
-        console.log('   - Task ID:', task.id);
-        console.log('   - Bridge:', bridge);
-        console.log('   - Force:', forceParam);
+        log.app.info('Bridge deletion task created', {
+            task_id: task.id,
+            bridge: bridge,
+            force: forceParam,
+            created_by: created_by
+        });
 
         res.status(202).json({
             success: true,
@@ -708,11 +707,12 @@ export const deleteBridge = async (req, res) => {
             force: forceParam
         });
 
-        console.log('✅ Bridge deletion response sent successfully');
-
     } catch (error) {
-        console.error('❌ Error deleting bridge:', error);
-        console.error('❌ Error stack:', error.stack);
+        log.api.error('Error deleting bridge', {
+            error: error.message,
+            stack: error.stack,
+            bridge: req.params.bridge
+        });
         res.status(500).json({ 
             error: 'Failed to create bridge deletion task',
             details: error.message 
@@ -839,7 +839,12 @@ export const modifyBridgeLinks = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error modifying bridge links:', error);
+        log.api.error('Error modifying bridge links', {
+            error: error.message,
+            stack: error.stack,
+            bridge: bridge,
+            operation: operation
+        });
         res.status(500).json({ 
             error: 'Failed to create bridge link modification task',
             details: error.message 

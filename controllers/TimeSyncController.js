@@ -778,7 +778,10 @@ export const getTimeSyncStatus = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting time sync status:', error);
+        log.api.error('Error getting time sync status', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get time sync status',
             details: error.message 

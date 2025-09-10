@@ -159,7 +159,7 @@ class VncSessionManager {
                     resolve(true);
                 } else if (isNewProcess) {
                     // For new processes, be more lenient and assume they're still starting
-                    console.log(`⚠️ Process ${pid} not found in ps output, but treating as running (new process)`);
+                    log.websocket.debug('Process not found in ps output, treating as running (new process)', { pid });
                     resolve(true);
                 } else {
                     resolve(false);
@@ -168,7 +168,7 @@ class VncSessionManager {
             
             ps.on('error', () => {
                 if (isNewProcess) {
-                    console.log(`⚠️ Error checking process ${pid}, but treating as running (new process)`);
+                    log.websocket.debug('Error checking process, treating as running (new process)', { pid });
                     resolve(true);
                 } else {
                     resolve(false);
@@ -180,7 +180,7 @@ class VncSessionManager {
             setTimeout(() => {
                 ps.kill();
                 if (isNewProcess) {
-                    console.log(`⚠️ Timeout checking process ${pid}, but treating as running (new process)`);
+                    log.websocket.debug('Timeout checking process, treating as running (new process)', { pid });
                     resolve(true);
                 } else {
                     resolve(false);
@@ -217,13 +217,19 @@ class VncSessionManager {
             const isNewProcess = sessionAge < 2 * 60 * 1000; // 2 minutes
             
             if (isNewProcess) {
-                console.log(`🕒 Session for ${zoneName} is recent (${Math.round(sessionAge / 1000)}s old), using lenient process check`);
+                log.websocket.debug('Session is recent, using lenient process check', {
+                    zone_name: zoneName,
+                    age_seconds: Math.round(sessionAge / 1000)
+                });
             }
             
             // Check if process is actually running (with leniency for new processes)
             const isRunning = await this.isProcessRunning(pidNum, isNewProcess);
             if (!isRunning) {
-                console.log(`📁 PID file exists but process ${pidNum} is dead, cleaning up ${zoneName}`);
+                log.websocket.debug('PID file exists but process is dead, cleaning up', {
+                    pid: pidNum,
+                    zone_name: zoneName
+                });
                 fs.unlinkSync(pidFile);
                 return null;
             }
@@ -237,7 +243,10 @@ class VncSessionManager {
                 port: parseInt(netport.split(':')[1])
             };
         } catch (error) {
-            console.warn(`Error reading PID file for ${zoneName}:`, error.message);
+            log.websocket.warn('Error reading PID file', {
+                zone_name: zoneName,
+                error: error.message
+            });
             // Clean up corrupted PID file
             try {
                 fs.unlinkSync(pidFile);
@@ -261,7 +270,11 @@ class VncSessionManager {
         const content = `${pid}\n${command}\n${timestamp}\n${zoneName}\n${netport}`;
         
         fs.writeFileSync(pidFile, content);
-        console.log(`📁 Session info written to ${pidFile}`);
+        log.websocket.debug('Session info written to PID file', {
+            pid_file: pidFile,
+            zone_name: zoneName,
+            pid
+        });
     }
     
     /**
@@ -273,12 +286,15 @@ class VncSessionManager {
         const sessionInfo = await this.getSessionInfo(zoneName);
         
         if (!sessionInfo) {
-            console.log(`No active session found for ${zoneName}`);
+            log.websocket.debug('No active session found', { zone_name: zoneName });
             return false;
         }
         
         try {
-            console.log(`🔫 Killing VNC session for ${zoneName} (PID: ${sessionInfo.pid}) using pfexec...`);
+            log.websocket.info('Killing VNC session using pfexec', {
+                zone_name: zoneName,
+                pid: sessionInfo.pid
+            });
             
             // Use pfexec to kill the process immediately with SIGKILL
             const killProcess = spawn('pfexec', ['kill', '-9', sessionInfo.pid.toString()], {
@@ -299,39 +315,53 @@ class VncSessionManager {
                 
                 killProcess.on('exit', (code) => {
                     if (code === 0) {
-                        console.log(`✅ Successfully killed VNC session for ${zoneName} (PID: ${sessionInfo.pid})`);
+                        log.websocket.info('Successfully killed VNC session', {
+                            zone_name: zoneName,
+                            pid: sessionInfo.pid
+                        });
                         
                         // Remove PID file
                         const pidFile = this.getPidFilePath(zoneName);
                         if (fs.existsSync(pidFile)) {
                             fs.unlinkSync(pidFile);
-                            console.log(`📁 Removed PID file for ${zoneName}`);
+                            log.websocket.debug('Removed PID file', { zone_name: zoneName });
                         }
                         
                         resolve(true);
                     } else {
-                        console.error(`❌ Failed to kill VNC session for ${zoneName} (PID: ${sessionInfo.pid}), exit code: ${code}`);
-                        console.error(`   stdout: ${stdout}`);
-                        console.error(`   stderr: ${stderr}`);
+                        log.websocket.error('Failed to kill VNC session', {
+                            zone_name: zoneName,
+                            pid: sessionInfo.pid,
+                            exit_code: code,
+                            stdout,
+                            stderr
+                        });
                         resolve(false);
                     }
                 });
                 
                 killProcess.on('error', (error) => {
-                    console.error(`Error killing session for ${zoneName}:`, error.message);
+                    log.websocket.error('Error killing session', {
+                        zone_name: zoneName,
+                        error: error.message
+                    });
                     resolve(false);
                 });
                 
                 // Timeout after 5 seconds
                 setTimeout(() => {
-                    console.warn(`Timeout killing session for ${zoneName}, assuming success`);
+                    log.websocket.warn('Timeout killing session, assuming success', {
+                        zone_name: zoneName
+                    });
                     killProcess.kill();
                     
                     // Remove PID file anyway
                     const pidFile = this.getPidFilePath(zoneName);
                     if (fs.existsSync(pidFile)) {
                         fs.unlinkSync(pidFile);
-                        console.log(`📁 Removed PID file for ${zoneName} (timeout cleanup)`);
+                        log.websocket.debug('Removed PID file (timeout cleanup)', {
+                            zone_name: zoneName
+                        });
                     }
                     
                     resolve(true);
@@ -339,7 +369,10 @@ class VncSessionManager {
             });
             
         } catch (error) {
-            console.error(`Error killing session for ${zoneName}:`, error.message);
+            log.websocket.error('Error killing session', {
+                zone_name: zoneName,
+                error: error.message
+            });
             return false;
         }
     }
@@ -371,11 +404,13 @@ class VncSessionManager {
             
             if (!sessionInfo) {
                 cleanedCount++;
-                console.log(`Cleaned up stale PID file for ${zoneName}`);
+                log.websocket.info('Cleaned up stale PID file', { zone_name: zoneName });
             }
         }
         
-        console.log(`VNC startup cleanup: ${cleanedCount} stale sessions cleaned`);
+        log.websocket.info('VNC startup cleanup completed', {
+            cleaned_count: cleanedCount
+        });
     }
 }
 
@@ -392,7 +427,7 @@ const connectionTracker = new VncConnectionTracker();
  */
 const isVncEnabledAtBoot = async (zoneName) => {
     try {
-        console.log(`🔍 Checking VNC boot configuration for zone: ${zoneName}`);
+        log.websocket.debug('Checking VNC boot configuration for zone', { zone_name: zoneName });
         
         // Get zone configuration using zadm show
         const configResult = await new Promise((resolve) => {
@@ -443,7 +478,10 @@ const isVncEnabledAtBoot = async (zoneName) => {
         });
         
         if (!configResult.success) {
-            console.warn(`Failed to get zone configuration for ${zoneName}: ${configResult.error}`);
+            log.websocket.warn('Failed to get zone configuration', {
+                zone_name: zoneName,
+                error: configResult.error
+            });
             return false;
         }
         
@@ -458,11 +496,17 @@ const isVncEnabledAtBoot = async (zoneName) => {
         // Check if VNC is enabled: config.vnc.enabled === "on"
         const vncEnabled = config.vnc && config.vnc.enabled === "on";
         
-        console.log(`🔍 Zone ${zoneName} VNC boot setting: ${vncEnabled ? 'ENABLED' : 'DISABLED'}`);
+        log.websocket.debug('Zone VNC boot setting', {
+            zone_name: zoneName,
+            vnc_enabled: vncEnabled
+        });
         return vncEnabled;
         
     } catch (error) {
-        console.warn(`Error checking VNC boot configuration for ${zoneName}:`, error.message);
+        log.websocket.warn('Error checking VNC boot configuration', {
+            zone_name: zoneName,
+            error: error.message
+        });
         return false; // Default to false if we can't determine
     }
 };
@@ -474,21 +518,29 @@ const isVncEnabledAtBoot = async (zoneName) => {
  */
 const performSmartCleanup = async (zoneName, isLastClient) => {
     if (!isLastClient) {
-        console.log(`📊 Other clients still connected to ${zoneName} - no cleanup needed`);
+        log.websocket.debug('Other clients still connected - no cleanup needed', {
+            zone_name: zoneName
+        });
         return;
     }
     
-    console.log(`📊 Last client disconnected from ${zoneName} - checking cleanup eligibility`);
+    log.websocket.debug('Last client disconnected - checking cleanup eligibility', {
+        zone_name: zoneName
+    });
     
     // Check if zone has VNC enabled at boot
     const vncEnabledAtBoot = await isVncEnabledAtBoot(zoneName);
     
     if (vncEnabledAtBoot) {
-        console.log(`🔧 Zone ${zoneName} has VNC enabled at boot - KEEPING session alive for future connections`);
+        log.websocket.info('Zone has VNC enabled at boot - keeping session alive', {
+            zone_name: zoneName
+        });
         return; // Don't cleanup - keep the session running
     }
     
-    console.log(`🧹 Zone ${zoneName} does NOT have VNC enabled at boot - performing cleanup after delay`);
+    log.websocket.info('Zone does NOT have VNC enabled at boot - performing cleanup after delay', {
+        zone_name: zoneName
+    });
     
     // Wait 10 minutes before cleanup to allow reasonable re-access while still freeing resources
     setTimeout(async () => {
@@ -496,7 +548,9 @@ const performSmartCleanup = async (zoneName, isLastClient) => {
         const currentConnections = connectionTracker.getConnectionCount(zoneName);
         
         if (currentConnections === 0) {
-            console.log(`🧹 Performing smart cleanup for ${zoneName} - no boot VNC and no active clients`);
+            log.websocket.info('Performing smart cleanup - no boot VNC and no active clients', {
+                zone_name: zoneName
+            });
             
             const killed = await sessionManager.killSession(zoneName);
             
@@ -507,13 +561,18 @@ const performSmartCleanup = async (zoneName, isLastClient) => {
                         { status: 'stopped' },
                         { where: { zone_name: zoneName, status: 'active' } }
                     );
-                    console.log(`✅ Smart cleanup completed for ${zoneName}`);
+                    log.websocket.info('Smart cleanup completed', { zone_name: zoneName });
                 } catch (dbError) {
-                    console.warn(`Failed to update database during cleanup for ${zoneName}:`, dbError.message);
+                    log.websocket.warn('Failed to update database during cleanup', {
+                        zone_name: zoneName,
+                        error: dbError.message
+                    });
                 }
             }
         } else {
-            console.log(`📊 New clients connected to ${zoneName} during cleanup delay - canceling cleanup`);
+            log.websocket.info('New clients connected during cleanup delay - canceling cleanup', {
+                zone_name: zoneName
+            });
         }
     }, 10 * 60 * 1000); // 10 minute delay for reasonable re-access
 };
@@ -555,8 +614,10 @@ const isPortAvailable = async (port) => {
             );
             
             if (zadmProcesses.length > 0) {
-                console.log(`Port ${port} is not available (zadm process found):`);
-                zadmProcesses.forEach(proc => console.log(`  ${proc.trim()}`));
+                log.websocket.debug('Port is not available (zadm process found)', {
+                    port,
+                    processes: zadmProcesses.map(proc => proc.trim())
+                });
                 resolve(true);
             } else {
                 resolve(false);
@@ -577,11 +638,14 @@ const isPortAvailable = async (port) => {
         });
         
         if (existingSession) {
-            console.log(`Port ${port} is not available (active VNC session in database)`);
+            log.websocket.debug('Port is not available (active VNC session in database)', { port });
             return false;
         }
     } catch (dbError) {
-        console.warn(`Failed to check database for port ${port}:`, dbError.message);
+        log.websocket.warn('Failed to check database for port', {
+            port,
+            error: dbError.message
+        });
     }
     
     // Method 3: Try to bind to the port
@@ -595,11 +659,11 @@ const isPortAvailable = async (port) => {
     });
     
     if (!canBind) {
-        console.log(`Port ${port} is not available (bind test failed)`);
+        log.websocket.debug('Port is not available (bind test failed)', { port });
         return false;
     }
     
-    console.log(`Port ${port} is available`);
+    log.websocket.debug('Port is available', { port });
     return true;
 };
 
@@ -610,7 +674,7 @@ const isPortAvailable = async (port) => {
 const findAvailablePort = async () => {
     for (let port = VNC_PORT_RANGE.start; port <= VNC_PORT_RANGE.end; port++) {
         if (await isPortAvailable(port)) {
-            console.log(`Found available port ${port}`);
+            log.websocket.debug('Found available port', { port });
             return port;
         }
     }
@@ -669,7 +733,7 @@ export const startVncSession = async (req, res) => {
     try {
         const { zoneName } = req.params;
         
-        console.log(`🚀 START VNC REQUEST: ${zoneName}`);
+        log.websocket.info('START VNC REQUEST', { zone_name: zoneName });
         
         if (!validateZoneName(zoneName)) {
             return res.status(400).json({ error: 'Invalid zone name' });
@@ -689,18 +753,24 @@ export const startVncSession = async (req, res) => {
         }
         
         // CHECK FOR EXISTING HEALTHY SESSION FIRST (PERFORMANCE OPTIMIZATION)
-        console.log(`🔍 CHECKING FOR EXISTING HEALTHY SESSION: ${zoneName}`);
+        log.websocket.debug('Checking for existing healthy session', { zone_name: zoneName });
         const existingSessionInfo = await sessionManager.getSessionInfo(zoneName);
         
         if (existingSessionInfo) {
-            console.log(`📋 Found existing session for ${zoneName} (PID: ${existingSessionInfo.pid}, port: ${existingSessionInfo.port})`);
+            log.websocket.debug('Found existing session', {
+                zone_name: zoneName,
+                pid: existingSessionInfo.pid,
+                port: existingSessionInfo.port
+            });
             
             // Test if the session is healthy before killing it
-            console.log(`🩺 Testing VNC connection health on port ${existingSessionInfo.port}...`);
+            log.websocket.debug('Testing VNC connection health', { port: existingSessionInfo.port });
             const isHealthy = await testVncConnection(existingSessionInfo.port, 3); // Quick 3-retry test
             
             if (isHealthy) {
-                console.log(`✅ HEALTHY SESSION FOUND: Reusing existing VNC session for ${zoneName}`);
+                log.websocket.info('HEALTHY SESSION FOUND: Reusing existing VNC session', {
+                    zone_name: zoneName
+                });
                 
                 // Update database last_accessed time for healthy session
                 try {
@@ -709,7 +779,10 @@ export const startVncSession = async (req, res) => {
                         { where: { zone_name: zoneName, status: 'active' } }
                     );
                 } catch (dbError) {
-                    console.warn(`Failed to update database for ${zoneName}:`, dbError.message);
+                    log.websocket.warn('Failed to update database', {
+                        zone_name: zoneName,
+                        error: dbError.message
+                    });
                 }
                 
                 // Get the actual host IP for direct VNC access
@@ -730,14 +803,18 @@ export const startVncSession = async (req, res) => {
                     reused_session: true
                 });
             } else {
-                console.log(`🔧 UNHEALTHY SESSION DETECTED: Session exists but not responding, will clean up and create new one`);
+                log.websocket.info('UNHEALTHY SESSION DETECTED: Session exists but not responding', {
+                    zone_name: zoneName
+                });
             }
         } else {
-            console.log(`📋 No existing session found for ${zoneName}, will create new one`);
+            log.websocket.debug('No existing session found, will create new one', {
+                zone_name: zoneName
+            });
         }
         
         // ONLY KILL IF SESSION IS UNHEALTHY OR MISSING
-        console.log(`🧹 CLEANING UP UNHEALTHY/MISSING SESSIONS: Killing any unhealthy VNC processes for ${zoneName}...`);
+        log.websocket.debug('Cleaning up unhealthy/missing sessions', { zone_name: zoneName });
         await new Promise((resolve) => {
             const ps = spawn('ps', ['auxww'], { stdio: ['ignore', 'pipe', 'ignore'] });
             let output = '';
@@ -756,11 +833,17 @@ export const startVncSession = async (req, res) => {
                 });
                 
                 if (existingProcesses.length > 0) {
-                    console.log(`🔫 FOUND ${existingProcesses.length} UNHEALTHY VNC PROCESSES FOR ${zoneName} - KILLING:`);
+                    log.websocket.info('Found unhealthy VNC processes - killing', {
+                        zone_name: zoneName,
+                        process_count: existingProcesses.length
+                    });
                     existingProcesses.forEach(proc => {
                         const parts = proc.trim().split(/\s+/);
                         const pid = parseInt(parts[1]);
-                        console.log(`  💀 Killing unhealthy PID ${pid}: ${proc.trim()}`);
+                        log.websocket.debug('Killing unhealthy process', {
+                            pid,
+                            process_info: proc.trim()
+                        });
                         try {
                             // Use pfexec to kill root processes
                             const killProcess = spawn('pfexec', ['kill', '-9', pid.toString()], {
@@ -768,27 +851,35 @@ export const startVncSession = async (req, res) => {
                             });
                             killProcess.on('exit', (code) => {
                                 if (code === 0) {
-                                    console.log(`✅ Successfully killed unhealthy VNC process ${pid} using pfexec`);
+                                    log.websocket.debug('Successfully killed unhealthy VNC process', { pid });
                                 } else {
-                                    console.warn(`❌ Failed to kill unhealthy VNC process ${pid} with pfexec (exit code: ${code})`);
+                                    log.websocket.warn('Failed to kill unhealthy VNC process', {
+                                        pid,
+                                        exit_code: code
+                                    });
                                 }
                             });
                         } catch (error) {
-                            console.warn(`Failed to kill unhealthy VNC process ${pid}:`, error.message);
+                            log.websocket.warn('Failed to kill unhealthy VNC process', {
+                                pid,
+                                error: error.message
+                            });
                         }
                     });
                     
                     // Wait for unhealthy processes to die completely
-                    console.log(`⏳ Waiting 5 seconds for unhealthy VNC processes to terminate...`);
+                    log.websocket.debug('Waiting 5 seconds for unhealthy VNC processes to terminate');
                     setTimeout(resolve, 5000);
                 } else {
-                    console.log(`✅ No unhealthy VNC processes found for ${zoneName} - safe to start new session`);
+                    log.websocket.debug('No unhealthy VNC processes found - safe to start new session', {
+                        zone_name: zoneName
+                    });
                     resolve();
                 }
             });
             
             ps.on('error', () => {
-                console.warn('Failed to scan for existing VNC processes');
+                log.websocket.warn('Failed to scan for existing VNC processes');
                 resolve();
             });
         });
@@ -797,7 +888,11 @@ export const startVncSession = async (req, res) => {
         const webPort = await findAvailablePort();
         const netport = `0.0.0.0:${webPort}`;
         
-        console.log(`🚀 SPAWNING VNC PROCESS: pfexec zadm vnc -w ${netport} ${zoneName}`);
+        log.websocket.info('Spawning VNC process', {
+            command: `pfexec zadm vnc -w ${netport} ${zoneName}`,
+            zone_name: zoneName,
+            port: webPort
+        });
         
         // Spawn VNC process (detached like Ruby)
         const vncProcess = spawn('pfexec', ['zadm', 'vnc', '-w', netport, zoneName], {
@@ -805,7 +900,10 @@ export const startVncSession = async (req, res) => {
             stdio: ['ignore', 'pipe', 'pipe']
         });
         
-        console.log(`📊 VNC PROCESS SPAWNED: PID=${vncProcess.pid}`);
+        log.websocket.info('VNC process spawned', {
+            pid: vncProcess.pid,
+            zone_name: zoneName
+        });
         
         // Write PID file immediately (Ruby approach)
         sessionManager.writeSessionInfo(zoneName, vncProcess.pid, 'webvnc', netport);
@@ -816,24 +914,31 @@ export const startVncSession = async (req, res) => {
         
         vncProcess.stdout.on('data', (data) => {
             stdout += data.toString();
-            console.log(`VNC stdout: ${data.toString().trim()}`);
+            log.websocket.debug('VNC stdout', { data: data.toString().trim() });
         });
         
         vncProcess.stderr.on('data', (data) => {
             stderr += data.toString();
-            console.log(`VNC stderr: ${data.toString().trim()}`);
+            log.websocket.debug('VNC stderr', { data: data.toString().trim() });
         });
         
         vncProcess.on('exit', (code, signal) => {
-            console.log(`❌ VNC process ${vncProcess.pid} for ${zoneName} exited with code ${code}, signal ${signal}`);
-            console.log(`   stdout: ${stdout}`);
-            console.log(`   stderr: ${stderr}`);
+            log.websocket.error('VNC process exited', {
+                pid: vncProcess.pid,
+                zone_name: zoneName,
+                exit_code: code,
+                signal,
+                stdout,
+                stderr
+            });
             
             // Clean up PID file if process exits
             const pidFile = sessionManager.getPidFilePath(zoneName);
             if (fs.existsSync(pidFile)) {
                 fs.unlinkSync(pidFile);
-                console.log(`📁 Cleaned up PID file for exited process ${vncProcess.pid}`);
+                log.websocket.debug('Cleaned up PID file for exited process', {
+                    pid: vncProcess.pid
+                });
             }
         });
         
@@ -845,8 +950,10 @@ export const startVncSession = async (req, res) => {
         
         // Check if process failed (exited with error)
         if (vncProcess.exitCode !== null && vncProcess.exitCode !== 0) {
-            console.error(`VNC process failed with exit code ${vncProcess.exitCode}`);
-            console.error(`VNC stderr: ${stderr}`);
+            log.websocket.error('VNC process failed', {
+                exit_code: vncProcess.exitCode,
+                stderr
+            });
             
             // Clean up PID file
             sessionManager.killSession(zoneName);
@@ -859,38 +966,48 @@ export const startVncSession = async (req, res) => {
         }
         
         // Test if VNC is responding
-        console.log(`Testing VNC connection on port ${webPort}...`);
+        log.websocket.debug('Testing VNC connection', { port: webPort });
         const isReady = await testVncConnection(webPort, 15);
         
         if (!isReady) {
-            console.error(`VNC server not responding on port ${webPort}`);
+            log.websocket.error('VNC server not responding', { port: webPort });
             // Clean up
             sessionManager.killSession(zoneName);
             throw new Error(`VNC server failed to start on port ${webPort}`);
         }
         
-        console.log(`✅ VNC session started and verified for zone ${zoneName} on port ${webPort} (PID: ${vncProcess.pid})`);
+        log.websocket.info('VNC session started and verified', {
+            zone_name: zoneName,
+            port: webPort,
+            pid: vncProcess.pid
+        });
         
         // CRITICAL: Final process validation after successful connection test
-        console.log(`🔍 FINAL VALIDATION: Checking if process ${vncProcess.pid} is still alive after connection test...`);
+        log.websocket.debug('Final validation: Checking if process is still alive', {
+            pid: vncProcess.pid
+        });
         await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 more seconds
         
         // Double-check if process is still running using system process list
         const isStillRunning = await sessionManager.isProcessRunning(vncProcess.pid);
         if (!isStillRunning) {
-            console.error(`❌ PROCESS DIED IMMEDIATELY: VNC process ${vncProcess.pid} died right after successful connection test!`);
-            console.error(`   stdout: ${stdout}`);
-            console.error(`   stderr: ${stderr}`);
-            console.error(`   exit code: ${vncProcess.exitCode}`);
-            console.error(`   killed: ${vncProcess.killed}`);
-            
-            // Check if there are any system logs or additional info
-            console.error(`   This suggests the VNC process may be designed to exit quickly or there's a configuration issue`);
+            log.websocket.error('PROCESS DIED IMMEDIATELY', {
+                pid: vncProcess.pid,
+                zone_name: zoneName,
+                stdout,
+                stderr,
+                exit_code: vncProcess.exitCode,
+                killed: vncProcess.killed,
+                message: 'VNC process died right after successful connection test'
+            });
             
             throw new Error(`VNC process died immediately after successful startup - check zadm vnc configuration for zone ${zoneName}`);
         }
         
-        console.log(`✅ FINAL VALIDATION PASSED: Process ${vncProcess.pid} is still running and serving on port ${webPort}`);
+        log.websocket.info('Final validation passed', {
+            pid: vncProcess.pid,
+            port: webPort
+        });
         
         // NOTE: Cache warming removed - frontend now uses react-vnc with direct websockify calls
         
@@ -900,7 +1017,10 @@ export const startVncSession = async (req, res) => {
                 where: { zone_name: zoneName }
             });
         } catch (cleanupError) {
-            console.warn(`Failed to cleanup existing database entries for ${zoneName}:`, cleanupError.message);
+            log.websocket.warn('Failed to cleanup existing database entries', {
+                zone_name: zoneName,
+                error: cleanupError.message
+            });
         }
         
         // Update database with session info
@@ -930,7 +1050,11 @@ export const startVncSession = async (req, res) => {
         });
         
     } catch (error) {
-        console.error(`❌ VNC START ERROR: ${req.params.zoneName} - ${error.message}`);
+        log.websocket.error('VNC START ERROR', {
+            zone_name: req.params.zoneName,
+            error: error.message,
+            stack: error.stack
+        });
         
         res.status(500).json({ 
             error: 'Failed to start VNC session',
@@ -981,7 +1105,9 @@ export const getVncSessionInfo = async (req, res) => {
         
         if (!sessionInfo) {
             // Double-check by looking for any running VNC process for this zone
-            console.log(`⚠️  No PID file found for ${zoneName}, checking for running VNC processes...`);
+            log.websocket.debug('No PID file found, checking for running VNC processes', {
+                zone_name: zoneName
+            });
             
             const runningVncProcess = await new Promise((resolve) => {
                 const ps = spawn('ps', ['auxww'], { stdio: ['ignore', 'pipe', 'ignore'] });
@@ -1006,7 +1132,11 @@ export const getVncSessionInfo = async (req, res) => {
                         const port = portMatch ? parseInt(portMatch[1]) : null;
                         
                         if (port) {
-                            console.log(`🔍 Found orphaned VNC process for ${zoneName}: PID=${pid}, port=${port}`);
+                            log.websocket.info('Found orphaned VNC process', {
+                                zone_name: zoneName,
+                                pid,
+                                port
+                            });
                             resolve({ pid, port, zoneName });
                         } else {
                             resolve(null);
@@ -1029,7 +1159,11 @@ export const getVncSessionInfo = async (req, res) => {
                     netport
                 );
                 
-                console.log(`📁 Recreated PID file for orphaned VNC session: ${zoneName} (PID: ${runningVncProcess.pid}, port: ${runningVncProcess.port})`);
+                log.websocket.info('Recreated PID file for orphaned VNC session', {
+                    zone_name: zoneName,
+                    pid: runningVncProcess.pid,
+                    port: runningVncProcess.port
+                });
                 
                 // Update database
                 try {
@@ -1044,7 +1178,9 @@ export const getVncSessionInfo = async (req, res) => {
                         last_accessed: new Date()
                     });
                 } catch (dbError) {
-                    console.warn(`Failed to update database for orphaned session:`, dbError.message);
+                    log.websocket.warn('Failed to update database for orphaned session', {
+                        error: dbError.message
+                    });
                 }
                 
                 // Get the actual host IP for direct VNC access
@@ -1075,7 +1211,11 @@ export const getVncSessionInfo = async (req, res) => {
             });
         }
         
-        console.log(`✅ VNC INFO: ${zoneName} session active (PID: ${sessionInfo.pid}, port: ${sessionInfo.port})`);
+        log.websocket.info('VNC session info retrieved', {
+            zone_name: zoneName,
+            pid: sessionInfo.pid,
+            port: sessionInfo.port
+        });
         
         // Update database last_accessed time
         try {
@@ -1084,7 +1224,10 @@ export const getVncSessionInfo = async (req, res) => {
                 { where: { zone_name: zoneName, status: 'active' } }
             );
         } catch (dbError) {
-            console.warn(`Failed to update database for ${zoneName}:`, dbError.message);
+            log.websocket.warn('Failed to update database', {
+                zone_name: zoneName,
+                error: dbError.message
+            });
         }
         
         // Get the actual host IP for direct VNC access
@@ -1107,7 +1250,10 @@ export const getVncSessionInfo = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting VNC session info:', error);
+        log.websocket.error('Error getting VNC session info', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to retrieve VNC session information',
             details: error.message
@@ -1161,11 +1307,16 @@ export const stopVncSession = async (req, res) => {
                 { where: { zone_name: zoneName, status: 'active' } }
             );
         } catch (dbError) {
-            console.warn(`Failed to update database for ${zoneName}:`, dbError.message);
+            log.websocket.warn('Failed to update database', {
+                zone_name: zoneName,
+                error: dbError.message
+            });
         }
         
         
-        console.log(`✅ VNC session stopped successfully for zone ${zoneName}`);
+        log.websocket.info('VNC session stopped successfully', {
+            zone_name: zoneName
+        });
         
         res.json({
             success: true,
@@ -1174,7 +1325,10 @@ export const stopVncSession = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error stopping VNC session:', error);
+        log.websocket.error('Error stopping VNC session', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to stop VNC session' });
     }
 };
@@ -1206,10 +1360,15 @@ export const cleanupVncSessions = async () => {
                 // Update session status
                 await session.update({ status: 'stopped' });
                 cleanedCount++;
-                console.log(`Cleaned up stale VNC session for zone ${session.zone_name}`);
+                log.websocket.info('Cleaned up stale VNC session', {
+                    zone_name: session.zone_name
+                });
                 
             } catch (error) {
-                console.error(`Error cleaning up VNC session ${session.id}:`, error);
+                log.websocket.error('Error cleaning up VNC session', {
+                    session_id: session.id,
+                    error: error.message
+                });
             }
         }
         
@@ -1222,16 +1381,24 @@ export const cleanupVncSessions = async () => {
             try {
                 await session.destroy();
                 cleanedCount++;
-                console.log(`Deleted stopped VNC session for zone ${session.zone_name}`);
+                log.websocket.debug('Deleted stopped VNC session', {
+                    zone_name: session.zone_name
+                });
             } catch (error) {
-                console.error(`Error deleting stopped VNC session ${session.id}:`, error);
+                log.websocket.error('Error deleting stopped VNC session', {
+                    session_id: session.id,
+                    error: error.message
+                });
             }
         }
         
         return cleanedCount;
         
     } catch (error) {
-        console.error('Error during VNC session cleanup:', error);
+        log.websocket.error('Error during VNC session cleanup', {
+            error: error.message,
+            stack: error.stack
+        });
         return 0;
     }
 };
@@ -1280,7 +1447,10 @@ export const listVncSessions = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error listing VNC sessions:', error);
+        log.websocket.error('Error listing VNC sessions', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to retrieve VNC sessions' });
     }
 };
@@ -1290,7 +1460,7 @@ export const listVncSessions = async (req, res) => {
  */
 const cleanupOrphanedVncProcesses = async () => {
     try {
-        console.log('🧹 Scanning for orphaned VNC processes...');
+        log.websocket.debug('Scanning for orphaned VNC processes');
         
         // Get all running zadm vnc processes using ps auxww for full command lines
         const getAllZadmProcesses = () => new Promise((resolve) => {
@@ -1332,7 +1502,9 @@ const cleanupOrphanedVncProcesses = async () => {
         });
         
         const runningProcesses = await getAllZadmProcesses();
-        console.log(`Found ${runningProcesses.length} running zadm VNC processes`);
+        log.websocket.debug('Found running zadm VNC processes', {
+            process_count: runningProcesses.length
+        });
         
         if (runningProcesses.length === 0) {
             return 0;
@@ -1362,16 +1534,24 @@ const cleanupOrphanedVncProcesses = async () => {
                 trackedZones.add(session.zone_name);
             }
         } catch (dbError) {
-            console.warn('Failed to check database for active sessions:', dbError.message);
+            log.websocket.warn('Failed to check database for active sessions', {
+                error: dbError.message
+            });
         }
         
-        console.log(`Tracked zones with VNC sessions: ${Array.from(trackedZones).join(', ')}`);
+        log.websocket.debug('Tracked zones with VNC sessions', {
+            zones: Array.from(trackedZones)
+        });
         
         // Kill orphaned processes - be more aggressive since VM can only have one VNC session
         let killedCount = 0;
         for (const proc of runningProcesses) {
             if (!trackedZones.has(proc.zoneName)) {
-                console.log(`🔫 KILLING ORPHANED VNC PROCESS for zone ${proc.zoneName} (PID: ${proc.pid}, port: ${proc.port})`);
+                log.websocket.info('Killing orphaned VNC process', {
+                    zone_name: proc.zoneName,
+                    pid: proc.pid,
+                    port: proc.port
+                });
                 try {
                     // Use pfexec to kill root orphaned VNC processes
                     const killProcess = spawn('pfexec', ['kill', '-9', proc.pid.toString()], {
@@ -1379,25 +1559,42 @@ const cleanupOrphanedVncProcesses = async () => {
                     });
                     killProcess.on('exit', (code) => {
                         if (code === 0) {
-                            console.log(`✅ Successfully killed orphaned VNC process ${proc.pid} using pfexec`);
+                            log.websocket.info('Successfully killed orphaned VNC process', {
+                                pid: proc.pid
+                            });
                         } else {
-                            console.warn(`❌ Failed to kill orphaned VNC process ${proc.pid} with pfexec (exit code: ${code})`);
+                            log.websocket.warn('Failed to kill orphaned VNC process', {
+                                pid: proc.pid,
+                                exit_code: code
+                            });
                         }
                     });
                     killedCount++;
                 } catch (error) {
-                    console.warn(`Failed to kill orphaned VNC process ${proc.pid}:`, error.message);
+                    log.websocket.warn('Failed to kill orphaned VNC process', {
+                        pid: proc.pid,
+                        error: error.message
+                    });
                 }
             } else {
-                console.log(`✅ VNC process for zone ${proc.zoneName} is properly tracked (PID: ${proc.pid}, port: ${proc.port})`);
+                log.websocket.debug('VNC process is properly tracked', {
+                    zone_name: proc.zoneName,
+                    pid: proc.pid,
+                    port: proc.port
+                });
             }
         }
         
-        console.log(`Killed ${killedCount} orphaned VNC processes`);
+        log.websocket.info('Orphaned VNC process cleanup complete', {
+            killed_count: killedCount
+        });
         return killedCount;
         
     } catch (error) {
-        console.error('Error cleaning up orphaned VNC processes:', error);
+        log.websocket.error('Error cleaning up orphaned VNC processes', {
+            error: error.message,
+            stack: error.stack
+        });
         return 0;
     }
 };
@@ -1407,7 +1604,7 @@ const cleanupOrphanedVncProcesses = async () => {
  */
 export const cleanupStaleSessionsOnStartup = async () => {
     try {
-        console.log('Cleaning up stale VNC sessions from previous backend instance...');
+        log.websocket.info('Cleaning up stale VNC sessions from previous backend instance');
         
         // Step 1: Clean up orphaned VNC processes first
         const orphanedCount = await cleanupOrphanedVncProcesses();
@@ -1431,24 +1628,38 @@ export const cleanupStaleSessionsOnStartup = async () => {
                     // Port not responding, mark session as stopped
                     await session.update({ status: 'stopped' });
                     cleanedCount++;
-                    console.log(`Cleaned up stale VNC session for zone ${session.zone_name} (port ${session.web_port})`);
+                    log.websocket.info('Cleaned up stale VNC session', {
+                        zone_name: session.zone_name,
+                        port: session.web_port
+                    });
                 } else {
-                    console.log(`VNC session for zone ${session.zone_name} is still active (port ${session.web_port})`);
+                    log.websocket.debug('VNC session is still active', {
+                        zone_name: session.zone_name,
+                        port: session.web_port
+                    });
                 }
                 
             } catch (error) {
                 // If we can't test the connection, assume it's stale and clean it up
                 await session.update({ status: 'stopped' });
                 cleanedCount++;
-                console.log(`Cleaned up stale VNC session for zone ${session.zone_name} (error testing port)`);
+                log.websocket.info('Cleaned up stale VNC session (error testing port)', {
+                    zone_name: session.zone_name
+                });
             }
         }
         
-        console.log(`Startup cleanup completed: ${cleanedCount} stale sessions cleaned, ${orphanedCount} orphaned processes killed`);
+        log.websocket.info('Startup cleanup completed', {
+            stale_sessions_cleaned: cleanedCount,
+            orphaned_processes_killed: orphanedCount
+        });
         return cleanedCount + orphanedCount;
         
     } catch (error) {
-        console.error('Error during startup VNC session cleanup:', error);
+        log.websocket.error('Error during startup VNC session cleanup', {
+            error: error.message,
+            stack: error.stack
+        });
         return 0;
     }
 };
@@ -1485,7 +1696,7 @@ export const serveVncConsole = async (req, res) => {
     try {
         const { zoneName } = req.params;
         
-        console.log(`📄 VNC CONSOLE REQUEST: ${zoneName}`);
+        log.websocket.debug('VNC console request', { zone_name: zoneName });
         
         if (!validateZoneName(zoneName)) {
             return res.status(400).json({ error: 'Invalid zone name' });
@@ -1494,7 +1705,9 @@ export const serveVncConsole = async (req, res) => {
         // Get active VNC session info
         const sessionInfo = await sessionManager.getSessionInfo(zoneName);
         if (!sessionInfo) {
-            console.log(`❌ No active VNC session found for zone: ${zoneName}`);
+            log.websocket.warn('No active VNC session found for console request', {
+                zone_name: zoneName
+            });
             return res.status(404).json({ 
                 error: 'No active VNC session found',
                 zone_name: zoneName 
@@ -1503,13 +1716,16 @@ export const serveVncConsole = async (req, res) => {
         
         // Proxy to actual VNC server
         const vncUrl = `http://127.0.0.1:${sessionInfo.port}/`;
-        console.log(`🔗 Proxying VNC console from: ${vncUrl}`);
+        log.websocket.debug('Proxying VNC console', { vnc_url: vncUrl });
         
         try {
             const response = await fetch(vncUrl);
             
             if (!response.ok) {
-                console.error(`❌ VNC server responded with status ${response.status}`);
+                log.websocket.error('VNC server responded with error', {
+                    status: response.status,
+                    vnc_port: sessionInfo.port
+                });
                 return res.status(502).json({ 
                     error: 'VNC server not responding',
                     vnc_port: sessionInfo.port,
@@ -1526,7 +1742,7 @@ export const serveVncConsole = async (req, res) => {
             });
             
             // Convert Web ReadableStream to Node.js stream and pipe
-            console.log(`✅ VNC console content streaming for ${zoneName}`);
+            log.websocket.debug('VNC console content streaming', { zone_name: zoneName });
             
             // For Node.js 18+ native fetch, response.body is a Web ReadableStream
             // Convert to Node.js Readable stream using Readable.fromWeb()
@@ -1535,7 +1751,10 @@ export const serveVncConsole = async (req, res) => {
             nodeStream.pipe(res);
             
         } catch (fetchError) {
-            console.error(`❌ Failed to fetch VNC content from ${vncUrl}:`, fetchError.message);
+            log.websocket.error('Failed to fetch VNC content', {
+                vnc_url: vncUrl,
+                error: fetchError.message
+            });
             res.status(502).json({ 
                 error: 'Failed to connect to VNC server',
                 details: fetchError.message,
@@ -1544,7 +1763,11 @@ export const serveVncConsole = async (req, res) => {
         }
         
     } catch (error) {
-        console.error(`❌ VNC CONSOLE ERROR: ${req.params.zoneName} - ${error.message}`);
+        log.websocket.error('VNC console error', {
+            zone_name: req.params.zoneName,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to serve VNC console',
             details: error.message
@@ -1585,13 +1808,19 @@ export const proxyVncContent = async (req, res) => {
             return res.status(400).json({ error: 'Invalid zone name' });
         }
         
-        console.log(`📁 VNC ASSET REQUEST: ${zoneName} → ${assetPath}`);
+        log.websocket.debug('VNC asset request', {
+            zone_name: zoneName,
+            asset_path: assetPath
+        });
         
         // NOTE: Simplified asset proxy - no caching since react-vnc bypasses most asset requests
         // Get active VNC session info
         const sessionInfo = await sessionManager.getSessionInfo(zoneName);
         if (!sessionInfo) {
-            console.log(`❌ No active VNC session found for asset request: ${zoneName}`);
+            log.websocket.warn('No active VNC session found for asset request', {
+                zone_name: zoneName,
+                asset_path: assetPath
+            });
             return res.status(404).json({ 
                 error: 'No active VNC session found',
                 zone_name: zoneName,
@@ -1601,13 +1830,17 @@ export const proxyVncContent = async (req, res) => {
         
         // Build VNC server asset URL and proxy directly
         const vncUrl = `http://127.0.0.1:${sessionInfo.port}/${assetPath}`;
-        console.log(`🔗 Proxying VNC asset from: ${vncUrl}`);
+        log.websocket.debug('Proxying VNC asset', { vnc_url: vncUrl });
         
         try {
             const response = await fetch(vncUrl);
             
             if (!response.ok) {
-                console.warn(`⚠️ VNC asset not found: ${assetPath} (status ${response.status})`);
+                log.websocket.warn('VNC asset not found', {
+                    asset_path: assetPath,
+                    status: response.status,
+                    vnc_port: sessionInfo.port
+                });
                 return res.status(response.status).json({ 
                     error: 'VNC asset not found',
                     asset_path: assetPath,
@@ -1632,7 +1865,11 @@ export const proxyVncContent = async (req, res) => {
             nodeStream.pipe(res);
             
         } catch (fetchError) {
-            console.error(`❌ Failed to fetch VNC asset from ${vncUrl}:`, fetchError.message);
+            log.websocket.error('Failed to fetch VNC asset', {
+                vnc_url: vncUrl,
+                error: fetchError.message,
+                asset_path: assetPath
+            });
             res.status(502).json({ 
                 error: 'Failed to connect to VNC server for asset',
                 details: fetchError.message,
@@ -1642,7 +1879,12 @@ export const proxyVncContent = async (req, res) => {
         }
         
     } catch (error) {
-        console.error(`❌ VNC ASSET ERROR: ${req.params.zoneName} - ${error.message}`);
+        log.websocket.error('VNC asset error', {
+            zone_name: req.params.zoneName,
+            error: error.message,
+            stack: error.stack,
+            asset_path: assetPath
+        });
         res.status(500).json({ 
             error: 'Failed to proxy VNC asset',
             details: error.message
@@ -1659,5 +1901,5 @@ export const startVncSessionCleanup = () => {
     
     // Clean up stale sessions every 5 minutes
     setInterval(cleanupVncSessions, 5 * 60 * 1000);
-    console.log('VNC session cleanup started');
+    log.websocket.info('VNC session cleanup started');
 };

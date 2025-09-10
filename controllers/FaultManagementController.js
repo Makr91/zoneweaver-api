@@ -9,6 +9,7 @@ import { exec } from "child_process";
 import util from "util";
 import os from "os";
 import config from "../config/ConfigLoader.js";
+import { log } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -98,7 +99,7 @@ export const getFaults = async (req, res) => {
         
         if (useCache) {
             faultData = cachedEntry.data;
-            console.log(`🔍 Fault Management Debug - Using cached data for: ${cacheKey}`);
+            log.monitoring.debug('Fault Management - Using cached data', { cache_key: cacheKey });
         } else {
             // Build fmadm command with options
             let command = 'pfexec fmadm faulty';
@@ -106,20 +107,26 @@ export const getFaults = async (req, res) => {
             if (summary) command += ' -s';
             if (limit && limit < 50) command += ` -n ${limit}`;
 
-            console.log(`🔍 Fault Management Debug - Parameters: all=${all}, summary=${summary}, limit=${limit}`);
-            console.log(`🔍 Fault Management Debug - Command: ${command}`);
-            console.log(`🔍 Fault Management Debug - Cache key: ${cacheKey}`);
+            log.monitoring.debug('Fault Management - Parameters', {
+                all,
+                summary,
+                limit,
+                command,
+                cache_key: cacheKey
+            });
 
             const { stdout, stderr } = await execProm(command, { 
                 timeout: faultConfig.timeout * 1000 
             });
 
             if (stderr && stderr.trim()) {
-                console.warn('fmadm faulty stderr:', stderr);
+                log.monitoring.warn('fmadm faulty stderr', { stderr });
             }
 
-            console.log(`🔍 Fault Management Debug - Raw output length: ${stdout.length} chars`);
-            console.log(`🔍 Fault Management Debug - First 200 chars: ${stdout.substring(0, 200)}`);
+            log.monitoring.debug('Fault Management - Raw output', {
+                output_length: stdout.length,
+                first_200_chars: stdout.substring(0, 200)
+            });
 
             faultData = {
                 raw_output: stdout,
@@ -128,7 +135,9 @@ export const getFaults = async (req, res) => {
                 timestamp: new Date().toISOString()
             };
 
-            console.log(`🔍 Fault Management Debug - Parsed ${faultData.parsed_faults.length} faults`);
+            log.monitoring.debug('Fault Management - Parsed faults', {
+                fault_count: faultData.parsed_faults.length
+            });
 
             // Update cache for this parameter combination
             faultCache.set(cacheKey, {
@@ -150,7 +159,10 @@ export const getFaults = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting system faults:', error);
+        log.api.error('Error getting system faults', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get system faults',
             details: error.message 
@@ -197,7 +209,10 @@ export const getFaultDetails = async (req, res) => {
         });
 
         if (stderr && stderr.trim()) {
-            console.warn(`fmadm faulty stderr for ${uuid}:`, stderr);
+            log.monitoring.warn('fmadm faulty stderr for UUID', {
+                uuid,
+                stderr
+            });
         }
 
         if (!stdout.trim()) {
@@ -216,7 +231,11 @@ export const getFaultDetails = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`Error getting fault details for ${req.params.uuid}:`, error);
+        log.api.error('Error getting fault details', {
+            uuid: req.params.uuid,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get fault details',
             details: error.message 
@@ -253,7 +272,7 @@ export const getFaultManagerConfig = async (req, res) => {
         });
 
         if (stderr && stderr.trim()) {
-            console.warn('fmadm config stderr:', stderr);
+            log.monitoring.warn('fmadm config stderr', { stderr });
         }
 
         const parsedConfig = parseFaultManagerConfig(stdout);
@@ -265,7 +284,10 @@ export const getFaultManagerConfig = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting fault manager configuration:', error);
+        log.api.error('Error getting fault manager configuration', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get fault manager configuration',
             details: error.message 
@@ -341,7 +363,10 @@ export const acquitFault = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error acquitting fault:', error);
+        log.api.error('Error acquitting fault', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to acquit fault',
             details: error.message 
@@ -409,7 +434,10 @@ export const markRepaired = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error marking resource as repaired:', error);
+        log.api.error('Error marking resource as repaired', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to mark resource as repaired',
             details: error.message 
@@ -477,7 +505,10 @@ export const markReplaced = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error marking resource as replaced:', error);
+        log.api.error('Error marking resource as replaced', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to mark resource as replaced',
             details: error.message 
@@ -535,7 +566,10 @@ export const getFaultStatusForHealth = async () => {
                     timestamp: now
                 });
             } catch (error) {
-                console.error('Error refreshing fault cache for health check:', error);
+                log.monitoring.error('Error refreshing fault cache for health check', {
+                    error: error.message,
+                    stack: error.stack
+                });
                 return {
                     hasFaults: false,
                     faultCount: 0,
@@ -557,7 +591,10 @@ export const getFaultStatusForHealth = async () => {
         };
 
     } catch (error) {
-        console.error('Error getting fault status for health check:', error);
+        log.monitoring.error('Error getting fault status for health check', {
+            error: error.message,
+            stack: error.stack
+        });
         return {
             hasFaults: false,
             faultCount: 0,
@@ -732,13 +769,15 @@ function parseFaultLine(line) {
  * @returns {Object|null} Parsed fault object or null
  */
 function parseDetailedFault(section) {
-    console.log('🔍 Detail parsing - Section length:', section.length);
-    console.log('🔍 Detail parsing - Full section:', JSON.stringify(section));
+    log.monitoring.debug('Detail parsing - Section', {
+        section_length: section.length,
+        full_section: JSON.stringify(section)
+    });
     
     const fault = { format: 'detailed' };
     const lines = section.split('\n');
     
-    console.log('🔍 Detail parsing - Total lines:', lines.length);
+    log.monitoring.debug('Detail parsing - Total lines', { line_count: lines.length });
     
     let currentField = null;
     let currentValue = '';
@@ -747,16 +786,23 @@ function parseDetailedFault(section) {
         const line = lines[i];
         const trimmed = line.trim();
 
-        console.log(`🔍 Line ${i}: "${line}"`);
-        console.log(`🔍 Line ${i} trimmed: "${trimmed}"`);
+        log.monitoring.debug(`Detail parsing - Line ${i}`, {
+            line,
+            trimmed
+        });
 
         // Skip empty lines
         if (!trimmed) {
-            console.log(`🔍 Line ${i}: Empty line - saving current field: ${currentField}`);
+            log.monitoring.debug(`Line ${i}: Empty line - saving current field`, {
+                current_field: currentField
+            });
             // Save current field before skipping
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
-                console.log(`🔍 Saved field: ${currentField} = ${currentValue.trim()}`);
+                log.monitoring.debug('Saved field', {
+                    field: currentField,
+                    value: currentValue.trim()
+                });
                 currentField = null;
                 currentValue = '';
             }
@@ -765,12 +811,15 @@ function parseDetailedFault(section) {
 
         // Check if this line starts a new field (contains colon not at the start of indented line)
         if (line.match(/^[A-Z]/) && line.includes(':')) {
-            console.log(`🔍 Line ${i}: Detected field line`);
+            log.monitoring.debug(`Line ${i}: Detected field line`);
             
             // Save previous field
             if (currentField && currentValue) {
                 fault[currentField] = currentValue.trim();
-                console.log(`🔍 Saved previous field: ${currentField} = ${currentValue.trim()}`);
+                log.monitoring.debug('Saved previous field', {
+                    field: currentField,
+                    value: currentValue.trim()
+                });
             }
 
             // Parse new field
@@ -778,74 +827,86 @@ function parseDetailedFault(section) {
             const fieldName = line.substring(0, colonIndex).trim();
             let fieldValue = line.substring(colonIndex + 1).trim();
 
-            console.log(`🔍 Field name: "${fieldName}"`);
-            console.log(`🔍 Field value: "${fieldValue}"`);
+            log.monitoring.debug('Field parsing', {
+                field_name: fieldName,
+                field_value: fieldValue
+            });
 
             // Handle special cases
             if (fieldName === 'Host') {
                 currentField = 'host';
                 currentValue = fieldValue;
-                console.log(`🔍 Set host field: ${fieldValue}`);
+                log.monitoring.debug('Set host field', { value: fieldValue });
             } else if (fieldName === 'Platform') {
                 // Handle tab-separated fields on same line
                 currentField = 'platform';
                 currentValue = fieldValue.split('\t')[0].trim(); // Take only part before tab
-                console.log(`🔍 Set platform field: ${currentValue}`);
+                log.monitoring.debug('Set platform field', { value: currentValue });
             } else if (fieldName === 'Fault class') {
                 currentField = 'faultClass';
                 currentValue = fieldValue;
-                console.log(`🔍 Set faultClass field: ${fieldValue}`);
+                log.monitoring.debug('Set faultClass field', { value: fieldValue });
             } else if (fieldName === 'Affects') {
                 currentField = 'affects';
                 currentValue = fieldValue;
-                console.log(`🔍 Set affects field: ${fieldValue}`);
+                log.monitoring.debug('Set affects field', { value: fieldValue });
             } else if (fieldName === 'Problem in') {
                 currentField = 'problemIn';
                 currentValue = fieldValue;
-                console.log(`🔍 Set problemIn field: ${fieldValue}`);
+                log.monitoring.debug('Set problemIn field', { value: fieldValue });
             } else if (fieldName === 'Description') {
                 currentField = 'description';
                 currentValue = fieldValue;
-                console.log(`🔍 Set description field: ${fieldValue}`);
+                log.monitoring.debug('Set description field', { value: fieldValue });
             } else if (fieldName === 'Response') {
                 currentField = 'response';
                 currentValue = fieldValue;
-                console.log(`🔍 Set response field: ${fieldValue}`);
+                log.monitoring.debug('Set response field', { value: fieldValue });
             } else if (fieldName === 'Impact') {
                 currentField = 'impact';
                 currentValue = fieldValue;
-                console.log(`🔍 Set impact field: ${fieldValue}`);
+                log.monitoring.debug('Set impact field', { value: fieldValue });
             } else if (fieldName === 'Action') {
                 currentField = 'action';
                 currentValue = fieldValue;
-                console.log(`🔍 Set action field: ${fieldValue}`);
+                log.monitoring.debug('Set action field', { value: fieldValue });
             } else {
                 // Skip unknown fields like Product_sn, Chassis_id
-                console.log(`🔍 Skipping unknown field: ${fieldName}`);
+                log.monitoring.debug('Skipping unknown field', { field_name: fieldName });
                 currentField = null;
                 currentValue = '';
             }
         } else if (currentField && trimmed) {
-            console.log(`🔍 Line ${i}: Continuation line for field: ${currentField}`);
+            log.monitoring.debug(`Line ${i}: Continuation line`, {
+                field: currentField
+            });
             // This is a continuation line for the current field
             if (currentValue) {
                 currentValue += ' ' + trimmed;
             } else {
                 currentValue = trimmed;
             }
-            console.log(`🔍 Updated ${currentField} value: ${currentValue}`);
+            log.monitoring.debug('Updated field value', {
+                field: currentField,
+                value: currentValue
+            });
         } else {
-            console.log(`🔍 Line ${i}: Ignored (not field start, no current field, or empty)`);
+            log.monitoring.debug(`Line ${i}: Ignored line`);
         }
     }
 
     // Save the last field
     if (currentField && currentValue) {
         fault[currentField] = currentValue.trim();
-        console.log(`🔍 Saved final field: ${currentField} = ${currentValue.trim()}`);
+        log.monitoring.debug('Saved final field', {
+            field: currentField,
+            value: currentValue.trim()
+        });
     }
 
-    console.log('🔍 Detail parsing - Final fault object:', JSON.stringify(fault));
+    log.monitoring.debug('Detail parsing - Final fault object', {
+        fault: JSON.stringify(fault)
+    });
 
     return Object.keys(fault).length > 1 ? fault : null;
 }

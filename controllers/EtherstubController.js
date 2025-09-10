@@ -11,6 +11,7 @@ import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
 import yj from "yieldable-json";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -111,7 +112,11 @@ export const getEtherstubs = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting etherstubs:', error);
+        log.api.error('Error getting etherstubs', {
+            error: error.message,
+            stack: error.stack,
+            name: name
+        });
         res.status(500).json({ 
             error: 'Failed to get etherstubs',
             details: error.message 
@@ -183,7 +188,11 @@ export const getEtherstubDetails = async (req, res) => {
         res.json(etherstubData);
 
     } catch (error) {
-        console.error('Error getting etherstub details:', error);
+        log.api.error('Error getting etherstub details', {
+            error: error.message,
+            stack: error.stack,
+            etherstub: etherstub
+        });
         res.status(500).json({ 
             error: 'Failed to get etherstub details',
             details: error.message 
@@ -300,7 +309,11 @@ export const createEtherstub = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating etherstub:', error);
+        log.api.error('Error creating etherstub', {
+            error: error.message,
+            stack: error.stack,
+            name: name
+        });
         res.status(500).json({ 
             error: 'Failed to create etherstub task',
             details: error.message 
@@ -364,27 +377,14 @@ export const createEtherstub = async (req, res) => {
  *         description: Failed to create etherstub deletion task
  */
 export const deleteEtherstub = async (req, res) => {
-    console.log('🔧 === ETHERSTUB DELETION REQUEST STARTING ===');
-    console.log('📋 Etherstub to delete:', req.params.etherstub);
-    console.log('📋 Query parameters:', req.query);
-    
     try {
         const { etherstub } = req.params;
         const { temporary = false, force = false, created_by = 'api' } = req.query;
 
-        console.log('✅ Etherstub deletion - parsed parameters:');
-        console.log('   - etherstub:', etherstub);
-        console.log('   - temporary:', temporary);
-        console.log('   - force:', force);
-        console.log('   - created_by:', created_by);
-
         // Check if etherstub exists
-        console.log('🔍 Checking if etherstub exists...');
         const existsResult = await executeCommand(`pfexec dladm show-etherstub ${etherstub}`);
-        console.log('📋 Etherstub existence check result:', existsResult.success ? 'EXISTS' : 'NOT FOUND');
         
         if (!existsResult.success) {
-            console.log('❌ Etherstub not found, returning 404');
             return res.status(404).json({ 
                 error: `Etherstub ${etherstub} not found`,
                 details: existsResult.error
@@ -394,23 +394,16 @@ export const deleteEtherstub = async (req, res) => {
         // Check for VNICs on this etherstub unless force is specified
         const forceParam = force === 'true' || force === true;
         if (!forceParam) {
-            console.log('🔍 Checking for VNICs on etherstub...');
             const vnicResult = await executeCommand(`pfexec dladm show-vnic -l ${etherstub} -p -o link`);
             if (vnicResult.success && vnicResult.output.trim()) {
                 const vnics = vnicResult.output.trim().split('\n');
-                console.log('❌ VNICs found on etherstub, cannot delete without force');
                 return res.status(400).json({ 
                     error: `Cannot delete etherstub ${etherstub}. VNICs still exist on it: ${vnics.join(', ')}`,
                     vnics: vnics,
                     suggestion: 'Delete VNICs first or use force=true'
                 });
             }
-            console.log('✅ No VNICs found on etherstub');
-        } else {
-            console.log('⚠️  Force deletion enabled - will remove any VNICs');
         }
-
-        console.log('✅ Etherstub can be deleted, creating deletion task...');
 
         // Create task for etherstub deletion
         const task = await Tasks.create({
@@ -431,11 +424,13 @@ export const deleteEtherstub = async (req, res) => {
             })
         });
 
-        console.log('✅ Etherstub deletion task created successfully:');
-        console.log('   - Task ID:', task.id);
-        console.log('   - Etherstub:', etherstub);
-        console.log('   - Temporary:', temporary);
-        console.log('   - Force:', forceParam);
+        log.app.info('Etherstub deletion task created', {
+            task_id: task.id,
+            etherstub: etherstub,
+            temporary: temporary === 'true' || temporary === true,
+            force: forceParam,
+            created_by: created_by
+        });
 
         res.status(202).json({
             success: true,
@@ -446,11 +441,12 @@ export const deleteEtherstub = async (req, res) => {
             force: forceParam
         });
 
-        console.log('✅ Etherstub deletion response sent successfully');
-
     } catch (error) {
-        console.error('❌ Error deleting etherstub:', error);
-        console.error('❌ Error stack:', error.stack);
+        log.api.error('Error deleting etherstub', {
+            error: error.message,
+            stack: error.stack,
+            etherstub: req.params.etherstub
+        });
         res.status(500).json({ 
             error: 'Failed to create etherstub deletion task',
             details: error.message 

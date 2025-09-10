@@ -756,7 +756,7 @@ export const startTaskProcessor = () => {
         return; // Already running
     }
     
-    console.log('Starting task processor...');
+    log.task.info('Starting task processor');
     
     // Process tasks every 2 seconds
     taskProcessor = setInterval(async () => {
@@ -768,7 +768,9 @@ export const startTaskProcessor = () => {
     
     // Start periodic discovery if enabled
     if (zonesConfig.auto_discovery && zonesConfig.discovery_interval) {
-        console.log(`Starting periodic zone discovery every ${zonesConfig.discovery_interval} seconds...`);
+        log.task.info('Starting periodic zone discovery', {
+            interval_seconds: zonesConfig.discovery_interval
+        });
         
         // Start periodic discovery interval
         discoveryProcessor = setInterval(async () => {
@@ -801,13 +803,13 @@ export const stopTaskProcessor = () => {
     if (taskProcessor) {
         clearInterval(taskProcessor);
         taskProcessor = null;
-        console.log('Task processor stopped');
+        log.task.info('Task processor stopped');
     }
     
     if (discoveryProcessor) {
         clearInterval(discoveryProcessor);
         discoveryProcessor = null;
-        console.log('Periodic discovery stopped');
+        log.task.info('Periodic discovery stopped');
     }
 };
 
@@ -1200,7 +1202,7 @@ const executeCreateIPAddressTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeDeleteIPAddressTask = async (metadataJson) => {
-    console.log('🔧 === IP ADDRESS DELETION TASK STARTING ===');
+    log.task.debug('IP address deletion task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -1211,20 +1213,21 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
         });
         const { addrobj, release } = metadata;
 
-        console.log('📋 IP address deletion task parameters:');
-        console.log('   - addrobj:', addrobj);
-        console.log('   - release:', release);
+        log.task.debug('IP address deletion task parameters', {
+            addrobj,
+            release
+        });
 
         let command = `pfexec ipadm delete-addr`;
         if (release) command += ` -r`;
         command += ` ${addrobj}`;
 
-        console.log('🔧 Executing IP address deletion command:', command);
+        log.task.debug('Executing IP address deletion command', { command });
 
         const result = await executeCommand(command);
         
         if (result.success) {
-            console.log('✅ IP address deleted from system successfully, cleaning up IP interface and database entries...');
+            log.task.debug('IP address deleted from system, cleaning up database');
             
             // Clean up all monitoring database entries for this IP address
             const hostname = os.hostname();
@@ -1237,22 +1240,25 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
             };
 
             // Check if there are any remaining IP addresses on this interface
-            console.log(`🔍 Checking for remaining IP addresses on interface ${interfaceName}...`);
+            log.task.debug('Checking for remaining IP addresses', { interface: interfaceName });
             const remainingAddrsResult = await executeCommand(`pfexec ipadm show-addr ${interfaceName} -p`);
             
             if (!remainingAddrsResult.success || !remainingAddrsResult.output.trim()) {
                 // No remaining IP addresses, delete the IP interface
-                console.log(`🗑️  No remaining IP addresses on ${interfaceName}, deleting IP interface...`);
+                log.task.debug('No remaining IP addresses, deleting IP interface', { interface: interfaceName });
                 const deleteInterfaceResult = await executeCommand(`pfexec ipadm delete-if ${interfaceName}`);
                 
                 if (deleteInterfaceResult.success) {
                     cleanupResults.ip_interface_deleted = true;
-                    console.log(`✅ IP interface ${interfaceName} deleted successfully`);
+                    log.task.info('IP interface deleted', { interface: interfaceName });
                 } else {
-                    console.warn(`⚠️  Failed to delete IP interface ${interfaceName}:`, deleteInterfaceResult.error);
+                    log.task.warn('Failed to delete IP interface', {
+                        interface: interfaceName,
+                        error: deleteInterfaceResult.error
+                    });
                 }
             } else {
-                console.log(`ℹ️  Interface ${interfaceName} still has IP addresses, keeping IP interface`);
+                log.task.debug('Interface still has IP addresses, keeping IP interface', { interface: interfaceName });
             }
 
             try {
@@ -1264,7 +1270,10 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.ip_addresses = ipAddressesDeleted;
-                console.log(`🗑️  Cleaned up ${ipAddressesDeleted} IP address entries for ${addrobj}`);
+                log.task.debug('Cleaned up IP address entries', {
+                    deleted_count: ipAddressesDeleted,
+                    addrobj
+                });
 
                 // Note: NetworkInterfaces table tracks interfaces (like VNICs), not IP addresses
                 // When deleting an IP address, we don't delete the interface entry itself
@@ -1272,7 +1281,10 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
                 cleanupResults.network_interfaces = 0;
 
                 const totalCleaned = cleanupResults.ip_addresses;
-                console.log(`✅ Database cleanup completed: ${totalCleaned} total entries removed for IP address ${addrobj}`);
+                log.task.debug('Database cleanup completed', {
+                    total_cleaned: totalCleaned,
+                    addrobj
+                });
 
                 return { 
                     success: true, 
@@ -1281,7 +1293,10 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
                 };
 
             } catch (cleanupError) {
-                console.warn(`⚠️  IP address ${addrobj} deleted from system but database cleanup failed:`, cleanupError.message);
+                log.task.warn('IP address deleted but database cleanup failed', {
+                    addrobj,
+                    error: cleanupError.message
+                });
                 return { 
                     success: true, 
                     message: `IP address ${addrobj} deleted successfully${cleanupResults.ip_interface_deleted ? ` (IP interface ${interfaceName} also deleted)` : ''} (warning: database cleanup failed - ${cleanupError.message})`,
@@ -1289,7 +1304,10 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
                 };
             }
         } else {
-            console.error('❌ IP address deletion command failed:', result.error);
+            log.task.error('IP address deletion command failed', {
+                addrobj,
+                error: result.error
+            });
             return { 
                 success: false, 
                 error: `Failed to delete IP address ${addrobj}: ${result.error}` 
@@ -1297,7 +1315,10 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
         }
 
     } catch (error) {
-        console.error('❌ IP address deletion task exception:', error);
+        log.task.error('IP address deletion task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `IP address deletion task failed: ${error.message}` };
     }
 };
@@ -1376,15 +1397,14 @@ const executeDisableIPAddressTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeCreateVNICTask = async (metadataJson) => {
-    console.log('🔧 === VNIC CREATION TASK STARTING ===');
-    console.log('📋 Raw metadata received:', metadataJson);
-    console.log('📋 Metadata type:', typeof metadataJson);
-    console.log('📋 Metadata length:', metadataJson ? metadataJson.length : 'N/A');
+    log.task.debug('VNIC creation task starting', {
+        metadata_type: typeof metadataJson,
+        metadata_length: metadataJson ? metadataJson.length : 0
+    });
     
     try {
         if (!metadataJson) {
-            console.error('❌ VNIC creation task metadata is undefined or null');
-            console.log('🔧 Would have run command: pfexec dladm create-vnic [MISSING PARAMETERS]');
+            log.task.error('VNIC creation task metadata is undefined or null');
             return { success: false, error: 'Task metadata is missing - cannot build dladm command' };
         }
 
@@ -1396,68 +1416,70 @@ const executeCreateVNICTask = async (metadataJson) => {
                     else resolve(result);
                 });
             });
-            console.log('✅ Successfully parsed metadata:', metadata);
+            log.task.debug('Successfully parsed metadata', { metadata });
         } catch (parseError) {
-            console.error('❌ Failed to parse metadata JSON:', parseError.message);
-            console.log('🔧 Would have run command: pfexec dladm create-vnic [INVALID JSON]');
+            log.task.error('Failed to parse metadata JSON', {
+                error: parseError.message
+            });
             return { success: false, error: `Invalid JSON metadata: ${parseError.message}` };
         }
 
         const { name, link, mac_address, mac_prefix, slot, vlan_id, temporary, properties } = metadata;
 
-        // Always show what command we're building
-        console.log('🔧 Building dladm create-vnic command with parameters:');
-        console.log('   - name:', name);
-        console.log('   - link:', link);
-        console.log('   - mac_address:', mac_address);
-        console.log('   - mac_prefix:', mac_prefix);
-        console.log('   - slot:', slot);
-        console.log('   - vlan_id:', vlan_id);
-        console.log('   - temporary:', temporary);
-        console.log('   - properties:', properties);
+        // Log command building parameters
+        log.task.debug('Building dladm create-vnic command', {
+            name,
+            link,
+            mac_address,
+            mac_prefix,
+            slot,
+            vlan_id,
+            temporary,
+            properties
+        });
 
         let command = `pfexec dladm create-vnic`;
         
         // Add temporary flag
         if (temporary) {
             command += ` -t`;
-            console.log('   + Added temporary flag: -t');
+            log.task.debug('Added temporary flag to command');
         }
 
         // Add link
         if (link) {
             command += ` -l ${link}`;
-            console.log(`   + Added link: -l ${link}`);
+            log.task.debug('Added link to command', { link });
         } else {
-            console.log('   ⚠️  Missing required link parameter');
+            log.task.warn('Missing required link parameter');
         }
 
         // Add MAC address configuration
         if (mac_address === 'factory') {
             command += ` -m factory -n ${slot}`;
-            console.log(`   + Added factory MAC: -m factory -n ${slot}`);
+            log.task.debug('Added factory MAC to command', { slot });
         } else if (mac_address === 'random') {
             command += ` -m random`;
-            console.log('   + Added random MAC: -m random');
+            log.task.debug('Added random MAC to command');
             if (mac_prefix) {
                 command += ` -r ${mac_prefix}`;
-                console.log(`   + Added MAC prefix: -r ${mac_prefix}`);
+                log.task.debug('Added MAC prefix to command', { mac_prefix });
             }
         } else if (mac_address === 'auto') {
             command += ` -m auto`;
-            console.log('   + Added auto MAC: -m auto');
+            log.task.debug('Added auto MAC to command');
         } else if (mac_address && mac_address !== 'auto') {
             // Specific MAC address provided
             command += ` -m ${mac_address}`;
-            console.log(`   + Added specific MAC: -m ${mac_address}`);
+            log.task.debug('Added specific MAC to command', { mac_address });
         } else {
-            console.log('   + Using default MAC assignment');
+            log.task.debug('Using default MAC assignment');
         }
 
         // Add VLAN ID if specified
         if (vlan_id) {
             command += ` -v ${vlan_id}`;
-            console.log(`   + Added VLAN ID: -v ${vlan_id}`);
+            log.task.debug('Added VLAN ID to command', { vlan_id });
         }
 
         // Add properties if specified
@@ -1466,22 +1488,25 @@ const executeCreateVNICTask = async (metadataJson) => {
                 .map(([key, value]) => `${key}=${value}`)
                 .join(',');
             command += ` -p ${propList}`;
-            console.log(`   + Added properties: -p ${propList}`);
+            log.task.debug('Added properties to command', { properties: propList });
         }
 
         // Add VNIC name
         if (name) {
             command += ` ${name}`;
-            console.log(`   + Added VNIC name: ${name}`);
+            log.task.debug('Added VNIC name to command', { name });
         } else {
-            console.log('   ⚠️  Missing required VNIC name parameter');
+            log.task.warn('Missing required VNIC name parameter');
         }
 
-        console.log('🔧 FINAL COMMAND TO EXECUTE:', command);
+        log.task.debug('Final VNIC creation command', { command });
 
         // Validate required parameters before executing
         if (!name || !link) {
-            console.error('❌ Missing required parameters - cannot execute command');
+            log.task.error('Missing required parameters - cannot execute command', {
+                name_missing: !name,
+                link_missing: !link
+            });
             return { 
                 success: false, 
                 error: `Missing required parameters: ${!name ? 'name ' : ''}${!link ? 'link' : ''}` 
@@ -1491,13 +1516,16 @@ const executeCreateVNICTask = async (metadataJson) => {
         const result = await executeCommand(command);
         
         if (result.success) {
-            console.log('✅ VNIC creation command completed successfully');
+            log.task.info('VNIC creation completed', { name, link });
             return { 
                 success: true, 
                 message: `VNIC ${name} created successfully over ${link}` 
             };
         } else {
-            console.error('❌ VNIC creation command failed');
+            log.task.error('VNIC creation failed', {
+                name,
+                error: result.error
+            });
             return { 
                 success: false, 
                 error: `Failed to create VNIC ${name}: ${result.error}` 
@@ -1505,8 +1533,10 @@ const executeCreateVNICTask = async (metadataJson) => {
         }
 
     } catch (error) {
-        console.error('❌ VNIC creation task exception:', error);
-        console.log('🔧 Command execution was aborted due to error');
+        log.task.error('VNIC creation task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `VNIC creation task failed: ${error.message}` };
     }
 };
@@ -1517,7 +1547,7 @@ const executeCreateVNICTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeDeleteVNICTask = async (metadataJson) => {
-    console.log('🔧 === VNIC DELETION TASK STARTING ===');
+    log.task.debug('VNIC deletion task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -1528,20 +1558,21 @@ const executeDeleteVNICTask = async (metadataJson) => {
         });
         const { vnic, temporary } = metadata;
 
-        console.log('📋 VNIC deletion task parameters:');
-        console.log('   - vnic:', vnic);
-        console.log('   - temporary:', temporary);
+        log.task.debug('VNIC deletion task parameters', {
+            vnic,
+            temporary
+        });
 
         let command = `pfexec dladm delete-vnic`;
         if (temporary) command += ` -t`;
         command += ` ${vnic}`;
 
-        console.log('🔧 Executing VNIC deletion command:', command);
+        log.task.debug('Executing VNIC deletion command', { command });
 
         const result = await executeCommand(command);
         
         if (result.success) {
-            console.log('✅ VNIC deleted from system successfully, cleaning up database entries...');
+            log.task.debug('VNIC deleted from system, cleaning up database');
             
             // Clean up all monitoring database entries for this VNIC
             const hostname = os.hostname();
@@ -1561,7 +1592,10 @@ const executeDeleteVNICTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.network_interfaces = interfacesDeleted;
-                console.log(`🗑️  Cleaned up ${interfacesDeleted} network interface entries for VNIC ${vnic}`);
+                log.task.debug('Cleaned up network interface entries', {
+                    deleted_count: interfacesDeleted,
+                    vnic
+                });
 
                 // Clean up NetworkUsage table (usage accounting)
                 const usageDeleted = await NetworkUsage.destroy({
@@ -1571,10 +1605,16 @@ const executeDeleteVNICTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.network_usage = usageDeleted;
-                console.log(`🗑️  Cleaned up ${usageDeleted} network usage entries for VNIC ${vnic}`);
+                log.task.debug('Cleaned up network usage entries', {
+                    deleted_count: usageDeleted,
+                    vnic
+                });
 
                 const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_usage;
-                console.log(`✅ Database cleanup completed: ${totalCleaned} total entries removed for VNIC ${vnic}`);
+                log.task.info('Database cleanup completed for VNIC', {
+                    total_cleaned: totalCleaned,
+                    vnic
+                });
 
                 return { 
                     success: true, 
@@ -1583,7 +1623,10 @@ const executeDeleteVNICTask = async (metadataJson) => {
                 };
 
             } catch (cleanupError) {
-                console.warn(`⚠️  VNIC ${vnic} deleted from system but database cleanup failed:`, cleanupError.message);
+                log.task.warn('VNIC deleted but database cleanup failed', {
+                    vnic,
+                    error: cleanupError.message
+                });
                 return { 
                     success: true, 
                     message: `VNIC ${vnic} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
@@ -1591,7 +1634,10 @@ const executeDeleteVNICTask = async (metadataJson) => {
                 };
             }
         } else {
-            console.error('❌ VNIC deletion command failed:', result.error);
+            log.task.error('VNIC deletion command failed', {
+                vnic,
+                error: result.error
+            });
             return { 
                 success: false, 
                 error: `Failed to delete VNIC ${vnic}: ${result.error}` 
@@ -1599,7 +1645,10 @@ const executeDeleteVNICTask = async (metadataJson) => {
         }
 
     } catch (error) {
-        console.error('❌ VNIC deletion task exception:', error);
+        log.task.error('VNIC deletion task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `VNIC deletion task failed: ${error.message}` };
     }
 };
@@ -1726,7 +1775,7 @@ const executeCreateAggregateTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeDeleteAggregateTask = async (metadataJson) => {
-    console.log('🔧 === AGGREGATE DELETION TASK STARTING ===');
+    log.task.debug('Aggregate deletion task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -1737,20 +1786,21 @@ const executeDeleteAggregateTask = async (metadataJson) => {
         });
         const { aggregate, temporary } = metadata;
 
-        console.log('📋 Aggregate deletion task parameters:');
-        console.log('   - aggregate:', aggregate);
-        console.log('   - temporary:', temporary);
+        log.task.debug('Aggregate deletion task parameters', {
+            aggregate,
+            temporary
+        });
 
         let command = `pfexec dladm delete-aggr`;
         if (temporary) command += ` -t`;
         command += ` ${aggregate}`;
 
-        console.log('🔧 Executing aggregate deletion command:', command);
+        log.task.debug('Executing aggregate deletion command', { command });
 
         const result = await executeCommand(command);
         
         if (result.success) {
-            console.log('✅ Aggregate deleted from system successfully, cleaning up database entries...');
+            log.task.debug('Aggregate deleted from system, cleaning up database');
             
             // Clean up all monitoring database entries for this aggregate
             const hostname = os.hostname();
@@ -1769,7 +1819,10 @@ const executeDeleteAggregateTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.network_interfaces = interfacesDeleted;
-                console.log(`🗑️  Cleaned up ${interfacesDeleted} network interface entries for aggregate ${aggregate}`);
+                log.task.debug('Cleaned up network interface entries', {
+                    deleted_count: interfacesDeleted,
+                    aggregate
+                });
 
                 // Clean up NetworkUsage table (usage accounting)
                 const usageDeleted = await NetworkUsage.destroy({
@@ -1779,10 +1832,16 @@ const executeDeleteAggregateTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.network_usage = usageDeleted;
-                console.log(`🗑️  Cleaned up ${usageDeleted} network usage entries for aggregate ${aggregate}`);
+                log.task.debug('Cleaned up network usage entries', {
+                    deleted_count: usageDeleted,
+                    aggregate
+                });
 
                 const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_usage;
-                console.log(`✅ Database cleanup completed: ${totalCleaned} total entries removed for aggregate ${aggregate}`);
+                log.task.info('Database cleanup completed for aggregate', {
+                    total_cleaned: totalCleaned,
+                    aggregate
+                });
 
                 return { 
                     success: true, 
@@ -1791,7 +1850,10 @@ const executeDeleteAggregateTask = async (metadataJson) => {
                 };
 
             } catch (cleanupError) {
-                console.warn(`⚠️  Aggregate ${aggregate} deleted from system but database cleanup failed:`, cleanupError.message);
+                log.task.warn('Aggregate deleted but database cleanup failed', {
+                    aggregate,
+                    error: cleanupError.message
+                });
                 return { 
                     success: true, 
                     message: `Aggregate ${aggregate} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
@@ -1799,7 +1861,10 @@ const executeDeleteAggregateTask = async (metadataJson) => {
                 };
             }
         } else {
-            console.error('❌ Aggregate deletion command failed:', result.error);
+            log.task.error('Aggregate deletion command failed', {
+                aggregate,
+                error: result.error
+            });
             return { 
                 success: false, 
                 error: `Failed to delete aggregate ${aggregate}: ${result.error}` 
@@ -1807,7 +1872,10 @@ const executeDeleteAggregateTask = async (metadataJson) => {
         }
 
     } catch (error) {
-        console.error('❌ Aggregate deletion task exception:', error);
+        log.task.error('Aggregate deletion task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Aggregate deletion task failed: ${error.message}` };
     }
 };
@@ -1899,7 +1967,7 @@ const executeCreateEtherstubTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeDeleteEtherstubTask = async (metadataJson) => {
-    console.log('🔧 === ETHERSTUB DELETION TASK STARTING ===');
+    log.task.debug('Etherstub deletion task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -1909,24 +1977,28 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
             });
         });        const { etherstub, temporary, force } = metadata;
 
-        console.log('📋 Etherstub deletion task parameters:');
-        console.log('   - etherstub:', etherstub);
-        console.log('   - temporary:', temporary);
-        console.log('   - force:', force);
+        log.task.debug('Etherstub deletion task parameters', {
+            etherstub,
+            temporary,
+            force
+        });
 
         // If force deletion, first remove any VNICs on the etherstub
         if (force) {
-            console.log('🔧 Force deletion enabled, checking for VNICs on etherstub...');
+            log.task.debug('Force deletion enabled, checking for VNICs on etherstub');
             const vnicResult = await executeCommand(`pfexec dladm show-vnic -l ${etherstub} -p -o link`);
             if (vnicResult.success && vnicResult.output.trim()) {
                 const vnics = vnicResult.output.trim().split('\n');
-                console.log(`🗑️  Found ${vnics.length} VNICs to remove: ${vnics.join(', ')}`);
+                log.task.debug('Found VNICs to remove', {
+                    count: vnics.length,
+                    vnics: vnics.join(', ')
+                });
                 for (const vnic of vnics) {
-                    console.log(`🔧 Removing VNIC ${vnic}...`);
+                    log.task.debug('Removing VNIC from etherstub', { vnic });
                     await executeCommand(`pfexec dladm delete-vnic ${temporary ? '-t' : ''} ${vnic}`);
                 }
             } else {
-                console.log('ℹ️  No VNICs found on etherstub');
+                log.task.debug('No VNICs found on etherstub');
             }
         }
 
@@ -1934,12 +2006,12 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
         if (temporary) command += ` -t`;
         command += ` ${etherstub}`;
 
-        console.log('🔧 Executing etherstub deletion command:', command);
+        log.task.debug('Executing etherstub deletion command', { command });
 
         const result = await executeCommand(command);
         
         if (result.success) {
-            console.log('✅ Etherstub deleted from system successfully, cleaning up database entries...');
+            log.task.debug('Etherstub deleted from system, cleaning up database');
             
             // Clean up all monitoring database entries for this etherstub
             const hostname = os.hostname();
@@ -1959,7 +2031,10 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.network_interfaces = interfacesDeleted;
-                console.log(`🗑️  Cleaned up ${interfacesDeleted} network interface entries for etherstub ${etherstub}`);
+                log.task.debug('Cleaned up network interface entries', {
+                    deleted_count: interfacesDeleted,
+                    etherstub
+                });
 
                 // Clean up NetworkUsage table (usage accounting)
                 const usageDeleted = await NetworkUsage.destroy({
@@ -1969,10 +2044,16 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.network_usage = usageDeleted;
-                console.log(`🗑️  Cleaned up ${usageDeleted} network usage entries for etherstub ${etherstub}`);
+                log.task.debug('Cleaned up network usage entries', {
+                    deleted_count: usageDeleted,
+                    etherstub
+                });
 
                 const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_stats + cleanupResults.network_usage;
-                console.log(`✅ Database cleanup completed: ${totalCleaned} total entries removed for etherstub ${etherstub}`);
+                log.task.info('Database cleanup completed for etherstub', {
+                    total_cleaned: totalCleaned,
+                    etherstub
+                });
 
                 return { 
                     success: true, 
@@ -1981,7 +2062,10 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
                 };
 
             } catch (cleanupError) {
-                console.warn(`⚠️  Etherstub ${etherstub} deleted from system but database cleanup failed:`, cleanupError.message);
+                log.task.warn('Etherstub deleted but database cleanup failed', {
+                    etherstub,
+                    error: cleanupError.message
+                });
                 return { 
                     success: true, 
                     message: `Etherstub ${etherstub} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
@@ -1989,7 +2073,10 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
                 };
             }
         } else {
-            console.error('❌ Etherstub deletion command failed:', result.error);
+            log.task.error('Etherstub deletion command failed', {
+                etherstub,
+                error: result.error
+            });
             return { 
                 success: false, 
                 error: `Failed to delete etherstub ${etherstub}: ${result.error}` 
@@ -1997,7 +2084,10 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
         }
 
     } catch (error) {
-        console.error('❌ Etherstub deletion task exception:', error);
+        log.task.error('Etherstub deletion task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Etherstub deletion task failed: ${error.message}` };
     }
 };
@@ -2159,7 +2249,7 @@ const executeCreateBridgeTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeDeleteBridgeTask = async (metadataJson) => {
-    console.log('🔧 === BRIDGE DELETION TASK STARTING ===');
+    log.task.debug('Bridge deletion task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -2169,31 +2259,35 @@ const executeDeleteBridgeTask = async (metadataJson) => {
             });
         });        const { bridge, force } = metadata;
 
-        console.log('📋 Bridge deletion task parameters:');
-        console.log('   - bridge:', bridge);
-        console.log('   - force:', force);
+        log.task.debug('Bridge deletion task parameters', {
+            bridge,
+            force
+        });
 
         // If force deletion, first remove any attached links
         if (force) {
-            console.log('🔧 Force deletion enabled, checking for attached links...');
+            log.task.debug('Force deletion enabled, checking for attached links');
             const linksResult = await executeCommand(`pfexec dladm show-bridge ${bridge} -l -p -o link`);
             if (linksResult.success && linksResult.output.trim()) {
                 const attachedLinks = linksResult.output.trim().split('\n');
-                console.log(`🗑️  Found ${attachedLinks.length} attached links to remove: ${attachedLinks.join(', ')}`);
+                log.task.debug('Found attached links to remove', {
+                    count: attachedLinks.length,
+                    links: attachedLinks.join(', ')
+                });
                 for (const link of attachedLinks) {
-                    console.log(`🔧 Removing link ${link} from bridge...`);
+                    log.task.debug('Removing link from bridge', { link, bridge });
                     await executeCommand(`pfexec dladm remove-bridge -l ${link} ${bridge}`);
                 }
             } else {
-                console.log('ℹ️  No attached links found on bridge');
+                log.task.debug('No attached links found on bridge');
             }
         }
 
-        console.log('🔧 Executing bridge deletion command...');
+        log.task.debug('Executing bridge deletion command');
         const result = await executeCommand(`pfexec dladm delete-bridge ${bridge}`);
         
         if (result.success) {
-            console.log('✅ Bridge deleted from system successfully, cleaning up database entries...');
+            log.task.debug('Bridge deleted from system, cleaning up database');
             
             // Clean up all monitoring database entries for this bridge
             const hostname = os.hostname();
@@ -2213,7 +2307,10 @@ const executeDeleteBridgeTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.network_interfaces = interfacesDeleted;
-                console.log(`🗑️  Cleaned up ${interfacesDeleted} network interface entries for bridge ${bridge}`);
+                log.task.debug('Cleaned up network interface entries', {
+                    deleted_count: interfacesDeleted,
+                    bridge
+                });
 
                 // Clean up NetworkUsage table (usage accounting)
                 const usageDeleted = await NetworkUsage.destroy({
@@ -2223,10 +2320,16 @@ const executeDeleteBridgeTask = async (metadataJson) => {
                     }
                 });
                 cleanupResults.network_usage = usageDeleted;
-                console.log(`🗑️  Cleaned up ${usageDeleted} network usage entries for bridge ${bridge}`);
+                log.task.debug('Cleaned up network usage entries', {
+                    deleted_count: usageDeleted,
+                    bridge
+                });
 
                 const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_stats + cleanupResults.network_usage;
-                console.log(`✅ Database cleanup completed: ${totalCleaned} total entries removed for bridge ${bridge}`);
+                log.task.info('Database cleanup completed for bridge', {
+                    total_cleaned: totalCleaned,
+                    bridge
+                });
 
                 return { 
                     success: true, 
@@ -2235,7 +2338,10 @@ const executeDeleteBridgeTask = async (metadataJson) => {
                 };
 
             } catch (cleanupError) {
-                console.warn(`⚠️  Bridge ${bridge} deleted from system but database cleanup failed:`, cleanupError.message);
+                log.task.warn('Bridge deleted but database cleanup failed', {
+                    bridge,
+                    error: cleanupError.message
+                });
                 return { 
                     success: true, 
                     message: `Bridge ${bridge} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
@@ -2243,7 +2349,10 @@ const executeDeleteBridgeTask = async (metadataJson) => {
                 };
             }
         } else {
-            console.error('❌ Bridge deletion command failed:', result.error);
+            log.task.error('Bridge deletion command failed', {
+                bridge,
+                error: result.error
+            });
             return { 
                 success: false, 
                 error: `Failed to delete bridge ${bridge}: ${result.error}` 
@@ -2251,7 +2360,10 @@ const executeDeleteBridgeTask = async (metadataJson) => {
         }
 
     } catch (error) {
-        console.error('❌ Bridge deletion task exception:', error);
+        log.task.error('Bridge deletion task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Bridge deletion task failed: ${error.message}` };
     }
 };
@@ -2807,7 +2919,10 @@ const executeRepositoryAddTask = async (metadataJson) => {
             if (enabled === false) {
                 const disableResult = await executeCommand(`pfexec pkg set-publisher --disable ${name}`);
                 if (!disableResult.success) {
-                    console.warn(`Publisher ${name} added but failed to disable: ${disableResult.error}`);
+                    log.task.warn('Publisher added but failed to disable', {
+                        name,
+                        error: disableResult.error
+                    });
                 }
             }
             
@@ -3060,7 +3175,7 @@ const executeRepositoryDisableTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
-    console.log('🔧 === TIME SYNC CONFIG UPDATE TASK STARTING ===');
+    log.task.debug('Time sync config update task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3071,11 +3186,12 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
         });
         const { service, config_content, backup_existing, restart_service } = metadata;
 
-        console.log('📋 Time sync config update parameters:');
-        console.log('   - service:', service);
-        console.log('   - backup_existing:', backup_existing);
-        console.log('   - restart_service:', restart_service);
-        console.log('   - config_content length:', config_content ? config_content.length : 'N/A');
+        log.task.debug('Time sync config update parameters', {
+            service,
+            backup_existing,
+            restart_service,
+            config_content_length: config_content ? config_content.length : 0
+        });
 
         // Determine config file path based on service
         let configFile;
@@ -3087,15 +3203,17 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
             return { success: false, error: `Unknown time sync service: ${service}` };
         }
 
-        console.log('🔧 Target config file:', configFile);
+        log.task.debug('Target config file', { configFile });
 
         // Create backup if existing config exists and backup is requested
         if (backup_existing) {
             const backupResult = await executeCommand(`test -f ${configFile} && pfexec cp ${configFile} ${configFile}.backup.$(date +%Y%m%d_%H%M%S) || echo "No existing config to backup"`);
             if (backupResult.success) {
-                console.log('✅ Config backup created (if file existed)');
+                log.task.debug('Config backup created (if file existed)');
             } else {
-                console.warn('⚠️  Failed to create backup:', backupResult.error);
+                log.task.warn('Failed to create backup', {
+                    error: backupResult.error
+                });
             }
         }
 
@@ -3109,11 +3227,11 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
             };
         }
 
-        console.log('✅ Config file written successfully');
+        log.task.info('Config file written successfully', { configFile });
 
         // Restart service if requested
         if (restart_service) {
-            console.log(`🔄 Restarting ${service} service...`);
+            log.task.debug('Restarting service', { service });
             const restartResult = await executeCommand(`pfexec svcadm restart network/${service}`);
             
             if (!restartResult.success) {
@@ -3123,7 +3241,7 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
                     warning: `Service ${service} restart failed - may need manual restart`
                 };
             }
-            console.log('✅ Service restarted successfully');
+            log.task.info('Service restarted successfully', { service });
         }
 
         return { 
@@ -3133,7 +3251,10 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
         };
 
     } catch (error) {
-        console.error('❌ Time sync config update task exception:', error);
+        log.task.error('Time sync config update task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Time sync config update task failed: ${error.message}` };
     }
 };
@@ -3144,7 +3265,7 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeForceTimeSyncTask = async (metadataJson) => {
-    console.log('🔧 === FORCE TIME SYNC TASK STARTING ===');
+    log.task.debug('Force time sync task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3155,10 +3276,11 @@ const executeForceTimeSyncTask = async (metadataJson) => {
         });
         const { service, server, timeout } = metadata;
 
-        console.log('📋 Force time sync parameters:');
-        console.log('   - service:', service);
-        console.log('   - server:', server || 'auto-detect');
-        console.log('   - timeout:', timeout);
+        log.task.debug('Force time sync parameters', {
+            service,
+            server: server || 'auto-detect',
+            timeout
+        });
 
         let syncResult;
 
@@ -3172,17 +3294,17 @@ const executeForceTimeSyncTask = async (metadataJson) => {
                 command += ` pool.ntp.org`; // Default fallback server
             }
 
-            console.log('🔧 Executing NTP sync command:', command);
+            log.task.debug('Executing NTP sync command', { command });
             syncResult = await executeCommand(command, (timeout || 30) * 1000);
             
         } else if (service === 'chrony') {
             // For Chrony, use chronyc to force sync
-            console.log('🔧 Executing Chrony makestep command...');
+            log.task.debug('Executing Chrony makestep command');
             syncResult = await executeCommand(`pfexec chronyc makestep`, (timeout || 30) * 1000);
             
             if (!syncResult.success) {
                 // Fallback to burst command
-                console.log('🔧 Makestep failed, trying burst command...');
+                log.task.debug('Makestep failed, trying burst command');
                 syncResult = await executeCommand(`pfexec chronyc burst 5/10`, (timeout || 30) * 1000);
             }
             
@@ -3191,7 +3313,7 @@ const executeForceTimeSyncTask = async (metadataJson) => {
         }
 
         if (syncResult.success) {
-            console.log('✅ Time sync command completed successfully');
+            log.task.info('Time sync command completed successfully');
             
             // Get current system time for confirmation
             const timeResult = await executeCommand('date');
@@ -3204,7 +3326,9 @@ const executeForceTimeSyncTask = async (metadataJson) => {
                 sync_output: syncResult.output
             };
         } else {
-            console.error('❌ Time sync command failed:', syncResult.error);
+            log.task.error('Time sync command failed', {
+                error: syncResult.error
+            });
             return { 
                 success: false, 
                 error: `Time synchronization failed: ${syncResult.error}` 
@@ -3212,7 +3336,10 @@ const executeForceTimeSyncTask = async (metadataJson) => {
         }
 
     } catch (error) {
-        console.error('❌ Force time sync task exception:', error);
+        log.task.error('Force time sync task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Force time sync task failed: ${error.message}` };
     }
 };
@@ -3223,7 +3350,7 @@ const executeForceTimeSyncTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeSetTimezoneTask = async (metadataJson) => {
-    console.log('🔧 === SET TIMEZONE TASK STARTING ===');
+    log.task.debug('Set timezone task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3234,9 +3361,10 @@ const executeSetTimezoneTask = async (metadataJson) => {
         });
         const { timezone, backup_existing } = metadata;
 
-        console.log('📋 Set timezone parameters:');
-        console.log('   - timezone:', timezone);
-        console.log('   - backup_existing:', backup_existing);
+        log.task.debug('Set timezone parameters', {
+            timezone,
+            backup_existing
+        });
 
         const configFile = '/etc/default/init';
 
@@ -3250,15 +3378,17 @@ const executeSetTimezoneTask = async (metadataJson) => {
             };
         }
 
-        console.log('✅ Timezone validated successfully');
+        log.task.debug('Timezone validated successfully');
 
         // Create backup if requested
         if (backup_existing) {
             const backupResult = await executeCommand(`pfexec cp ${configFile} ${configFile}.backup.$(date +%Y%m%d_%H%M%S)`);
             if (backupResult.success) {
-                console.log('✅ Config backup created');
+                log.task.debug('Config backup created');
             } else {
-                console.warn('⚠️  Failed to create backup:', backupResult.error);
+                log.task.warn('Failed to create backup', {
+                    error: backupResult.error
+                });
             }
         }
 
@@ -3278,11 +3408,11 @@ const executeSetTimezoneTask = async (metadataJson) => {
         if (tzPattern.test(configContent)) {
             // Replace existing TZ line
             configContent = configContent.replace(tzPattern, `TZ=${timezone}`);
-            console.log('✅ Updated existing TZ line');
+            log.task.debug('Updated existing TZ line');
         } else {
             // Add TZ line
             configContent += `\nTZ=${timezone}\n`;
-            console.log('✅ Added new TZ line');
+            log.task.debug('Added new TZ line');
         }
 
         // Write updated config
@@ -3295,7 +3425,7 @@ const executeSetTimezoneTask = async (metadataJson) => {
             };
         }
 
-        console.log('✅ Timezone config written successfully');
+        log.task.info('Timezone config written successfully', { configFile });
 
         // Set reboot required flag
         await setRebootRequired('timezone_change', 'TaskQueue');
@@ -3314,7 +3444,10 @@ const executeSetTimezoneTask = async (metadataJson) => {
         };
 
     } catch (error) {
-        console.error('❌ Set timezone task exception:', error);
+        log.task.error('Set timezone task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Set timezone task failed: ${error.message}` };
     }
 };
@@ -3325,7 +3458,7 @@ const executeSetTimezoneTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
-    console.log('🔧 === TIME SYNC SYSTEM SWITCH TASK STARTING ===');
+    log.task.debug('Time sync system switch task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3336,17 +3469,18 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
         });
         const { current_system, target_system, preserve_servers, install_if_needed, systems_info } = metadata;
 
-        console.log('📋 Time sync system switch parameters:');
-        console.log('   - current_system:', current_system);
-        console.log('   - target_system:', target_system);
-        console.log('   - preserve_servers:', preserve_servers);
-        console.log('   - install_if_needed:', install_if_needed);
+        log.task.debug('Time sync system switch parameters', {
+            current_system,
+            target_system,
+            preserve_servers,
+            install_if_needed
+        });
 
         let migratedServers = ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
 
         // Step 1: Extract servers from current config if requested
         if (preserve_servers && current_system !== 'none') {
-            console.log('🔧 Attempting to extract servers from current configuration...');
+            log.task.debug('Attempting to extract servers from current configuration');
             const currentInfo = systems_info.available[current_system];
             if (currentInfo && currentInfo.config_file) {
                 const readConfigResult = await executeCommand(`cat ${currentInfo.config_file} 2>/dev/null || echo ""`);
@@ -3354,28 +3488,33 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
                     const extractedServers = extractServersFromConfig(readConfigResult.output, current_system);
                     if (extractedServers.length > 0) {
                         migratedServers = extractedServers;
-                        console.log('✅ Extracted servers from current config:', migratedServers);
+                        log.task.info('Extracted servers from current config', {
+                            servers: migratedServers
+                        });
                     }
                 } else {
-                    console.log('⚠️  Could not read current config, using defaults');
+                    log.task.warn('Could not read current config, using defaults');
                 }
             }
         }
 
         // Step 2: Disable current service if active
         if (current_system !== 'none') {
-            console.log(`🔧 Disabling current ${current_system} service...`);
+            log.task.debug('Disabling current service', { service: current_system });
             const disableResult = await executeCommand(`pfexec svcadm disable network/${current_system}`);
             if (!disableResult.success) {
-                console.warn(`⚠️  Failed to disable ${current_system}:`, disableResult.error);
+                log.task.warn('Failed to disable service', {
+                    service: current_system,
+                    error: disableResult.error
+                });
             } else {
-                console.log(`✅ Current ${current_system} service disabled`);
+                log.task.info('Current service disabled', { service: current_system });
             }
         }
 
         // Step 3: Handle target system installation and configuration
         if (target_system === 'none') {
-            console.log('🔧 Target is "none" - time sync will be disabled');
+            log.task.debug('Target is "none" - time sync will be disabled');
             return { 
                 success: true, 
                 message: `Switched from ${current_system} to none (time sync disabled)`,
@@ -3391,12 +3530,18 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
 
         // Step 4: Install target package if needed
         if (!targetInfo.installed && install_if_needed) {
-            console.log(`🔧 Installing ${target_system} package (${targetInfo.package_name})...`);
+            log.task.info('Installing package', {
+                system: target_system,
+                package: targetInfo.package_name
+            });
             const installResult = await executeCommand(`pfexec pkg install ${targetInfo.package_name}`, 5 * 60 * 1000);
             if (!installResult.success) {
                 // Rollback: re-enable original service
                 if (current_system !== 'none') {
-                    console.log(`🔄 Installation failed, rolling back to ${current_system}...`);
+                    log.task.warn('Installation failed, rolling back', {
+                        target: target_system,
+                        rollback_to: current_system
+                    });
                     await executeCommand(`pfexec svcadm enable network/${current_system}`);
                 }
                 return { 
@@ -3405,19 +3550,25 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
                     rollback_performed: current_system !== 'none'
                 };
             }
-            console.log(`✅ Package ${targetInfo.package_name} installed successfully`);
+            log.task.info('Package installed successfully', {
+                package: targetInfo.package_name
+            });
         }
 
         // Step 5: Generate configuration for target system
-        console.log(`🔧 Generating configuration for ${target_system}...`);
+        log.task.debug('Generating configuration', { system: target_system });
         let configContent;
         try {
             configContent = generateConfigForSystem(target_system, migratedServers);
-            console.log('✅ Configuration generated successfully');
+            log.task.debug('Configuration generated successfully');
         } catch (configError) {
             // Rollback: re-enable original service
             if (current_system !== 'none') {
-                console.log(`🔄 Config generation failed, rolling back to ${current_system}...`);
+                log.task.warn('Config generation failed, rolling back', {
+                    target: target_system,
+                    rollback_to: current_system,
+                    error: configError.message
+                });
                 await executeCommand(`pfexec svcadm enable network/${current_system}`);
             }
             return { 
@@ -3429,13 +3580,17 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
 
         // Step 6: Write target configuration
         const configFile = targetInfo.config_file;
-        console.log(`🔧 Writing configuration to ${configFile}...`);
+        log.task.debug('Writing configuration', { configFile });
         const writeResult = await executeCommand(`echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`);
         
         if (!writeResult.success) {
             // Rollback: re-enable original service
             if (current_system !== 'none') {
-                console.log(`🔄 Config write failed, rolling back to ${current_system}...`);
+                log.task.warn('Config write failed, rolling back', {
+                    target: target_system,
+                    rollback_to: current_system,
+                    error: writeResult.error
+                });
                 await executeCommand(`pfexec svcadm enable network/${current_system}`);
             }
             return { 
@@ -3444,16 +3599,20 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
                 rollback_performed: current_system !== 'none'
             };
         }
-        console.log('✅ Configuration written successfully');
+        log.task.info('Configuration written successfully', { configFile });
 
         // Step 7: Enable target service
-        console.log(`🔧 Enabling ${target_system} service...`);
+        log.task.debug('Enabling service', { service: target_system });
         const enableResult = await executeCommand(`pfexec svcadm enable network/${target_system}`);
         
         if (!enableResult.success) {
             // Rollback: re-enable original service
             if (current_system !== 'none') {
-                console.log(`🔄 Service enable failed, rolling back to ${current_system}...`);
+                log.task.warn('Service enable failed, rolling back', {
+                    target: target_system,
+                    rollback_to: current_system,
+                    error: enableResult.error
+                });
                 await executeCommand(`pfexec svcadm enable network/${current_system}`);
             }
             return { 
@@ -3464,7 +3623,7 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
         }
 
         // Step 8: Verify service is running
-        console.log(`🔧 Verifying ${target_system} service status...`);
+        log.task.debug('Verifying service status', { service: target_system });
         let verifyAttempts = 0;
         let serviceOnline = false;
         
@@ -3473,19 +3632,25 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
             const statusResult = await executeCommand(`svcs network/${target_system}`);
             if (statusResult.success && statusResult.output.includes('online')) {
                 serviceOnline = true;
-                console.log(`✅ ${target_system} service is online`);
+                log.task.info('Service is online', { service: target_system });
             } else {
                 verifyAttempts++;
-                console.log(`⏳ Waiting for ${target_system} service to come online (attempt ${verifyAttempts}/10)...`);
+                log.task.debug('Waiting for service to come online', {
+                    service: target_system,
+                    attempt: verifyAttempts,
+                    max_attempts: 10
+                });
             }
         }
 
         if (!serviceOnline) {
-            console.warn(`⚠️  ${target_system} service may not be fully online yet`);
+            log.task.warn('Service may not be fully online yet', {
+                service: target_system
+            });
         }
 
         // Step 9: Verify time sync is working (basic check)
-        console.log(`🔧 Performing basic sync verification...`);
+        log.task.debug('Performing basic sync verification');
         let syncWorking = false;
         if (target_system === 'ntp') {
             const ntpqResult = await executeCommand(`ntpq -p`, 10000);
@@ -3516,11 +3681,20 @@ const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
             result.message += ' (service may need additional time to fully start)';
         }
 
-        console.log(`✅ Time sync system switch completed: ${current_system} → ${target_system}`);
+        log.task.info('Time sync system switch completed', {
+            from: current_system,
+            to: target_system,
+            servers_migrated: preserve_servers,
+            service_online: serviceOnline,
+            sync_working: syncWorking
+        });
         return result;
 
     } catch (error) {
-        console.error('❌ Time sync system switch task exception:', error);
+        log.task.error('Time sync system switch task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Time sync system switch failed: ${error.message}` };
     }
 };
@@ -3641,7 +3815,7 @@ ${servers.map(server => `restrict ${server} nomodify noquery notrap`).join('\n')
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeProcessTraceTask = async (metadataJson) => {
-    console.log('🔧 === PROCESS TRACE TASK STARTING ===');
+    log.task.debug('Process trace task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3652,13 +3826,14 @@ const executeProcessTraceTask = async (metadataJson) => {
         });
         const { pid, duration = 30 } = metadata;
 
-        console.log('📋 Process trace task parameters:');
-        console.log('   - pid:', pid);
-        console.log('   - duration:', duration);
+        log.task.debug('Process trace task parameters', {
+            pid,
+            duration
+        });
 
         // Use truss (OmniOS equivalent of strace) to trace the process
         const command = `pfexec truss -p ${pid}`;
-        console.log('🔧 Executing trace command:', command);
+        log.task.debug('Executing trace command', { command });
         
         // Start tracing for the specified duration
         const traceResult = await executeCommand(command, duration * 1000);
@@ -3666,7 +3841,11 @@ const executeProcessTraceTask = async (metadataJson) => {
         if (traceResult.success || traceResult.output) {
             // truss may exit with non-zero when the process ends, but still provide useful output
             const outputLength = traceResult.output ? traceResult.output.length : 0;
-            console.log(`✅ Process trace completed for PID ${pid} (${outputLength} characters captured)`);
+            log.task.info('Process trace completed', {
+                pid,
+                duration,
+                output_length: outputLength
+            });
             
             return { 
                 success: true, 
@@ -3676,7 +3855,10 @@ const executeProcessTraceTask = async (metadataJson) => {
                 pid: parseInt(pid)
             };
         } else {
-            console.error('❌ Process trace command failed:', traceResult.error);
+            log.task.error('Process trace command failed', {
+                pid,
+                error: traceResult.error
+            });
             return { 
                 success: false, 
                 error: `Failed to trace process ${pid}: ${traceResult.error}` 
@@ -3684,7 +3866,10 @@ const executeProcessTraceTask = async (metadataJson) => {
         }
 
     } catch (error) {
-        console.error('❌ Process trace task exception:', error);
+        log.task.error('Process trace task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Process trace task failed: ${error.message}` };
     }
 };
@@ -3695,7 +3880,7 @@ const executeProcessTraceTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeFileMoveTask = async (metadataJson) => {
-    console.log('🔧 === FILE MOVE TASK STARTING ===');
+    log.filesystem.debug('File move task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3706,12 +3891,18 @@ const executeFileMoveTask = async (metadataJson) => {
         });
         const { source, destination } = metadata;
 
-        console.log('📋 File move task parameters:');
-        console.log('   - source:', source);
-        console.log('   - destination:', destination);
+        log.filesystem.debug('File move task parameters', {
+            source,
+            destination
+        });
 
         const { moveItem } = await import('../lib/FileSystemManager.js');
         await moveItem(source, destination);
+
+        log.filesystem.info('File move completed', {
+            source,
+            destination
+        });
 
         return { 
             success: true, 
@@ -3719,7 +3910,10 @@ const executeFileMoveTask = async (metadataJson) => {
         };
 
     } catch (error) {
-        console.error('❌ File move task exception:', error);
+        log.filesystem.error('File move task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `File move task failed: ${error.message}` };
     }
 };
@@ -3730,7 +3924,7 @@ const executeFileMoveTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeFileCopyTask = async (metadataJson) => {
-    console.log('🔧 === FILE COPY TASK STARTING ===');
+    log.filesystem.debug('File copy task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3741,12 +3935,18 @@ const executeFileCopyTask = async (metadataJson) => {
         });
         const { source, destination } = metadata;
 
-        console.log('📋 File copy task parameters:');
-        console.log('   - source:', source);
-        console.log('   - destination:', destination);
+        log.filesystem.debug('File copy task parameters', {
+            source,
+            destination
+        });
 
         const { copyItem } = await import('../lib/FileSystemManager.js');
         await copyItem(source, destination);
+
+        log.filesystem.info('File copy completed', {
+            source,
+            destination
+        });
 
         return { 
             success: true, 
@@ -3754,7 +3954,10 @@ const executeFileCopyTask = async (metadataJson) => {
         };
 
     } catch (error) {
-        console.error('❌ File copy task exception:', error);
+        log.filesystem.error('File copy task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `File copy task failed: ${error.message}` };
     }
 };
@@ -3765,7 +3968,7 @@ const executeFileCopyTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeFileArchiveCreateTask = async (metadataJson) => {
-    console.log('🔧 === FILE ARCHIVE CREATE TASK STARTING ===');
+    log.filesystem.debug('File archive create task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3776,13 +3979,20 @@ const executeFileArchiveCreateTask = async (metadataJson) => {
         });
         const { sources, archive_path, format } = metadata;
 
-        console.log('📋 Archive creation task parameters:');
-        console.log('   - sources:', sources);
-        console.log('   - archive_path:', archive_path);
-        console.log('   - format:', format);
+        log.filesystem.debug('Archive creation task parameters', {
+            sources,
+            archive_path,
+            format
+        });
 
         const { createArchive } = await import('../lib/FileSystemManager.js');
         await createArchive(sources, archive_path, format);
+
+        log.filesystem.info('Archive created successfully', {
+            archive_path,
+            format,
+            source_count: sources.length
+        });
 
         return { 
             success: true, 
@@ -3790,7 +4000,10 @@ const executeFileArchiveCreateTask = async (metadataJson) => {
         };
 
     } catch (error) {
-        console.error('❌ Archive creation task exception:', error);
+        log.filesystem.error('Archive creation task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Archive creation task failed: ${error.message}` };
     }
 };
@@ -3801,7 +4014,7 @@ const executeFileArchiveCreateTask = async (metadataJson) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeFileArchiveExtractTask = async (metadataJson) => {
-    console.log('🔧 === FILE ARCHIVE EXTRACT TASK STARTING ===');
+    log.filesystem.debug('File archive extract task starting');
     
     try {
         const metadata = await new Promise((resolve, reject) => {
@@ -3812,12 +4025,18 @@ const executeFileArchiveExtractTask = async (metadataJson) => {
         });
         const { archive_path, extract_path } = metadata;
 
-        console.log('📋 Archive extraction task parameters:');
-        console.log('   - archive_path:', archive_path);
-        console.log('   - extract_path:', extract_path);
+        log.filesystem.debug('Archive extraction task parameters', {
+            archive_path,
+            extract_path
+        });
 
         const { extractArchive } = await import('../lib/FileSystemManager.js');
         await extractArchive(archive_path, extract_path);
+
+        log.filesystem.info('Archive extracted successfully', {
+            archive_path,
+            extract_path
+        });
 
         return { 
             success: true, 
@@ -3825,7 +4044,10 @@ const executeFileArchiveExtractTask = async (metadataJson) => {
         };
 
     } catch (error) {
-        console.error('❌ Archive extraction task exception:', error);
+        log.filesystem.error('Archive extraction task exception', {
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: `Archive extraction task failed: ${error.message}` };
     }
 };

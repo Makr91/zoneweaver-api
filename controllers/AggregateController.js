@@ -11,6 +11,7 @@ import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
 import yj from "yieldable-json";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -128,7 +129,10 @@ export const getAggregates = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting aggregates:', error);
+        log.api.error('Error getting aggregates', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get aggregates',
             details: error.message 
@@ -187,7 +191,7 @@ export const getAggregateDetails = async (req, res) => {
         const { aggregate } = req.params;
 
         // Always get data from database
-        console.log(`🔍 Getting aggregate details from database for ${aggregate}...`);
+        log.api.debug('Getting aggregate details from database', { aggregate });
         const hostname = os.hostname();
         const aggregateData = await NetworkInterfaces.findOne({
             where: {
@@ -199,17 +203,21 @@ export const getAggregateDetails = async (req, res) => {
         });
 
         if (!aggregateData) {
-            console.log('❌ Aggregate not found in database');
+            log.api.warn('Aggregate not found in database', { aggregate });
             return res.status(404).json({ 
                 error: `Aggregate ${aggregate} not found` 
             });
         }
 
-        console.log('✅ Aggregate data retrieved from database');
+        log.api.debug('Aggregate data retrieved from database', { aggregate });
         res.json(aggregateData);
 
     } catch (error) {
-        console.error('❌ Error getting aggregate details:', error);
+        log.api.error('Error getting aggregate details', {
+            aggregate,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get aggregate details',
             details: error.message 
@@ -404,7 +412,10 @@ export const createAggregate = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating aggregate:', error);
+        log.api.error('Error creating aggregate', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to create aggregate task',
             details: error.message 
@@ -462,33 +473,41 @@ export const createAggregate = async (req, res) => {
  *         description: Failed to create aggregate deletion task
  */
 export const deleteAggregate = async (req, res) => {
-    console.log('🔧 === AGGREGATE DELETION REQUEST STARTING ===');
-    console.log('📋 Aggregate to delete:', req.params.aggregate);
-    console.log('📋 Query parameters:', req.query);
+    log.api.debug('Aggregate deletion request starting', {
+        aggregate: req.params.aggregate,
+        query_params: req.query
+    });
     
     try {
         const { aggregate } = req.params;
         const { temporary = false, created_by = 'api' } = req.query;
 
-        console.log('✅ Aggregate deletion - parsed parameters:');
-        console.log('   - aggregate:', aggregate);
-        console.log('   - temporary:', temporary);
-        console.log('   - created_by:', created_by);
+        log.api.debug('Aggregate deletion - parsed parameters', {
+            aggregate,
+            temporary,
+            created_by
+        });
 
         // Check if aggregate exists
-        console.log('🔍 Checking if aggregate exists...');
+        log.api.debug('Checking if aggregate exists', { aggregate });
         const existsResult = await executeCommand(`pfexec dladm show-aggr ${aggregate}`);
-        console.log('📋 Aggregate existence check result:', existsResult.success ? 'EXISTS' : 'NOT FOUND');
+        log.api.debug('Aggregate existence check result', {
+            aggregate,
+            exists: existsResult.success
+        });
         
         if (!existsResult.success) {
-            console.log('❌ Aggregate not found, returning 404');
+            log.api.warn('Aggregate not found', {
+                aggregate,
+                error: existsResult.error
+            });
             return res.status(404).json({ 
                 error: `Aggregate ${aggregate} not found`,
                 details: existsResult.error
             });
         }
 
-        console.log('✅ Aggregate exists, creating deletion task...');
+        log.api.debug('Aggregate exists, creating deletion task', { aggregate });
 
         // Create task for aggregate deletion
         const task = await Tasks.create({
@@ -508,10 +527,11 @@ export const deleteAggregate = async (req, res) => {
             })
         });
 
-        console.log('✅ Aggregate deletion task created successfully:');
-        console.log('   - Task ID:', task.id);
-        console.log('   - Aggregate:', aggregate);
-        console.log('   - Temporary:', temporary);
+        log.api.info('Aggregate deletion task created successfully', {
+            task_id: task.id,
+            aggregate,
+            temporary: temporary === 'true' || temporary === true
+        });
 
         res.status(202).json({
             success: true,
@@ -521,11 +541,14 @@ export const deleteAggregate = async (req, res) => {
             temporary: temporary === 'true' || temporary === true
         });
 
-        console.log('✅ Aggregate deletion response sent successfully');
+        log.api.debug('Aggregate deletion response sent successfully', { aggregate });
 
     } catch (error) {
-        console.error('❌ Error deleting aggregate:', error);
-        console.error('❌ Error stack:', error.stack);
+        log.api.error('Error deleting aggregate', {
+            aggregate: req.params.aggregate,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to create aggregate deletion task',
             details: error.message 
@@ -658,7 +681,11 @@ export const modifyAggregateLinks = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error modifying aggregate links:', error);
+        log.api.error('Error modifying aggregate links', {
+            aggregate: req.params.aggregate,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to create aggregate link modification task',
             details: error.message 
@@ -756,7 +783,11 @@ export const getAggregateStats = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting aggregate statistics:', error);
+        log.api.error('Error getting aggregate statistics', {
+            aggregate: req.params.aggregate,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get aggregate statistics',
             details: error.message 

@@ -55,7 +55,10 @@ class ZloginSessionManager {
                             if (parts.length >= 2) {
                                 const pid = parseInt(parts[1]);
                                 if (!isNaN(pid)) {
-                                    console.log(`🔍 Found running zlogin process for ${zoneName}: PID ${pid}`);
+                                    log.websocket.debug('Found running zlogin process', {
+                                        zone_name: zoneName,
+                                        pid
+                                    });
                                     resolve(pid);
                                     return;
                                 }
@@ -70,7 +73,9 @@ class ZloginSessionManager {
                 });
             });
         } catch (error) {
-            console.error(`Error checking for running zlogin processes: ${error.message}`);
+            log.websocket.error('Error checking for running zlogin processes', {
+                error: error.message
+            });
             return null;
         }
     }
@@ -82,7 +87,7 @@ class ZloginSessionManager {
      */
     async killZloginProcess(pid) {
         try {
-            console.log(`🔪 Killing zlogin process PID ${pid}...`);
+            log.websocket.info('Killing zlogin process', { pid });
             const killProcess = spawn('pfexec', ['kill', '-9', pid.toString()], {
                 stdio: ['ignore', 'pipe', 'pipe']
             });
@@ -90,21 +95,30 @@ class ZloginSessionManager {
             return new Promise((resolve) => {
                 killProcess.on('exit', (code) => {
                     if (code === 0) {
-                        console.log(`✅ Successfully killed zlogin process PID ${pid}`);
+                        log.websocket.info('Successfully killed zlogin process', { pid });
                         resolve(true);
                     } else {
-                        console.log(`❌ Failed to kill zlogin process PID ${pid} (exit code: ${code})`);
+                        log.websocket.error('Failed to kill zlogin process', {
+                            pid,
+                            exit_code: code
+                        });
                         resolve(false);
                     }
                 });
                 
                 killProcess.on('error', (error) => {
-                    console.error(`❌ Error killing zlogin process PID ${pid}: ${error.message}`);
+                    log.websocket.error('Error killing zlogin process', {
+                        pid,
+                        error: error.message
+                    });
                     resolve(false);
                 });
             });
         } catch (error) {
-            console.error(`Error killing zlogin process PID ${pid}: ${error.message}`);
+            log.websocket.error('Error killing zlogin process', {
+                pid,
+                error: error.message
+            });
             return false;
         }
     }
@@ -116,7 +130,9 @@ class ZloginSessionManager {
      */
     async cleanupStaleZloginProcesses(zoneName) {
         try {
-            console.log(`🧹 Cleaning up stale zlogin processes for zone: ${zoneName}`);
+            log.websocket.debug('Cleaning up stale zlogin processes', {
+                zone_name: zoneName
+            });
             
             // Find running processes
             const runningPid = await this.findRunningZloginProcess(zoneName);
@@ -133,18 +149,27 @@ class ZloginSessionManager {
                 });
                 
                 for (const session of staleSessions) {
-                    console.log(`🗑️  Cleaning up stale database session: ${session.id}`);
+                    log.websocket.debug('Cleaning up stale database session', {
+                        session_id: session.id
+                    });
                     await session.destroy();
                 }
                 
-                console.log(`✅ Cleanup completed for zone: ${zoneName}`);
+                log.websocket.info('Cleanup completed', {
+                    zone_name: zoneName
+                });
                 return true;
             } else {
-                console.log(`✅ No stale zlogin processes found for zone: ${zoneName}`);
+                log.websocket.debug('No stale zlogin processes found', {
+                    zone_name: zoneName
+                });
                 return true;
             }
         } catch (error) {
-            console.error(`❌ Error during cleanup for zone ${zoneName}: ${error.message}`);
+            log.websocket.error('Error during cleanup', {
+                zone_name: zoneName,
+                error: error.message
+            });
             return false;
         }
     }
@@ -167,7 +192,9 @@ class ZloginSessionManager {
                 cleanedCount++;
             }
         }
-        console.log(`Zlogin startup cleanup: ${cleanedCount} stale sessions cleaned`);
+        log.websocket.info('Zlogin startup cleanup completed', {
+            cleaned_count: cleanedCount
+        });
     }
 }
 
@@ -219,7 +246,10 @@ const testZloginSessionHealth = async (sessionId) => {
             return false;
         }
     } catch (error) {
-        console.error(`Error checking zlogin session health ${sessionId}:`, error);
+        log.websocket.error('Error checking zlogin session health', {
+            session_id: sessionId,
+            error: error.message
+        });
         return false;
     }
 };
@@ -230,13 +260,18 @@ const testZloginSessionHealth = async (sessionId) => {
  * @returns {{session: import('../models/ZloginSessionModel.js').default, ptyProcess: import('node-pty').IPty}}
  */
 const spawnZloginProcess = async (zoneName) => {
-    console.log(`🚀 [ZLOGIN-SPAWN] Starting PTY spawn process for zone: ${zoneName}`);
+    log.websocket.info('[ZLOGIN-SPAWN] Starting PTY spawn process', {
+        zone_name: zoneName
+    });
     
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
     const command = `pfexec zlogin -C ${zoneName}`;
     
-    console.log(`🚀 [ZLOGIN-SPAWN] Shell: ${shell}, Command: ${command}`);
-    console.log(`🚀 [ZLOGIN-SPAWN] PTY options: name=xterm-color, cols=80, rows=30`);
+    log.websocket.debug('[ZLOGIN-SPAWN] Shell and command details', {
+        shell,
+        command,
+        pty_options: 'name=xterm-color, cols=80, rows=30'
+    });
     
     const ptyProcess = pty.spawn(shell, ['-c', command], {
         name: 'xterm-color',
@@ -245,7 +280,10 @@ const spawnZloginProcess = async (zoneName) => {
         env: process.env
     });
 
-    console.log(`� [ZLOGIN-SPAWN] PTY process created - PID: ${ptyProcess.pid}, writable: ${ptyProcess.writable}`);
+    log.websocket.info('[ZLOGIN-SPAWN] PTY process created', {
+        pid: ptyProcess.pid,
+        writable: ptyProcess.writable
+    });
 
     const session = await ZloginSessions.create({
         zone_name: zoneName,
@@ -253,31 +291,52 @@ const spawnZloginProcess = async (zoneName) => {
         status: 'active'
     });
 
-    console.log(`🚀 [ZLOGIN-SPAWN] Database session created - ID: ${session.id}, PID: ${session.pid}, status: ${session.status}`);
+    log.websocket.info('[ZLOGIN-SPAWN] Database session created', {
+        session_id: session.id,
+        pid: session.pid,
+        status: session.status
+    });
 
     activePtyProcesses.set(session.id, ptyProcess);
-    console.log(`🚀 [ZLOGIN-SPAWN] PTY process stored in activePtyProcesses map for session: ${session.id}`);
-    console.log(`🚀 [ZLOGIN-SPAWN] Total active PTY processes: ${activePtyProcesses.size}`);
+    log.websocket.debug('[ZLOGIN-SPAWN] PTY process stored in activePtyProcesses map', {
+        session_id: session.id,
+        total_active_processes: activePtyProcesses.size
+    });
 
     ptyProcess.on('exit', (code, signal) => {
-        console.log(`💀 [ZLOGIN-SPAWN] Zlogin session ${session.id} for zone ${zoneName} exited with code ${code}, signal ${signal}`);
-        console.log(`💀 [ZLOGIN-SPAWN] Removing session ${session.id} from activePtyProcesses`);
+        log.websocket.info('[ZLOGIN-SPAWN] Zlogin session exited', {
+            session_id: session.id,
+            zone_name: zoneName,
+            exit_code: code,
+            signal
+        });
         activePtyProcesses.delete(session.id);
-        console.log(`� [ZLOGIN-SPAWN] Updating database session status to closed`);
         session.update({ status: 'closed' });
-        console.log(`💀 [ZLOGIN-SPAWN] Cleanup completed for session ${session.id}`);
+        log.websocket.debug('[ZLOGIN-SPAWN] Cleanup completed', {
+            session_id: session.id
+        });
     });
 
     ptyProcess.on('data', function (data) {
-        console.log(`📊 [ZLOGIN-SPAWN] Zlogin session ${session.id} for zone ${zoneName} data (${data.length} bytes): ${data.substring(0, 200)}${data.length > 200 ? '...' : ''}`);
+        log.websocket.debug('[ZLOGIN-SPAWN] Zlogin session data', {
+            session_id: session.id,
+            zone_name: zoneName,
+            data_length: data.length,
+            data_preview: data.substring(0, 200) + (data.length > 200 ? '...' : '')
+        });
     });
 
     ptyProcess.on('error', function (error) {
-        console.error(`❌ [ZLOGIN-SPAWN] PTY process error for session ${session.id}:`, error.message);
-        console.error(`❌ [ZLOGIN-SPAWN] Error stack:`, error.stack);
+        log.websocket.error('[ZLOGIN-SPAWN] PTY process error', {
+            session_id: session.id,
+            error: error.message,
+            stack: error.stack
+        });
     });
 
-    console.log(`✅ [ZLOGIN-SPAWN] PTY process setup completed for session: ${session.id}`);
+    log.websocket.info('[ZLOGIN-SPAWN] PTY process setup completed', {
+        session_id: session.id
+    });
     return { session, ptyProcess };
 };
 
@@ -314,22 +373,30 @@ const spawnZloginProcess = async (zoneName) => {
 export const startZloginSession = async (req, res) => {
     try {
         const { zoneName } = req.params;
-        console.log(`🔌 Starting zlogin session for zone: ${zoneName}`);
+        log.websocket.info('Starting zlogin session', { zone_name: zoneName });
         
         const zone = await Zones.findOne({ where: { name: zoneName } });
         if (!zone) {
-            console.log(`❌ Zone not found: ${zoneName}`);
+            log.websocket.warn('Zone not found', { zone_name: zoneName });
             return res.status(404).json({ error: 'Zone not found' });
         }
 
-        console.log(`✅ Zone found: ${zoneName}, status: ${zone.status}`);
+        log.websocket.debug('Zone found', {
+            zone_name: zoneName,
+            status: zone.status
+        });
         if (zone.status !== 'running') {
-            console.log(`❌ Zone not running: ${zoneName}, status: ${zone.status}`);
+            log.websocket.warn('Zone not running', {
+                zone_name: zoneName,
+                status: zone.status
+            });
             return res.status(400).json({ error: 'Zone is not running' });
         }
 
         // CHECK FOR EXISTING HEALTHY SESSION FIRST (PERFORMANCE OPTIMIZATION)
-        console.log(`🔍 CHECKING FOR EXISTING HEALTHY SESSION: ${zoneName}`);
+        log.websocket.debug('Checking for existing healthy session', {
+            zone_name: zoneName
+        });
         const existingSession = await ZloginSessions.findOne({
             where: {
                 zone_name: zoneName,
@@ -338,14 +405,22 @@ export const startZloginSession = async (req, res) => {
         });
 
         if (existingSession) {
-            console.log(`� Found existing session for ${zoneName} (ID: ${existingSession.id}, PID: ${existingSession.pid})`);
+            log.websocket.debug('Found existing session', {
+                zone_name: zoneName,
+                session_id: existingSession.id,
+                pid: existingSession.pid
+            });
             
             // Test if the session is healthy before killing it
-            console.log(`🩺 Testing zlogin session health for session ${existingSession.id}...`);
+            log.websocket.debug('Testing zlogin session health', {
+                session_id: existingSession.id
+            });
             const isHealthy = await testZloginSessionHealth(existingSession.id);
             
             if (isHealthy) {
-                console.log(`✅ HEALTHY SESSION FOUND: Reusing existing zlogin session for ${zoneName}`);
+                log.websocket.info('HEALTHY SESSION FOUND: Reusing existing zlogin session', {
+                    zone_name: zoneName
+                });
                 
                 // Update database last_accessed time for healthy session  
                 try {
@@ -353,7 +428,10 @@ export const startZloginSession = async (req, res) => {
                         updated_at: new Date()
                     });
                 } catch (dbError) {
-                    console.warn(`Failed to update database for ${zoneName}:`, dbError.message);
+                    log.websocket.warn('Failed to update database', {
+                        zone_name: zoneName,
+                        error: dbError.message
+                    });
                 }
                 
                 // Return existing healthy session immediately - NO SESSION KILLING!
@@ -363,23 +441,37 @@ export const startZloginSession = async (req, res) => {
                     message: 'Healthy zlogin session reused - instant access!'
                 });
             } else {
-                console.log(`🔧 UNHEALTHY SESSION DETECTED: Session exists but not responding, will clean up and create new one`);
+                log.websocket.info('UNHEALTHY SESSION DETECTED: Session exists but not responding', {
+                    zone_name: zoneName
+                });
             }
         } else {
-            console.log(`📋 No existing session found for ${zoneName}, will create new one`);
+            log.websocket.debug('No existing session found, will create new one', {
+                zone_name: zoneName
+            });
         }
 
         // ONLY CLEAN UP IF SESSION IS UNHEALTHY OR MISSING
-        console.log(`🧹 CLEANING UP UNHEALTHY/MISSING SESSIONS: Cleaning up stale zlogin processes for zone: ${zoneName}`);
+        log.websocket.debug('Cleaning up unhealthy/missing sessions', {
+            zone_name: zoneName
+        });
         await sessionManager.cleanupStaleZloginProcesses(zoneName);
 
-        console.log(`🔄 Creating new zlogin session for zone: ${zoneName}`);
+        log.websocket.info('Creating new zlogin session', {
+            zone_name: zoneName
+        });
         const { session } = await spawnZloginProcess(zoneName);
         
-        console.log(`✅ Session created with ID: ${session.id}, status: ${session.status}`);
+        log.websocket.info('Session created successfully', {
+            session_id: session.id,
+            status: session.status
+        });
         res.json(session);
     } catch (error) {
-        console.error('❌ Error starting zlogin session:', error);
+        log.websocket.error('Error starting zlogin session', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to start zlogin session' });
     }
 };
@@ -421,7 +513,10 @@ export const getZloginSessionInfo = async (req, res) => {
 
         res.json(session);
     } catch (error) {
-        console.error('Error getting zlogin session info:', error);
+        log.websocket.error('Error getting zlogin session info', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to get zlogin session info' });
     }
 };
@@ -465,7 +560,10 @@ export const stopZloginSession = async (req, res) => {
 
         res.json({ success: true, message: 'Zlogin session stopped.' });
     } catch (error) {
-        console.error('Error stopping zlogin session:', error);
+        log.websocket.error('Error stopping zlogin session', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to stop zlogin session' });
     }
 };
@@ -496,7 +594,10 @@ export const listZloginSessions = async (req, res) => {
         });
         res.json(sessions);
     } catch (error) {
-        console.error('Error listing zlogin sessions:', error);
+        log.websocket.error('Error listing zlogin sessions', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to list zlogin sessions' });
     }
 };
@@ -516,76 +617,129 @@ export const getZloginPtyProcess = (sessionId) => {
  * @param {string} sessionId - The ID of the zlogin session.
  */
 export const handleZloginConnection = (ws, sessionId) => {
-    console.log(`🔌 [ZLOGIN-WS] handleZloginConnection called for session: ${sessionId}`);
-    console.log(`🔌 [ZLOGIN-WS] WebSocket state: ${ws.readyState} (${ws.readyState === ws.OPEN ? 'OPEN' : ws.readyState === ws.CONNECTING ? 'CONNECTING' : 'OTHER'})`);
+    log.websocket.debug('[ZLOGIN-WS] handleZloginConnection called', {
+        session_id: sessionId,
+        websocket_state: ws.readyState,
+        state_name: ws.readyState === ws.OPEN ? 'OPEN' : ws.readyState === ws.CONNECTING ? 'CONNECTING' : 'OTHER'
+    });
     
     const ptyProcess = getZloginPtyProcess(sessionId);
-    console.log(`🔌 [ZLOGIN-WS] PTY process lookup result: ${ptyProcess ? 'FOUND' : 'NOT FOUND'}`);
+    log.websocket.debug('[ZLOGIN-WS] PTY process lookup', {
+        session_id: sessionId,
+        found: !!ptyProcess
+    });
     
     if (ptyProcess) {
-        console.log(`🔌 [ZLOGIN-WS] PTY process details - PID: ${ptyProcess.pid}, writable: ${ptyProcess.writable}, killed: ${ptyProcess.killed}`);
+        log.websocket.debug('[ZLOGIN-WS] PTY process details', {
+            pid: ptyProcess.pid,
+            writable: ptyProcess.writable,
+            killed: ptyProcess.killed
+        });
     }
 
     if (!ptyProcess) {
-        console.log(`❌ [ZLOGIN-WS] Zlogin session not found in activePtyProcesses: ${sessionId}`);
-        console.log(`❌ [ZLOGIN-WS] Available sessions: ${Array.from(activePtyProcesses.keys()).join(', ')}`);
+        log.websocket.error('[ZLOGIN-WS] Zlogin session not found', {
+            session_id: sessionId,
+            available_sessions: Array.from(activePtyProcesses.keys())
+        });
         try {
             ws.send('Zlogin session not found.\r\n');
             ws.close();
         } catch (error) {
-            console.error(`❌ [ZLOGIN-WS] Error closing WebSocket: ${error.message}`);
+            log.websocket.error('[ZLOGIN-WS] Error closing WebSocket', {
+                error: error.message
+            });
         }
         return;
     }
 
-    console.log(`✅ [ZLOGIN-WS] WebSocket connected to zlogin session: ${sessionId}`);
+    log.websocket.info('[ZLOGIN-WS] WebSocket connected to zlogin session', {
+        session_id: sessionId
+    });
 
     const onPtyData = (data) => {
         try {
-            console.log(`📤 [ZLOGIN-WS] PTY data received (${data.length} bytes): ${data.substring(0, 100)}${data.length > 100 ? '...' : ''}`);
+            log.websocket.debug('[ZLOGIN-WS] PTY data received', {
+                session_id: sessionId,
+                data_length: data.length,
+                data_preview: data.substring(0, 100) + (data.length > 100 ? '...' : '')
+            });
             if (ws.readyState === ws.OPEN) {
                 ws.send(data);
-                console.log(`📤 [ZLOGIN-WS] Data sent to WebSocket successfully`);
+                log.websocket.debug('[ZLOGIN-WS] Data sent to WebSocket successfully');
             } else {
-                console.warn(`⚠️ [ZLOGIN-WS] Cannot send data - WebSocket state: ${ws.readyState}`);
+                log.websocket.warn('[ZLOGIN-WS] Cannot send data - WebSocket not open', {
+                    websocket_state: ws.readyState
+                });
             }
         } catch (error) {
-            console.error(`❌ [ZLOGIN-WS] Error sending data to WebSocket ${sessionId}:`, error.message);
+            log.websocket.error('[ZLOGIN-WS] Error sending data to WebSocket', {
+                session_id: sessionId,
+                error: error.message
+            });
         }
     };
     
-    console.log(`🔗 [ZLOGIN-WS] Setting up PTY data listener for session: ${sessionId}`);
+    log.websocket.debug('[ZLOGIN-WS] Setting up PTY data listener', {
+        session_id: sessionId
+    });
     ptyProcess.on('data', onPtyData);
 
     ws.on('message', command => {
         try {
-            console.log(`📥 [ZLOGIN-WS] WebSocket message received (${command.length} bytes): ${command.toString().substring(0, 100)}${command.length > 100 ? '...' : ''}`);
-            console.log(`📥 [ZLOGIN-WS] PTY state check - exists: ${!!ptyProcess}, PID: ${ptyProcess?.pid}, killed: ${ptyProcess?.killed}`);
+            log.websocket.debug('[ZLOGIN-WS] WebSocket message received', {
+                session_id: sessionId,
+                command_length: command.length,
+                command_preview: command.toString().substring(0, 100) + (command.length > 100 ? '...' : '')
+            });
+            log.websocket.debug('[ZLOGIN-WS] PTY state check', {
+                exists: !!ptyProcess,
+                pid: ptyProcess?.pid,
+                killed: ptyProcess?.killed
+            });
             
             // Check if PTY exists and has a valid PID (more reliable than writable property)
             if (ptyProcess && ptyProcess.pid && !ptyProcess.killed) {
                 ptyProcess.write(command.toString());
-                console.log(`📥 [ZLOGIN-WS] Command written to PTY successfully`);
+                log.websocket.debug('[ZLOGIN-WS] Command written to PTY successfully');
             } else {
-                console.warn(`⚠️ [ZLOGIN-WS] Cannot write to PTY - exists: ${!!ptyProcess}, PID: ${ptyProcess?.pid}, killed: ${ptyProcess?.killed}`);
+                log.websocket.warn('[ZLOGIN-WS] Cannot write to PTY', {
+                    exists: !!ptyProcess,
+                    pid: ptyProcess?.pid,
+                    killed: ptyProcess?.killed
+                });
             }
         } catch (error) {
-            console.error(`❌ [ZLOGIN-WS] Error writing to PTY ${sessionId}:`, error.message);
+            log.websocket.error('[ZLOGIN-WS] Error writing to PTY', {
+                session_id: sessionId,
+                error: error.message
+            });
         }
     });
 
     ws.on('close', (code, reason) => {
-        console.log(`🔌 [ZLOGIN-WS] WebSocket closed for zlogin session: ${sessionId} (code: ${code}, reason: ${reason || 'none'})`);
+        log.websocket.info('[ZLOGIN-WS] WebSocket closed', {
+            session_id: sessionId,
+            code,
+            reason: reason || 'none'
+        });
         if (ptyProcess && onPtyData) {
             ptyProcess.removeListener('data', onPtyData);
-            console.log(`🔗 [ZLOGIN-WS] Removed PTY data listener for session: ${sessionId}`);
+            log.websocket.debug('[ZLOGIN-WS] Removed PTY data listener', {
+                session_id: sessionId
+            });
         }
     });
 
     ws.on('error', (error) => {
-        console.error(`❌ [ZLOGIN-WS] WebSocket error for zlogin session ${sessionId}:`, error.message);
-        console.error(`❌ [ZLOGIN-WS] Error stack:`, error.stack);
+        log.websocket.error('[ZLOGIN-WS] WebSocket error', {
+            session_id: sessionId,
+            error: error.message,
+            stack: error.stack
+        });
     });
 
-    console.log(`✅ [ZLOGIN-WS] WebSocket event handlers set up for session: ${sessionId}`);
+    log.websocket.debug('[ZLOGIN-WS] WebSocket event handlers set up', {
+        session_id: sessionId
+    });
 };

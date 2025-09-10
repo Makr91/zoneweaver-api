@@ -11,6 +11,7 @@ import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
 import yj from "yieldable-json";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -129,7 +130,10 @@ export const getVNICs = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting VNICs:', error);
+        log.api.error('Error getting VNICs', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get VNICs',
             details: error.message 
@@ -195,7 +199,11 @@ export const getVNICDetails = async (req, res) => {
         res.json(vnicData);
 
     } catch (error) {
-        console.error('Error getting VNIC details:', error);
+        log.api.error('Error getting VNIC details', {
+            vnic: req.params.vnic,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get VNIC details',
             details: error.message 
@@ -352,8 +360,9 @@ export const createVNIC = async (req, res) => {
             properties: properties
         };
 
-        console.log('🔧 VNIC Controller - Creating task with metadata:');
-        console.log('   Raw metadata object:', metadataObject);
+        log.api.debug('VNIC Controller - Creating task with metadata', {
+            metadata_object: metadataObject
+        });
         
         const metadataJson = await new Promise((resolve, reject) => {
             yj.stringifyAsync(metadataObject, (err, result) => {
@@ -361,8 +370,9 @@ export const createVNIC = async (req, res) => {
                 else resolve(result);
             });
         });
-        console.log('   Stringified metadata:', metadataJson);
-        console.log('   Metadata JSON length:', metadataJson.length);
+        log.api.debug('Metadata stringified', {
+            metadata_length: metadataJson.length
+        });
 
         // Create task for VNIC creation
         const task = await Tasks.create({
@@ -374,10 +384,10 @@ export const createVNIC = async (req, res) => {
             metadata: metadataJson
         });
 
-        console.log('✅ VNIC Controller - Task created successfully:');
-        console.log('   Task ID:', task.id);
-        console.log('   Task metadata stored:', task.metadata);
-        console.log('   Task metadata type:', typeof task.metadata);
+        log.api.info('VNIC Controller - Task created successfully', {
+            task_id: task.id,
+            task_metadata_type: typeof task.metadata
+        });
 
         res.status(202).json({
             success: true,
@@ -388,7 +398,10 @@ export const createVNIC = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating VNIC:', error);
+        log.api.error('Error creating VNIC', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to create VNIC task',
             details: error.message 
@@ -446,34 +459,41 @@ export const createVNIC = async (req, res) => {
  *         description: Failed to create VNIC deletion task
  */
 export const deleteVNIC = async (req, res) => {
-    console.log('🔧 === VNIC DELETION REQUEST STARTING ===');
-    console.log('📋 VNIC to delete:', req.params.vnic);
-    console.log('📋 Query parameters:', req.query);
-    console.log('📋 Request headers:', req.headers);
+    log.api.debug('VNIC deletion request starting', {
+        vnic: req.params.vnic,
+        query_params: req.query
+    });
     
     try {
         const { vnic } = req.params;
         const { temporary = false, created_by = 'api' } = req.query;
 
-        console.log('✅ VNIC deletion - parsed parameters:');
-        console.log('   - vnic:', vnic);
-        console.log('   - temporary:', temporary);
-        console.log('   - created_by:', created_by);
+        log.api.debug('VNIC deletion - parsed parameters', {
+            vnic,
+            temporary,
+            created_by
+        });
 
         // Check if VNIC exists
-        console.log('🔍 Checking if VNIC exists...');
+        log.api.debug('Checking if VNIC exists', { vnic });
         const existsResult = await executeCommand(`pfexec dladm show-vnic ${vnic}`);
-        console.log('📋 VNIC existence check result:', existsResult.success ? 'EXISTS' : 'NOT FOUND');
+        log.api.debug('VNIC existence check result', {
+            vnic,
+            exists: existsResult.success
+        });
         
         if (!existsResult.success) {
-            console.log('❌ VNIC not found, returning 404');
+            log.api.warn('VNIC not found', {
+                vnic,
+                error: existsResult.error
+            });
             return res.status(404).json({ 
                 error: `VNIC ${vnic} not found`,
                 details: existsResult.error
             });
         }
 
-        console.log('✅ VNIC exists, creating deletion task...');
+        log.api.debug('VNIC exists, creating deletion task', { vnic });
 
         // Create task for VNIC deletion
         const task = await Tasks.create({
@@ -493,10 +513,11 @@ export const deleteVNIC = async (req, res) => {
             })
         });
 
-        console.log('✅ VNIC deletion task created successfully:');
-        console.log('   - Task ID:', task.id);
-        console.log('   - VNIC:', vnic);
-        console.log('   - Temporary:', temporary);
+        log.api.info('VNIC deletion task created successfully', {
+            task_id: task.id,
+            vnic,
+            temporary: temporary === 'true' || temporary === true
+        });
 
         res.status(202).json({
             success: true,
@@ -506,11 +527,14 @@ export const deleteVNIC = async (req, res) => {
             temporary: temporary === 'true' || temporary === true
         });
 
-        console.log('✅ VNIC deletion response sent successfully');
+        log.api.debug('VNIC deletion response sent successfully', { vnic });
 
     } catch (error) {
-        console.error('❌ Error deleting VNIC:', error);
-        console.error('❌ Error stack:', error.stack);
+        log.api.error('Error deleting VNIC', {
+            vnic: req.params.vnic,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to create VNIC deletion task',
             details: error.message 
@@ -608,7 +632,11 @@ export const getVNICStats = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting VNIC statistics:', error);
+        log.api.error('Error getting VNIC statistics', {
+            vnic: req.params.vnic,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get VNIC statistics',
             details: error.message 
@@ -704,7 +732,11 @@ export const getVNICProperties = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting VNIC properties:', error);
+        log.api.error('Error getting VNIC properties', {
+            vnic: req.params.vnic,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get VNIC properties',
             details: error.message 
@@ -808,7 +840,11 @@ export const setVNICProperties = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error setting VNIC properties:', error);
+        log.api.error('Error setting VNIC properties', {
+            vnic: req.params.vnic,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to create VNIC property update task',
             details: error.message 

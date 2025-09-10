@@ -704,7 +704,7 @@ class DatabaseMigrations {
 
         if (allSuccessful) {
         } else {
-            console.warn('⚠️  Network interfaces aggregate fields migration completed with some errors');
+            log.database.warn('Network interfaces aggregate fields migration completed with some errors');
         }
 
         return allSuccessful;
@@ -745,9 +745,9 @@ class DatabaseMigrations {
         }
 
         if (allSuccessful) {
-            console.log('✅ Swap areas table migration completed successfully');
+            log.database.info('Swap areas table migration completed successfully');
         } else {
-            console.warn('⚠️  Swap areas table migration completed with some errors');
+            log.database.warn('Swap areas table migration completed with some errors');
         }
 
         return allSuccessful;
@@ -798,9 +798,9 @@ class DatabaseMigrations {
         }
 
         if (allSuccessful) {
-            console.log('✅ Memory stats table migration completed successfully');
+            log.database.info('Memory stats table migration completed successfully');
         } else {
-            console.warn('⚠️  Memory stats table migration completed with some errors');
+            log.database.warn('Memory stats table migration completed with some errors');
         }
 
         return allSuccessful;
@@ -816,7 +816,7 @@ class DatabaseMigrations {
             // Check if table exists
             const tableExists = await this.tableExists('swap_areas');
             if (!tableExists) {
-                console.log('ℹ️  Swap areas table does not exist, skipping cleanup');
+                log.database.debug('Swap areas table does not exist, skipping cleanup');
                 return true;
             }
 
@@ -833,7 +833,9 @@ class DatabaseMigrations {
             const duplicateCount = totalRecords - uniqueRecords;
             
             if (duplicateCount > 0) {
-                console.log(`🔧 Found ${duplicateCount} duplicate swap area records, cleaning up...`);
+                log.database.info('Found duplicate swap area records, cleaning up', {
+                    duplicate_count: duplicateCount
+                });
                 
                 // Keep only the most recent record for each (host, swapfile) combination
                 const [deleteResults] = await db.query(`
@@ -845,9 +847,11 @@ class DatabaseMigrations {
                     )
                 `);
                 
-                console.log(`✅ Removed ${duplicateCount} duplicate swap area records`);
+                log.database.info('Removed duplicate swap area records', {
+                    deleted_count: duplicateCount
+                });
             } else {
-                console.log('ℹ️  No duplicate swap area records found');
+                log.database.debug('No duplicate swap area records found');
             }
 
             // Check if unique constraint already exists
@@ -857,7 +861,7 @@ class DatabaseMigrations {
             `);
             
             if (indexResults.length === 0) {
-                console.log('🔧 Adding unique constraint on (host, swapfile)...');
+                log.database.debug('Adding unique constraint on (host, swapfile)');
                 
                 // Add unique constraint
                 await db.query(`
@@ -865,9 +869,9 @@ class DatabaseMigrations {
                     ON swap_areas(host, swapfile)
                 `);
                 
-                console.log('✅ Unique constraint added successfully');
+                log.database.info('Unique constraint added successfully');
             } else {
-                console.log('ℹ️  Unique constraint already exists');
+                log.database.debug('Unique constraint already exists');
             }
 
             // Ensure other indexes exist
@@ -875,12 +879,14 @@ class DatabaseMigrations {
             await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_timestamp ON swap_areas(scan_timestamp)`);
             await db.query(`CREATE INDEX IF NOT EXISTS idx_swap_areas_utilization ON swap_areas(utilization_pct)`);
 
-            console.log('✅ Swap areas table cleanup completed successfully');
+            log.database.info('Swap areas table cleanup completed successfully');
             return true;
 
         } catch (error) {
-            console.error('❌ Failed to cleanup swap_areas table:', error.message);
-            console.error('❌ Error details:', error.stack);
+            log.database.error('Failed to cleanup swap_areas table', {
+                error: error.message,
+                stack: error.stack
+            });
             return false;
         }
     }
@@ -900,7 +906,7 @@ class DatabaseMigrations {
             await this.createNewSystemMetricsTables();
             
             // CRITICAL: Fix missing columns that are causing SQLite errors
-            console.log('🔧 Running critical database schema fixes...');
+            log.database.info('Running critical database schema fixes');
             
             // Fix swap_areas table missing columns (fixes swapfile column error)
             await this.migrateSwapAreasTable();
@@ -939,14 +945,17 @@ class DatabaseMigrations {
             await this.migrateNetworkInterfacesAggregateFields();
             
             // CLEANUP: Remove duplicate columns to avoid data redundancy
-            console.log('🧹 Running database cleanup...');
+            log.database.info('Running database cleanup');
             await this.cleanupSwapAreasTable();
             
-            console.log('✅ All database migrations completed successfully');
+            log.database.info('All database migrations completed successfully');
             return true;
             
         } catch (error) {
-            console.error('❌ Database migration failed:', error.message);
+            log.database.error('Database migration failed', {
+                error: error.message,
+                stack: error.stack
+            });
             return false;
         }
     }
@@ -964,7 +973,10 @@ class DatabaseMigrations {
             return true;
             
         } catch (error) {
-            console.error('❌ Database table initialization failed:', error.message);
+            log.database.error('Database table initialization failed', {
+                error: error.message,
+                stack: error.stack
+            });
             return false;
         }
     }
@@ -985,7 +997,10 @@ class DatabaseMigrations {
             return true;
             
         } catch (error) {
-            console.error('❌ Database setup failed:', error.message);
+            log.database.error('Database setup failed', {
+                error: error.message,
+                stack: error.stack
+            });
             return false;
         }
     }

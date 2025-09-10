@@ -23,6 +23,7 @@ import MemoryStats from "../models/MemoryStatsModel.js";
 import yj from "yieldable-json";
 import { getHostMonitoringService } from "./HostMonitoringService.js";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * @swagger
@@ -63,7 +64,10 @@ export const getMonitoringStatus = async (req, res) => {
         const status = service.getStatus();
         res.json(status);
     } catch (error) {
-        console.error('Error getting monitoring status:', error);
+        log.api.error('Error getting monitoring status', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get monitoring status',
             details: error.message 
@@ -115,7 +119,10 @@ export const getHealthCheck = async (req, res) => {
         const health = await service.getHealthCheck();
         res.json(health);
     } catch (error) {
-        console.error('Error getting health check:', error);
+        log.api.error('Error getting health check', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get health check',
             details: error.message 
@@ -170,7 +177,10 @@ export const triggerCollection = async (req, res) => {
             results: results
         });
     } catch (error) {
-        console.error('Error triggering collection:', error);
+        log.api.error('Error triggering collection', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to trigger collection',
             details: error.message 
@@ -253,7 +263,10 @@ export const getNetworkInterfaces = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting network interfaces:', error);
+        log.api.error('Error getting network interfaces', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get network interfaces',
             details: error.message 
@@ -582,7 +595,10 @@ export const getZFSPools = async (req, res) => {
             totalCount: count
         });
     } catch (error) {
-        console.error('Error getting ZFS pools:', error);
+        log.api.error('Error getting ZFS pools', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get ZFS pools',
             details: error.message 
@@ -670,7 +686,10 @@ export const getZFSDatasets = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting ZFS datasets:', error);
+        log.api.error('Error getting ZFS datasets', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get ZFS datasets',
             details: error.message 
@@ -717,7 +736,10 @@ export const getHostInfo = async (req, res) => {
 
         res.json(hostInfo);
     } catch (error) {
-        console.error('Error getting host info:', error);
+        log.api.error('Error getting host info', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get host information',
             details: error.message 
@@ -835,7 +857,10 @@ export const getDisks = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting disk information:', error);
+        log.api.error('Error getting disk information', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get disk information',
             details: error.message 
@@ -928,7 +953,10 @@ export const getIPAddresses = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting IP addresses:', error);
+        log.api.error('Error getting IP addresses', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get IP addresses',
             details: error.message 
@@ -1027,7 +1055,10 @@ export const getRoutes = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting routing table:', error);
+        log.api.error('Error getting routing table', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get routing table',
             details: error.message 
@@ -2152,7 +2183,10 @@ export const getSystemLoadMetrics = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error getting system load metrics:', error);
+        log.api.error('Error getting system load metrics', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get system load metrics',
             details: error.message 
@@ -2162,13 +2196,13 @@ export const getSystemLoadMetrics = async (req, res) => {
 
 export const getMonitoringSummary = async (req, res) => {
     const startTime = Date.now();
-    console.log('🚀 Monitoring summary query started');
+    log.monitoring.debug('Monitoring summary query started');
     
     try {
         const hostname = os.hostname();
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        console.log('📊 Using optimized summary query...');
+        log.monitoring.debug('Using optimized summary query');
         
         // Step 1: Get host info with selective attributes
         const hostInfoQuery = Date.now();
@@ -2180,7 +2214,9 @@ export const getMonitoringSummary = async (req, res) => {
                 'last_storage_scan'
             ]
         });
-        console.log(`📊 Host info query: ${Date.now() - hostInfoQuery}ms`);
+        log.monitoring.debug('Host info query completed', {
+            duration_ms: Date.now() - hostInfoQuery
+        });
 
         // Step 2: Parallel count queries for the last 24 hours
         const countQuery = Date.now();
@@ -2229,7 +2265,9 @@ export const getMonitoringSummary = async (req, res) => {
                 }
             })
         ]);
-        console.log(`📊 Count queries: ${Date.now() - countQuery}ms`);
+        log.monitoring.debug('Count queries completed', {
+            duration_ms: Date.now() - countQuery
+        });
 
         // Step 3: Parallel latest timestamp queries with minimal attributes
         const latestQuery = Date.now();
@@ -2271,10 +2309,14 @@ export const getMonitoringSummary = async (req, res) => {
                 attributes: ['scan_timestamp']
             })
         ]);
-        console.log(`📊 Latest timestamp queries: ${Date.now() - latestQuery}ms`);
+        log.monitoring.debug('Latest timestamp queries completed', {
+            duration_ms: Date.now() - latestQuery
+        });
 
         const queryTime = Date.now() - startTime;
-        console.log(`✅ Summary query completed in ${queryTime}ms`);
+        log.monitoring.info('Summary query completed', {
+            total_duration_ms: queryTime
+        });
 
         res.json({
             host: hostname,
@@ -2312,7 +2354,11 @@ export const getMonitoringSummary = async (req, res) => {
         });
     } catch (error) {
         const queryTime = Date.now() - startTime;
-        console.error(`❌ Summary query failed after ${queryTime}ms:`, error);
+        log.api.error('Summary query failed', {
+            duration_ms: queryTime,
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get monitoring summary',
             details: error.message,
