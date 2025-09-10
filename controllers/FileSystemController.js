@@ -1309,3 +1309,155 @@ export const extractArchiveTask = async (req, res) => {
         });
     }
 };
+
+/**
+ * @swagger
+ * /filesystem/permissions:
+ *   patch:
+ *     summary: Change file or directory permissions
+ *     tags: [File System]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - path
+ *             properties:
+ *               path:
+ *                 type: string
+ *                 description: File or directory path
+ *                 example: "/home/user/file.txt"
+ *               uid:
+ *                 type: integer
+ *                 description: New user ID for ownership
+ *                 example: 1000
+ *               gid:
+ *                 type: integer
+ *                 description: New group ID for ownership
+ *                 example: 1000
+ *               mode:
+ *                 type: string
+ *                 description: New permissions in octal format
+ *                 example: "644"
+ *               recursive:
+ *                 type: boolean
+ *                 description: Apply changes recursively to directories
+ *                 default: false
+ *     responses:
+ *       200:
+ *         description: Permissions updated successfully
+ *       400:
+ *         description: Invalid request
+ *       403:
+ *         description: Access forbidden
+ *       404:
+ *         description: File not found
+ *       500:
+ *         description: Failed to update permissions
+ */
+export const changePermissions = async (req, res) => {
+    try {
+        const fileBrowserConfig = config.getFileBrowser();
+        
+        if (!fileBrowserConfig?.enabled) {
+            return res.status(503).json({
+                error: 'File browser is disabled'
+            });
+        }
+
+        const { path: itemPath, uid, gid, mode, recursive = false } = req.body;
+        
+        if (!itemPath) {
+            return res.status(400).json({
+                error: 'path is required'
+            });
+        }
+
+        if (uid === undefined && gid === undefined && mode === undefined) {
+            return res.status(400).json({
+                error: 'At least one of uid, gid, or mode must be specified'
+            });
+        }
+
+        console.log(`🔧 [CHMOD] Permission change request:`, {
+            path: itemPath,
+            uid: uid,
+            gid: gid,
+            mode: mode,
+            recursive: recursive,
+            user: req.entity.name
+        });
+
+        const validation = validatePath(itemPath);
+        if (!validation.valid) {
+            return res.status(403).json({ error: validation.error });
+        }
+
+        const normalizedPath = validation.normalizedPath;
+        const { executeCommand } = await import('../lib/FileSystemManager.js');
+
+        // Change ownership if specified
+        if (uid !== undefined || gid !== undefined) {
+            let chownCommand = `pfexec chown`;
+            if (recursive) chownCommand += ` -R`;
+            
+            const uidVal = uid !== undefined ? uid : -1;
+            const gidVal = gid !== undefined ? gid : -1;
+            chownCommand += ` ${uidVal}:${gidVal} "${normalizedPath}"`;
+            
+            const chownResult = await executeCommand(chownCommand);
+            if (!chownResult.success) {
+                throw new Error(`Failed to change ownership: ${chownResult.error}`);
+            }
+        }
+
+        // Change permissions if specified
+        if (mode !== undefined) {
+            let chmodCommand = `pfexec chmod`;
+            if (recursive) chmodCommand += ` -R`;
+            chmodCommand += ` ${mode} "${normalizedPath}"`;
+            
+            const chmodResult = await executeCommand(chmodCommand);
+            if (!chmodResult.success) {
+                throw new Error(`Failed to change permissions: ${chmodResult.error}`);
+            }
+        }
+
+        // Get updated item info
+        const itemInfo = await getItemInfo(itemPath);
+
+        console.log(`✅ [CHMOD] Successfully changed permissions for: ${itemPath}`);
+
+        res.json({
+            success: true,
+            message: `Permissions updated successfully for '${itemInfo.name}'`,
+            item: itemInfo,
+            changes_applied: {
+                uid: uid,
+                gid: gid, 
+                mode: mode,
+                recursive: recursive
+            }
+        });
+
+    } catch (error) {
+        console.error(`❌ [CHMOD] Error changing permissions:`, error);
+        
+        if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
+            return res.status(403).json({ error: error.message });
+        }
+        
+        if (error.message.includes('not found') || error.message.includes('ENOENT')) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to update permissions',
+            details: error.message 
+        });
+    }
+};

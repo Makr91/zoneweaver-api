@@ -240,8 +240,16 @@ import {
     renameItem,
     deleteFileItem,
     createArchiveTask,
-    extractArchiveTask
+    extractArchiveTask,
+    changePermissions
 } from "../controllers/FileSystemController.js";
+import {
+    getCurrentUserInfo,
+    getSystemUsers,
+    getSystemGroups,
+    lookupUser,
+    lookupGroup
+} from "../controllers/SystemUserController.js";
 import { 
     uploadSingle,
     validateUploadRequest,
@@ -506,6 +514,13 @@ router.get('/system/processes/:pid/files', verifyApiKey, getProcessFilesControll
 router.get('/system/processes/:pid/stack', verifyApiKey, getProcessStackController);       // Get process stack trace
 router.get('/system/processes/:pid/limits', verifyApiKey, getProcessLimitsController);     // Get process resource limits
 
+// System User Management Routes
+router.get('/system/user-info', verifyApiKey, getCurrentUserInfo);                         // Get current API user information
+router.get('/system/users', verifyApiKey, getSystemUsers);                                 // List system users
+router.get('/system/groups', verifyApiKey, getSystemGroups);                               // List system groups
+router.get('/system/user-lookup', verifyApiKey, lookupUser);                               // Lookup user by UID or username
+router.get('/system/group-lookup', verifyApiKey, lookupGroup);                             // Lookup group by GID or name
+
 // File System Management Routes
 router.get('/filesystem', verifyApiKey, browseDirectory);                                  // Browse directory contents
 router.post('/filesystem/folder', verifyApiKey, createFolder);                             // Create directory
@@ -517,6 +532,7 @@ router.put('/filesystem/move', verifyApiKey, moveFileItem);                     
 router.post('/filesystem/copy', verifyApiKey, copyFileItem);                               // Copy item (async task)
 router.patch('/filesystem/rename', verifyApiKey, renameItem);                              // Rename item
 router.delete('/filesystem', verifyApiKey, deleteFileItem);                                // Delete item
+router.patch('/filesystem/permissions', verifyApiKey, changePermissions);                  // Change file/directory permissions
 router.post('/filesystem/archive/create', verifyApiKey, createArchiveTask);                // Create archive (async task)
 router.post('/filesystem/archive/extract', verifyApiKey, extractArchiveTask);              // Extract archive (async task)
 
