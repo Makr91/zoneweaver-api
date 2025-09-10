@@ -60,6 +60,10 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Skip specific scripts
+scripts/sync-versions.js
+scripts/generate-docs.js
+
 # SQLite files
 *.sqlite
 *.db

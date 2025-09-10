@@ -20,6 +20,8 @@ export default [
       'assets/**/*', // Static assets
       '.git/**/*', // Git files
       'scripts/remove-console-taskqueue.js', // Temp script
+      'scripts/sync-versions.js',
+      'scripts/generate-docs.js',
     ],
   },
 
