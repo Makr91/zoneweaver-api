@@ -94,23 +94,24 @@ host_monitoring:
     command_timeout: 30
     batch_size: 100
 logging:
-  level: info  # Temporarily set to info to see all logs working
+  level: warn  # Production log level - errors and warnings only
   console_enabled: false  # Disable console output in production
   log_directory: /var/log/zoneweaver-api  # Configurable log directory
   file_rotation:
-    max_size: 50  # MB
-    max_files: 5
-    compress: true
+    max_size: 50m  # Max size per file (can use k, m, g units)
+    max_files: 14d  # Keep 14 days of logs
+    compress: true  # Compress archived logs with gzip
+    date_pattern: YYYY-MM-DD  # Daily rotation pattern
   performance_threshold_ms: 1000  # Only log operations slower than this
   categories:
-    monitoring: info  # Temporarily set to info to see monitoring logs
-    database: info    # Temporarily set to info to see database logs  
-    tasks: info
-    performance: info
-    api_requests: info
-    filesystem: info  # Temporarily set to info
-    auth: info
-    websocket: info   # Temporarily set to info
+    monitoring: info  # More verbose for monitoring
+    database: warn    # Only errors and warnings
+    tasks: info       # Task execution info
+    performance: warn # Only slow operations
+    api_requests: info # API request tracking
+    filesystem: warn  # File operations warnings
+    auth: info        # Authentication events
+    websocket: warn   # WebSocket connection issues
 reconciliation:
   enabled: true
   interval: 3600
