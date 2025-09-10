@@ -5,15 +5,15 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { spawn } from "child_process";
-import { v4 as uuidv4 } from "uuid";
-import { WebSocketServer, WebSocket } from "ws";
-import { Op } from "sequelize";
-import fs from "fs/promises";
-import path from "path";
-import config from "../config/ConfigLoader.js";
-import LogStreamSession from "../models/LogStreamSessionModel.js";
-import { log, createTimer } from "../lib/Logger.js";
+import { spawn } from 'child_process';
+import { v4 as uuidv4 } from 'uuid';
+import { WebSocketServer, WebSocket } from 'ws';
+import { Op } from 'sequelize';
+import fs from 'fs/promises';
+import path from 'path';
+import config from '../config/ConfigLoader.js';
+import LogStreamSession from '../models/LogStreamSessionModel.js';
+import { log, createTimer } from '../lib/Logger.js';
 
 /**
  * Active log stream sessions
@@ -73,97 +73,96 @@ const activeSessions = new Map();
  *         description: Failed to create stream session
  */
 export const startLogStream = async (req, res) => {
-    try {
-        const { logname } = req.params;
-        const { follow_lines = 50, grep_pattern } = req.body || {};
-        const logsConfig = config.getSystemLogs();
-        
-        if (!logsConfig?.enabled) {
-            return res.status(503).json({
-                error: 'System logs are disabled in configuration'
-            });
-        }
+  try {
+    const { logname } = req.params;
+    const { follow_lines = 50, grep_pattern } = req.body || {};
+    const logsConfig = config.getSystemLogs();
 
-        // Find the log file in allowed paths
-        const logPath = await findLogFile(logname, logsConfig.allowed_paths);
-        if (!logPath) {
-            return res.status(404).json({
-                error: `Log file '${logname}' not found in allowed directories`
-            });
-        }
-
-        // Security validation
-        const securityCheck = await validateLogFileAccess(logPath, logsConfig);
-        if (!securityCheck.allowed) {
-            return res.status(400).json({
-                error: securityCheck.reason
-            });
-        }
-
-        // Check if file is binary - refuse to stream binary files
-        const isBinary = await isBinaryFile(logPath);
-        if (isBinary) {
-            return res.status(400).json({
-                error: `Cannot stream log file '${logname}' - file contains binary data`,
-                details: 'Binary files are not supported for streaming',
-                logname: logname,
-                suggestion: 'Use system tools like hexdump or strings for binary file analysis'
-            });
-        }
-
-        // Check concurrent session limit
-        if (activeSessions.size >= (logsConfig.max_concurrent_streams || 10)) {
-            return res.status(429).json({
-                error: 'Maximum concurrent log streams reached'
-            });
-        }
-
-        const sessionId = uuidv4();
-        const cookie = `logstream_${Date.now()}_${sessionId}`;
-
-        // Create session record
-        const sessionRecord = await LogStreamSession.create({
-            session_id: sessionId,
-            cookie: cookie,
-            logname: logname,
-            log_path: logPath,
-            follow_lines: follow_lines,
-            grep_pattern: grep_pattern || null,
-            status: 'created',
-            created_at: new Date()
-        });
-
-        const websocketUrl = `/logs/stream/${sessionId}`;
-
-        log.websocket.info('Log stream session created', {
-            session_id: sessionId,
-            logname: logname,
-            log_path: logPath,
-            follow_lines: follow_lines,
-            grep_pattern: grep_pattern
-        });
-
-        res.json({
-            session_id: sessionId,
-            websocket_url: websocketUrl,
-            logname: logname,
-            log_path: logPath,
-            follow_lines: follow_lines,
-            grep_pattern: grep_pattern || null,
-            status: 'created',
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.websocket.error('Error starting log stream', {
-            error: error.message,
-            logname: req.params.logname
-        });
-        res.status(500).json({ 
-            error: 'Failed to start log stream',
-            details: error.message 
-        });
+    if (!logsConfig?.enabled) {
+      return res.status(503).json({
+        error: 'System logs are disabled in configuration',
+      });
     }
+
+    // Find the log file in allowed paths
+    const logPath = await findLogFile(logname, logsConfig.allowed_paths);
+    if (!logPath) {
+      return res.status(404).json({
+        error: `Log file '${logname}' not found in allowed directories`,
+      });
+    }
+
+    // Security validation
+    const securityCheck = await validateLogFileAccess(logPath, logsConfig);
+    if (!securityCheck.allowed) {
+      return res.status(400).json({
+        error: securityCheck.reason,
+      });
+    }
+
+    // Check if file is binary - refuse to stream binary files
+    const isBinary = await isBinaryFile(logPath);
+    if (isBinary) {
+      return res.status(400).json({
+        error: `Cannot stream log file '${logname}' - file contains binary data`,
+        details: 'Binary files are not supported for streaming',
+        logname,
+        suggestion: 'Use system tools like hexdump or strings for binary file analysis',
+      });
+    }
+
+    // Check concurrent session limit
+    if (activeSessions.size >= (logsConfig.max_concurrent_streams || 10)) {
+      return res.status(429).json({
+        error: 'Maximum concurrent log streams reached',
+      });
+    }
+
+    const sessionId = uuidv4();
+    const cookie = `logstream_${Date.now()}_${sessionId}`;
+
+    // Create session record
+    const sessionRecord = await LogStreamSession.create({
+      session_id: sessionId,
+      cookie,
+      logname,
+      log_path: logPath,
+      follow_lines,
+      grep_pattern: grep_pattern || null,
+      status: 'created',
+      created_at: new Date(),
+    });
+
+    const websocketUrl = `/logs/stream/${sessionId}`;
+
+    log.websocket.info('Log stream session created', {
+      session_id: sessionId,
+      logname,
+      log_path: logPath,
+      follow_lines,
+      grep_pattern,
+    });
+
+    res.json({
+      session_id: sessionId,
+      websocket_url: websocketUrl,
+      logname,
+      log_path: logPath,
+      follow_lines,
+      grep_pattern: grep_pattern || null,
+      status: 'created',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.websocket.error('Error starting log stream', {
+      error: error.message,
+      logname: req.params.logname,
+    });
+    res.status(500).json({
+      error: 'Failed to start log stream',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -180,36 +179,35 @@ export const startLogStream = async (req, res) => {
  *         description: Failed to list sessions
  */
 export const listLogStreamSessions = async (req, res) => {
-    try {
-        const sessions = await LogStreamSession.findAll({
-            where: { status: 'active' },
-            order: [['created_at', 'DESC']]
-        });
+  try {
+    const sessions = await LogStreamSession.findAll({
+      where: { status: 'active' },
+      order: [['created_at', 'DESC']],
+    });
 
-        const activeSummary = Array.from(activeSessions.values()).map(session => ({
-            session_id: session.sessionId,
-            logname: session.logname,
-            connected_at: session.connectedAt,
-            lines_sent: session.linesSent,
-            client_ip: session.clientIP || null
-        }));
+    const activeSummary = Array.from(activeSessions.values()).map(session => ({
+      session_id: session.sessionId,
+      logname: session.logname,
+      connected_at: session.connectedAt,
+      lines_sent: session.linesSent,
+      client_ip: session.clientIP || null,
+    }));
 
-        res.json({
-            sessions: sessions,
-            active_sessions: activeSummary,
-            total_active: activeSessions.size,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.database.error('Error listing log stream sessions', {
-            error: error.message
-        });
-        res.status(500).json({ 
-            error: 'Failed to list log stream sessions',
-            details: error.message 
-        });
-    }
+    res.json({
+      sessions,
+      active_sessions: activeSummary,
+      total_active: activeSessions.size,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.database.error('Error listing log stream sessions', {
+      error: error.message,
+    });
+    res.status(500).json({
+      error: 'Failed to list log stream sessions',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -235,59 +233,58 @@ export const listLogStreamSessions = async (req, res) => {
  *         description: Failed to stop session
  */
 export const stopLogStream = async (req, res) => {
-    try {
-        const { sessionId } = req.params;
+  try {
+    const { sessionId } = req.params;
 
-        // Get session from database
-        const session = await LogStreamSession.findOne({
-            where: { session_id: sessionId }
-        });
+    // Get session from database
+    const session = await LogStreamSession.findOne({
+      where: { session_id: sessionId },
+    });
 
-        if (!session) {
-            return res.status(404).json({
-                error: `Log stream session ${sessionId} not found`
-            });
-        }
-
-        // Stop active session if running
-        if (activeSessions.has(sessionId)) {
-            const activeSession = activeSessions.get(sessionId);
-            if (activeSession.tailProcess) {
-                activeSession.tailProcess.kill();
-            }
-            if (activeSession.ws && activeSession.ws.readyState === WebSocket.OPEN) {
-                activeSession.ws.close();
-            }
-            activeSessions.delete(sessionId);
-        }
-
-        // Update database record
-        await session.update({
-            status: 'stopped',
-            stopped_at: new Date()
-        });
-
-        log.websocket.info('Log stream session stopped', {
-            session_id: sessionId
-        });
-
-        res.json({
-            success: true,
-            session_id: sessionId,
-            message: 'Log stream session stopped successfully',
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.websocket.error('Error stopping log stream', {
-            error: error.message,
-            session_id: req.params.sessionId
-        });
-        res.status(500).json({ 
-            error: 'Failed to stop log stream',
-            details: error.message 
-        });
+    if (!session) {
+      return res.status(404).json({
+        error: `Log stream session ${sessionId} not found`,
+      });
     }
+
+    // Stop active session if running
+    if (activeSessions.has(sessionId)) {
+      const activeSession = activeSessions.get(sessionId);
+      if (activeSession.tailProcess) {
+        activeSession.tailProcess.kill();
+      }
+      if (activeSession.ws && activeSession.ws.readyState === WebSocket.OPEN) {
+        activeSession.ws.close();
+      }
+      activeSessions.delete(sessionId);
+    }
+
+    // Update database record
+    await session.update({
+      status: 'stopped',
+      stopped_at: new Date(),
+    });
+
+    log.websocket.info('Log stream session stopped', {
+      session_id: sessionId,
+    });
+
+    res.json({
+      success: true,
+      session_id: sessionId,
+      message: 'Log stream session stopped successfully',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.websocket.error('Error stopping log stream', {
+      error: error.message,
+      session_id: req.params.sessionId,
+    });
+    res.status(500).json({
+      error: 'Failed to stop log stream',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -298,44 +295,43 @@ export const stopLogStream = async (req, res) => {
  * @param {Object} wss - WebSocket server instance
  */
 export const handleLogStreamUpgrade = async (request, socket, head, wss) => {
-    try {
-        const url = new URL(request.url, `http://${request.headers.host}`);
-        const pathParts = url.pathname.split('/');
-        
-        if (pathParts.length !== 4 || pathParts[1] !== 'logs' || pathParts[2] !== 'stream') {
-            socket.destroy();
-            return;
-        }
+  try {
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    const pathParts = url.pathname.split('/');
 
-        const sessionId = pathParts[3];
-
-        // Verify session exists in database
-        const sessionRecord = await LogStreamSession.findOne({
-            where: { session_id: sessionId }
-        });
-
-        if (!sessionRecord) {
-            log.websocket.warn('Log stream session not found for WebSocket upgrade', {
-                session_id: sessionId
-            });
-            socket.destroy();
-            return;
-        }
-
-        // Handle WebSocket upgrade
-        wss.handleUpgrade(request, socket, head, (ws) => {
-            log.websocket.debug('WebSocket upgrade request for log stream', {
-                session_id: sessionId
-            });
-            handleLogStreamConnection(ws, sessionRecord);
-        });
-
-    } catch (error) {
-        log.websocket.error('Error handling log stream upgrade', {
-            error: error.message
-        });
-        socket.destroy();
+    if (pathParts.length !== 4 || pathParts[1] !== 'logs' || pathParts[2] !== 'stream') {
+      socket.destroy();
+      return;
     }
+
+    const sessionId = pathParts[3];
+
+    // Verify session exists in database
+    const sessionRecord = await LogStreamSession.findOne({
+      where: { session_id: sessionId },
+    });
+
+    if (!sessionRecord) {
+      log.websocket.warn('Log stream session not found for WebSocket upgrade', {
+        session_id: sessionId,
+      });
+      socket.destroy();
+      return;
+    }
+
+    // Handle WebSocket upgrade
+    wss.handleUpgrade(request, socket, head, ws => {
+      log.websocket.debug('WebSocket upgrade request for log stream', {
+        session_id: sessionId,
+      });
+      handleLogStreamConnection(ws, sessionRecord);
+    });
+  } catch (error) {
+    log.websocket.error('Error handling log stream upgrade', {
+      error: error.message,
+    });
+    socket.destroy();
+  }
 };
 
 /**
@@ -344,207 +340,217 @@ export const handleLogStreamUpgrade = async (request, socket, head, wss) => {
  * @param {Object} sessionRecord - Database session record
  */
 const handleLogStreamConnection = async (ws, sessionRecord) => {
-    const sessionId = sessionRecord.session_id;
-    const logPath = sessionRecord.log_path;
-    
-    try {
-        // Update session status
-        await sessionRecord.update({
-            status: 'active',
-            connected_at: new Date()
-        });
+  const sessionId = sessionRecord.session_id;
+  const logPath = sessionRecord.log_path;
 
-        // Build tail command
-        let command = ['tail', '-f'];
-        
-        // Add initial lines
-        if (sessionRecord.follow_lines > 0) {
-            command.push('-n', sessionRecord.follow_lines.toString());
-        }
-        
-        command.push(logPath);
+  try {
+    // Update session status
+    await sessionRecord.update({
+      status: 'active',
+      connected_at: new Date(),
+    });
 
-        // Start tail process
-        const tailProcess = spawn(command[0], command.slice(1));
-        
-        // Track active session
-        const sessionData = {
-            sessionId: sessionId,
-            ws: ws,
-            tailProcess: tailProcess,
-            logname: sessionRecord.logname,
-            connectedAt: new Date(),
-            linesSent: 0,
-            clientIP: ws._socket.remoteAddress
-        };
-        
-        activeSessions.set(sessionId, sessionData);
+    // Build tail command
+    const command = ['tail', '-f'];
 
-        log.websocket.info('WebSocket connected to log stream', {
-            session_id: sessionId,
-            logname: sessionRecord.logname,
-            client_ip: sessionData.clientIP
-        });
-
-        // Send initial status message
-        ws.send(JSON.stringify({
-            type: 'status',
-            message: `Connected to ${sessionRecord.logname}`,
-            session_id: sessionId,
-            timestamp: new Date().toISOString()
-        }));
-
-        // Handle tail output
-        tailProcess.stdout.on('data', (data) => {
-            if (ws.readyState === WebSocket.OPEN) {
-                const lines = data.toString().split('\n').filter(line => line.trim());
-                
-                for (const line of lines) {
-                    // Apply grep filter if specified
-                    if (sessionRecord.grep_pattern) {
-                        if (!line.includes(sessionRecord.grep_pattern)) {
-                            continue;
-                        }
-                    }
-                    
-                    ws.send(JSON.stringify({
-                        type: 'log_line',
-                        line: line,
-                        timestamp: new Date().toISOString()
-                    }));
-                    
-                    sessionData.linesSent++;
-                }
-            }
-        });
-
-        // Handle tail stderr
-        tailProcess.stderr.on('data', (data) => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'error',
-                    message: data.toString(),
-                    timestamp: new Date().toISOString()
-                }));
-            }
-        });
-
-        // Handle tail process exit
-        tailProcess.on('exit', (code) => {
-            log.websocket.info('Tail process exited for log stream session', {
-                session_id: sessionId,
-                exit_code: code
-            });
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'process_exit',
-                    code: code,
-                    message: 'Log tail process ended',
-                    timestamp: new Date().toISOString()
-                }));
-            }
-        });
-
-        // Handle WebSocket close
-        ws.on('close', async () => {
-            log.websocket.info('WebSocket closed for log stream', {
-                session_id: sessionId,
-                lines_sent: sessionData.linesSent
-            });
-            
-            // Kill tail process
-            if (tailProcess && !tailProcess.killed) {
-                tailProcess.kill();
-            }
-            
-            // Remove from active sessions
-            activeSessions.delete(sessionId);
-            
-            // Update database record
-            try {
-                await sessionRecord.update({
-                    status: 'closed',
-                    lines_sent: sessionData.linesSent,
-                    disconnected_at: new Date()
-                });
-            } catch (error) {
-                log.database.warn('Failed to update session record on close', {
-                    session_id: sessionId,
-                    error: error.message
-                });
-            }
-        });
-
-        // Handle WebSocket errors
-        ws.on('error', (error) => {
-            log.websocket.error('WebSocket error for log stream', {
-                session_id: sessionId,
-                error: error.message
-            });
-            
-            // Kill tail process on error
-            if (tailProcess && !tailProcess.killed) {
-                tailProcess.kill();
-            }
-            
-            // Remove from active sessions
-            activeSessions.delete(sessionId);
-        });
-
-        // Handle incoming messages (for control commands)
-        ws.on('message', async (data) => {
-            try {
-                const message = JSON.parse(data.toString());
-                
-                switch (message.type) {
-                    case 'ping':
-                        ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
-                        break;
-                    case 'pause':
-                        if (tailProcess && !tailProcess.killed) {
-                            tailProcess.kill('SIGSTOP');
-                        }
-                        break;
-                    case 'resume':
-                        if (tailProcess && !tailProcess.killed) {
-                            tailProcess.kill('SIGCONT');
-                        }
-                        break;
-                    default:
-                        log.websocket.warn('Unknown WebSocket message type', {
-                            session_id: sessionId,
-                            message_type: message.type
-                        });
-                }
-            } catch (error) {
-                log.websocket.warn('Error processing WebSocket message', {
-                    session_id: sessionId,
-                    error: error.message
-                });
-            }
-        });
-
-    } catch (error) {
-        log.websocket.error('Error setting up log stream connection', {
-            session_id: sessionId,
-            error: error.message
-        });
-        ws.close();
-        
-        // Update session record on error
-        try {
-            await sessionRecord.update({
-                status: 'error',
-                error_message: error.message,
-                disconnected_at: new Date()
-            });
-        } catch (updateError) {
-            log.database.warn('Failed to update session record on error', {
-                session_id: sessionId,
-                error: updateError.message
-            });
-        }
+    // Add initial lines
+    if (sessionRecord.follow_lines > 0) {
+      command.push('-n', sessionRecord.follow_lines.toString());
     }
+
+    command.push(logPath);
+
+    // Start tail process
+    const tailProcess = spawn(command[0], command.slice(1));
+
+    // Track active session
+    const sessionData = {
+      sessionId,
+      ws,
+      tailProcess,
+      logname: sessionRecord.logname,
+      connectedAt: new Date(),
+      linesSent: 0,
+      clientIP: ws._socket.remoteAddress,
+    };
+
+    activeSessions.set(sessionId, sessionData);
+
+    log.websocket.info('WebSocket connected to log stream', {
+      session_id: sessionId,
+      logname: sessionRecord.logname,
+      client_ip: sessionData.clientIP,
+    });
+
+    // Send initial status message
+    ws.send(
+      JSON.stringify({
+        type: 'status',
+        message: `Connected to ${sessionRecord.logname}`,
+        session_id: sessionId,
+        timestamp: new Date().toISOString(),
+      })
+    );
+
+    // Handle tail output
+    tailProcess.stdout.on('data', data => {
+      if (ws.readyState === WebSocket.OPEN) {
+        const lines = data
+          .toString()
+          .split('\n')
+          .filter(line => line.trim());
+
+        for (const line of lines) {
+          // Apply grep filter if specified
+          if (sessionRecord.grep_pattern) {
+            if (!line.includes(sessionRecord.grep_pattern)) {
+              continue;
+            }
+          }
+
+          ws.send(
+            JSON.stringify({
+              type: 'log_line',
+              line,
+              timestamp: new Date().toISOString(),
+            })
+          );
+
+          sessionData.linesSent++;
+        }
+      }
+    });
+
+    // Handle tail stderr
+    tailProcess.stderr.on('data', data => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: data.toString(),
+            timestamp: new Date().toISOString(),
+          })
+        );
+      }
+    });
+
+    // Handle tail process exit
+    tailProcess.on('exit', code => {
+      log.websocket.info('Tail process exited for log stream session', {
+        session_id: sessionId,
+        exit_code: code,
+      });
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: 'process_exit',
+            code,
+            message: 'Log tail process ended',
+            timestamp: new Date().toISOString(),
+          })
+        );
+      }
+    });
+
+    // Handle WebSocket close
+    ws.on('close', async () => {
+      log.websocket.info('WebSocket closed for log stream', {
+        session_id: sessionId,
+        lines_sent: sessionData.linesSent,
+      });
+
+      // Kill tail process
+      if (tailProcess && !tailProcess.killed) {
+        tailProcess.kill();
+      }
+
+      // Remove from active sessions
+      activeSessions.delete(sessionId);
+
+      // Update database record
+      try {
+        await sessionRecord.update({
+          status: 'closed',
+          lines_sent: sessionData.linesSent,
+          disconnected_at: new Date(),
+        });
+      } catch (error) {
+        log.database.warn('Failed to update session record on close', {
+          session_id: sessionId,
+          error: error.message,
+        });
+      }
+    });
+
+    // Handle WebSocket errors
+    ws.on('error', error => {
+      log.websocket.error('WebSocket error for log stream', {
+        session_id: sessionId,
+        error: error.message,
+      });
+
+      // Kill tail process on error
+      if (tailProcess && !tailProcess.killed) {
+        tailProcess.kill();
+      }
+
+      // Remove from active sessions
+      activeSessions.delete(sessionId);
+    });
+
+    // Handle incoming messages (for control commands)
+    ws.on('message', async data => {
+      try {
+        const message = JSON.parse(data.toString());
+
+        switch (message.type) {
+          case 'ping':
+            ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+            break;
+          case 'pause':
+            if (tailProcess && !tailProcess.killed) {
+              tailProcess.kill('SIGSTOP');
+            }
+            break;
+          case 'resume':
+            if (tailProcess && !tailProcess.killed) {
+              tailProcess.kill('SIGCONT');
+            }
+            break;
+          default:
+            log.websocket.warn('Unknown WebSocket message type', {
+              session_id: sessionId,
+              message_type: message.type,
+            });
+        }
+      } catch (error) {
+        log.websocket.warn('Error processing WebSocket message', {
+          session_id: sessionId,
+          error: error.message,
+        });
+      }
+    });
+  } catch (error) {
+    log.websocket.error('Error setting up log stream connection', {
+      session_id: sessionId,
+      error: error.message,
+    });
+    ws.close();
+
+    // Update session record on error
+    try {
+      await sessionRecord.update({
+        status: 'error',
+        error_message: error.message,
+        disconnected_at: new Date(),
+      });
+    } catch (updateError) {
+      log.database.warn('Failed to update session record on error', {
+        session_id: sessionId,
+        error: updateError.message,
+      });
+    }
+  }
 };
 
 /**
@@ -553,48 +559,47 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
  * @param {Object} res - Express response object
  */
 export const getLogStreamInfo = async (req, res) => {
-    try {
-        const { sessionId } = req.params;
+  try {
+    const { sessionId } = req.params;
 
-        const session = await LogStreamSession.findOne({
-            where: { session_id: sessionId }
-        });
+    const session = await LogStreamSession.findOne({
+      where: { session_id: sessionId },
+    });
 
-        if (!session) {
-            return res.status(404).json({
-                error: `Log stream session ${sessionId} not found`
-            });
-        }
-
-        const activeSession = activeSessions.get(sessionId);
-        const isActive = !!activeSession;
-
-        res.json({
-            session_id: sessionId,
-            logname: session.logname,
-            log_path: session.log_path,
-            status: session.status,
-            active: isActive,
-            lines_sent: activeSession?.linesSent || session.lines_sent || 0,
-            created_at: session.created_at,
-            connected_at: session.connected_at,
-            disconnected_at: session.disconnected_at,
-            grep_pattern: session.grep_pattern,
-            follow_lines: session.follow_lines,
-            client_ip: activeSession?.clientIP || null,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.database.error('Error getting log stream info', {
-            error: error.message,
-            session_id: req.params.sessionId
-        });
-        res.status(500).json({ 
-            error: 'Failed to get log stream info',
-            details: error.message 
-        });
+    if (!session) {
+      return res.status(404).json({
+        error: `Log stream session ${sessionId} not found`,
+      });
     }
+
+    const activeSession = activeSessions.get(sessionId);
+    const isActive = !!activeSession;
+
+    res.json({
+      session_id: sessionId,
+      logname: session.logname,
+      log_path: session.log_path,
+      status: session.status,
+      active: isActive,
+      lines_sent: activeSession?.linesSent || session.lines_sent || 0,
+      created_at: session.created_at,
+      connected_at: session.connected_at,
+      disconnected_at: session.disconnected_at,
+      grep_pattern: session.grep_pattern,
+      follow_lines: session.follow_lines,
+      client_ip: activeSession?.clientIP || null,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.database.error('Error getting log stream info', {
+      error: error.message,
+      session_id: req.params.sessionId,
+    });
+    res.status(500).json({
+      error: 'Failed to get log stream info',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -604,16 +609,16 @@ export const getLogStreamInfo = async (req, res) => {
  * @returns {string|null} Full path to log file or null if not found
  */
 async function findLogFile(logname, allowedPaths) {
-    for (const dirPath of allowedPaths) {
-        try {
-            const fullPath = path.join(dirPath, logname);
-            await fs.access(fullPath, fs.constants.R_OK);
-            return fullPath;
-        } catch (error) {
-            // File not found in this directory, continue searching
-        }
+  for (const dirPath of allowedPaths) {
+    try {
+      const fullPath = path.join(dirPath, logname);
+      await fs.access(fullPath, fs.constants.R_OK);
+      return fullPath;
+    } catch (error) {
+      // File not found in this directory, continue searching
     }
-    return null;
+  }
+  return null;
 }
 
 /**
@@ -623,42 +628,41 @@ async function findLogFile(logname, allowedPaths) {
  * @returns {Object} Validation result
  */
 async function validateLogFileAccess(logPath, logsConfig) {
-    try {
-        const stats = await fs.stat(logPath);
-        
-        // Check file size limit (more generous for streaming)
-        const maxSizeBytes = (logsConfig.security.max_file_size_mb * 2) * 1024 * 1024; // 2x limit for streaming
-        if (stats.size > maxSizeBytes) {
-            return {
-                allowed: false,
-                reason: `File too large for streaming: ${formatFileSize(stats.size)} exceeds limit`
-            };
-        }
+  try {
+    const stats = await fs.stat(logPath);
 
-        // Check forbidden patterns
-        const filename = path.basename(logPath);
-        for (const pattern of logsConfig.security.forbidden_patterns) {
-            const regex = new RegExp(pattern.replace('*', '.*'));
-            if (regex.test(filename) || regex.test(logPath)) {
-                return {
-                    allowed: false,
-                    reason: `File matches forbidden pattern: ${pattern}`
-                };
-            }
-        }
-
-        return {
-            allowed: true,
-            fileSize: stats.size,
-            modified: stats.mtime
-        };
-        
-    } catch (error) {
-        return {
-            allowed: false,
-            reason: `Cannot access file: ${error.message}`
-        };
+    // Check file size limit (more generous for streaming)
+    const maxSizeBytes = logsConfig.security.max_file_size_mb * 2 * 1024 * 1024; // 2x limit for streaming
+    if (stats.size > maxSizeBytes) {
+      return {
+        allowed: false,
+        reason: `File too large for streaming: ${formatFileSize(stats.size)} exceeds limit`,
+      };
     }
+
+    // Check forbidden patterns
+    const filename = path.basename(logPath);
+    for (const pattern of logsConfig.security.forbidden_patterns) {
+      const regex = new RegExp(pattern.replace('*', '.*'));
+      if (regex.test(filename) || regex.test(logPath)) {
+        return {
+          allowed: false,
+          reason: `File matches forbidden pattern: ${pattern}`,
+        };
+      }
+    }
+
+    return {
+      allowed: true,
+      fileSize: stats.size,
+      modified: stats.mtime,
+    };
+  } catch (error) {
+    return {
+      allowed: false,
+      reason: `Cannot access file: ${error.message}`,
+    };
+  }
 }
 
 /**
@@ -667,45 +671,49 @@ async function validateLogFileAccess(logPath, logsConfig) {
  * @returns {Promise<boolean>} True if file appears to be binary
  */
 async function isBinaryFile(filePath) {
-    try {
-        // Read first 8KB of file to check for binary content
-        const fileHandle = await fs.open(filePath, 'r');
-        const buffer = Buffer.alloc(8192);
-        const { bytesRead } = await fileHandle.read(buffer, 0, 8192, 0);
-        await fileHandle.close();
-        
-        if (bytesRead === 0) return false; // Empty file, treat as text
-        
-        const sample = buffer.slice(0, bytesRead);
-        
-        // Count null bytes - binary files typically have many null bytes
-        const nullBytes = sample.filter(byte => byte === 0).length;
-        const nullPercentage = nullBytes / bytesRead;
-        
-        // Consider binary if >1% null bytes or high percentage of control characters
-        if (nullPercentage > 0.01) return true;
-        
-        // Check for excessive control characters (excluding common ones like \n, \r, \t)
-        const controlBytes = sample.filter(byte => 
-            (byte >= 1 && byte <= 8) || // Control chars except \t
-            (byte >= 11 && byte <= 12) || // Control chars except \n
-            (byte >= 14 && byte <= 31) || // Control chars except \r
-            byte === 127 // DEL
-        ).length;
-        
-        const controlPercentage = controlBytes / bytesRead;
-        
-        // Consider binary if >5% control characters
-        return controlPercentage > 0.05;
-        
-    } catch (error) {
-        // If we can't read the file, assume it's binary to be safe
-        log.filesystem.warn('Cannot determine file type', {
-            file_path: filePath,
-            error: error.message
-        });
-        return true;
+  try {
+    // Read first 8KB of file to check for binary content
+    const fileHandle = await fs.open(filePath, 'r');
+    const buffer = Buffer.alloc(8192);
+    const { bytesRead } = await fileHandle.read(buffer, 0, 8192, 0);
+    await fileHandle.close();
+
+    if (bytesRead === 0) {
+      return false;
+    } // Empty file, treat as text
+
+    const sample = buffer.slice(0, bytesRead);
+
+    // Count null bytes - binary files typically have many null bytes
+    const nullBytes = sample.filter(byte => byte === 0).length;
+    const nullPercentage = nullBytes / bytesRead;
+
+    // Consider binary if >1% null bytes or high percentage of control characters
+    if (nullPercentage > 0.01) {
+      return true;
     }
+
+    // Check for excessive control characters (excluding common ones like \n, \r, \t)
+    const controlBytes = sample.filter(
+      byte =>
+        (byte >= 1 && byte <= 8) || // Control chars except \t
+        (byte >= 11 && byte <= 12) || // Control chars except \n
+        (byte >= 14 && byte <= 31) || // Control chars except \r
+        byte === 127 // DEL
+    ).length;
+
+    const controlPercentage = controlBytes / bytesRead;
+
+    // Consider binary if >5% control characters
+    return controlPercentage > 0.05;
+  } catch (error) {
+    // If we can't read the file, assume it's binary to be safe
+    log.filesystem.warn('Cannot determine file type', {
+      file_path: filePath,
+      error: error.message,
+    });
+    return true;
+  }
 }
 
 /**
@@ -714,10 +722,12 @@ async function isBinaryFile(filePath) {
  * @returns {string} Formatted file size
  */
 function formatFileSize(bytes) {
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    if (bytes === 0) return '0 B';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  if (bytes === 0) {
+    return '0 B';
+  }
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / 1024 ** i).toFixed(2)} ${sizes[i]}`;
 }
 
 /**
@@ -725,58 +735,57 @@ function formatFileSize(bytes) {
  * @description Removes old or inactive session records
  */
 export const cleanupLogStreamSessions = async () => {
-    const timer = createTimer('log_stream_cleanup');
-    try {
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-        
-        // Clean up old database records
-        const deletedCount = await LogStreamSession.destroy({
-            where: {
-                status: ['closed', 'error'],
-                disconnected_at: { [Op.lt]: oneHourAgo }
-            }
-        });
+  const timer = createTimer('log_stream_cleanup');
+  try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-        if (deletedCount > 0) {
-            log.database.info('Log stream session cleanup completed', {
-                deleted_records: deletedCount
-            });
-        }
+    // Clean up old database records
+    const deletedCount = await LogStreamSession.destroy({
+      where: {
+        status: ['closed', 'error'],
+        disconnected_at: { [Op.lt]: oneHourAgo },
+      },
+    });
 
-        // Clean up orphaned active sessions
-        let orphanedCount = 0;
-        for (const [sessionId, session] of activeSessions) {
-            if (!session.ws || session.ws.readyState !== WebSocket.OPEN) {
-                if (session.tailProcess && !session.tailProcess.killed) {
-                    session.tailProcess.kill();
-                }
-                activeSessions.delete(sessionId);
-                orphanedCount++;
-            }
-        }
-
-        if (orphanedCount > 0) {
-            log.websocket.info('Orphaned log stream sessions cleaned up', {
-                orphaned_sessions: orphanedCount
-            });
-        }
-
-        timer.end();
-
-    } catch (error) {
-        timer.end();
-        log.database.error('Error during log stream cleanup', {
-            error: error.message
-        });
+    if (deletedCount > 0) {
+      log.database.info('Log stream session cleanup completed', {
+        deleted_records: deletedCount,
+      });
     }
+
+    // Clean up orphaned active sessions
+    let orphanedCount = 0;
+    for (const [sessionId, session] of activeSessions) {
+      if (!session.ws || session.ws.readyState !== WebSocket.OPEN) {
+        if (session.tailProcess && !session.tailProcess.killed) {
+          session.tailProcess.kill();
+        }
+        activeSessions.delete(sessionId);
+        orphanedCount++;
+      }
+    }
+
+    if (orphanedCount > 0) {
+      log.websocket.info('Orphaned log stream sessions cleaned up', {
+        orphaned_sessions: orphanedCount,
+      });
+    }
+
+    timer.end();
+  } catch (error) {
+    timer.end();
+    log.database.error('Error during log stream cleanup', {
+      error: error.message,
+    });
+  }
 };
 
 export default {
-    startLogStream,
-    listLogStreamSessions,
-    stopLogStream,
-    getLogStreamInfo,
-    handleLogStreamUpgrade,
-    handleLogStreamConnection,
-    cleanupLogStreamSessions
+  startLogStream,
+  listLogStreamSessions,
+  stopLogStream,
+  getLogStreamInfo,
+  handleLogStreamUpgrade,
+  handleLogStreamConnection,
+  cleanupLogStreamSessions,
 };

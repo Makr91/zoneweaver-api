@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -35,22 +35,26 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Host last update timestamp
  */
-const Hosts = db.define('hosts',{
-    name:{
-        type: DataTypes.STRING,
-        allowNull: false
+const Hosts = db.define(
+  'hosts',
+  {
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
     },
-    port:{
-        type: DataTypes.STRING,
-        allowNull: false
+    port: {
+      type: DataTypes.STRING,
+      allowNull: false,
     },
-    proto:{
-        type: DataTypes.STRING,
-        allowNull: false,
-        defaultValue: 'https'
-    }
-},{
-    freezeTableName:true
-});
- 
+    proto: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'https',
+    },
+  },
+  {
+    freezeTableName: true,
+  }
+);
+
 export default Hosts;

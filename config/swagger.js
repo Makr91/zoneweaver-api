@@ -19,7 +19,7 @@ const options = {
     },
     externalDocs: {
       description: 'View on GitHub',
-      url: 'https://github.com/Makr91/zoneweaver-api'
+      url: 'https://github.com/Makr91/zoneweaver-api',
     },
     servers: [
       {
@@ -29,14 +29,14 @@ const options = {
           protocol: {
             enum: ['http', 'https'],
             default: 'https',
-            description: 'The protocol used to access the server'
+            description: 'The protocol used to access the server',
           },
           host: {
             default: 'localhost:5001',
-            description: 'The hostname and port of the server'
-          }
-        }
-      }
+            description: 'The hostname and port of the server',
+          },
+        },
+      },
     ],
     components: {
       securitySchemes: {
@@ -44,7 +44,8 @@ const options = {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'API Key',
-          description: 'API key authentication using Bearer token format. Use format: Bearer wh_your_api_key_here',
+          description:
+            'API key authentication using Bearer token format. Use format: Bearer wh_your_api_key_here',
         },
       },
       schemas: {
@@ -171,7 +172,10 @@ const options = {
               items: {
                 type: 'string',
               },
-              example: ['zone1:configured:/zones/zone1:excl:0:uuid1', 'zone2:running:/zones/zone2:excl:1:uuid2'],
+              example: [
+                'zone1:configured:/zones/zone1:excl:0:uuid1',
+                'zone2:running:/zones/zone2:excl:1:uuid2',
+              ],
             },
             runningzones: {
               type: 'array',
@@ -189,40 +193,40 @@ const options = {
             name: {
               type: 'string',
               description: 'File or directory name',
-              example: 'document.txt'
+              example: 'document.txt',
             },
             path: {
               type: 'string',
               description: 'Full file path',
-              example: '/home/user/document.txt'
+              example: '/home/user/document.txt',
             },
             isDirectory: {
               type: 'boolean',
               description: 'Whether this item is a directory',
-              example: false
+              example: false,
             },
             size: {
               type: 'integer',
               nullable: true,
               description: 'File size in bytes (null for directories)',
-              example: 1024
+              example: 1024,
             },
             mimeType: {
               type: 'string',
               nullable: true,
               description: 'MIME type of the file',
-              example: 'text/plain'
+              example: 'text/plain',
             },
             isBinary: {
               type: 'boolean',
               description: 'Whether the file contains binary data',
-              example: false
+              example: false,
             },
             syntax: {
               type: 'string',
               nullable: true,
               description: 'Syntax highlighting type for text files',
-              example: 'javascript'
+              example: 'javascript',
             },
             permissions: {
               type: 'object',
@@ -230,51 +234,51 @@ const options = {
                 octal: {
                   type: 'string',
                   description: 'Permissions in octal format',
-                  example: '644'
+                  example: '644',
                 },
                 readable: {
                   type: 'boolean',
-                  description: 'File is readable'
+                  description: 'File is readable',
                 },
                 writable: {
-                  type: 'boolean', 
-                  description: 'File is writable'
+                  type: 'boolean',
+                  description: 'File is writable',
                 },
                 executable: {
                   type: 'boolean',
-                  description: 'File is executable'
-                }
-              }
+                  description: 'File is executable',
+                },
+              },
             },
             uid: {
               type: 'integer',
               description: 'File owner user ID',
-              example: 1000
+              example: 1000,
             },
             gid: {
               type: 'integer',
               description: 'File owner group ID',
-              example: 1000
+              example: 1000,
             },
             mtime: {
               type: 'string',
               format: 'date-time',
               description: 'Last modified time',
-              example: '2025-06-08T17:19:19.921Z'
+              example: '2025-06-08T17:19:19.921Z',
             },
             atime: {
               type: 'string',
               format: 'date-time',
               description: 'Last access time',
-              example: '2025-06-08T17:19:19.921Z'
+              example: '2025-06-08T17:19:19.921Z',
             },
             ctime: {
               type: 'string',
               format: 'date-time',
               description: 'Creation/change time',
-              example: '2025-06-08T17:19:19.921Z'
-            }
-          }
+              example: '2025-06-08T17:19:19.921Z',
+            },
+          },
         },
       },
     },

@@ -5,11 +5,11 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync, spawn } from "child_process";
-import Tasks, { TaskPriority } from "../models/TaskModel.js";
-import yj from "yieldable-json";
-import os from "os";
-import { log } from "../lib/Logger.js";
+import { execSync, spawn } from 'child_process';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import yj from 'yieldable-json';
+import os from 'os';
+import { log } from '../lib/Logger.js';
 
 /**
  * Execute command safely with proper error handling
@@ -17,108 +17,109 @@ import { log } from "../lib/Logger.js";
  * @param {number} timeout - Timeout in milliseconds
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (command, timeout = 15 * 60 * 1000) => { // 15 minute default timeout
-    return new Promise((resolve) => {
-        const child = spawn('sh', ['-c', command], {
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
-        
-        let stdout = '';
-        let stderr = '';
-        let completed = false;
-        
-        const timeoutId = setTimeout(() => {
-            if (!completed) {
-                completed = true;
-                child.kill('SIGTERM');
-                resolve({
-                    success: false,
-                    error: `Command timed out after ${timeout}ms`,
-                    output: stdout
-                });
-            }
-        }, timeout);
-        
-        child.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
-        
-        child.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-        
-        child.on('close', (code) => {
-            if (!completed) {
-                completed = true;
-                clearTimeout(timeoutId);
-                
-                if (code === 0) {
-                    resolve({
-                        success: true,
-                        output: stdout.trim()
-                    });
-                } else {
-                    resolve({
-                        success: false,
-                        error: stderr.trim() || `Command exited with code ${code}`,
-                        output: stdout.trim()
-                    });
-                }
-            }
-        });
-        
-        child.on('error', (error) => {
-            if (!completed) {
-                completed = true;
-                clearTimeout(timeoutId);
-                resolve({
-                    success: false,
-                    error: error.message,
-                    output: stdout
-                });
-            }
-        });
+const executeCommand = async (
+  command,
+  timeout = 15 * 60 * 1000 // 15 minute default timeout
+) =>
+  new Promise(resolve => {
+    const child = spawn('sh', ['-c', command], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-};
 
+    let stdout = '';
+    let stderr = '';
+    let completed = false;
+
+    const timeoutId = setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        child.kill('SIGTERM');
+        resolve({
+          success: false,
+          error: `Command timed out after ${timeout}ms`,
+          output: stdout,
+        });
+      }
+    }, timeout);
+
+    child.stdout.on('data', data => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', data => {
+      stderr += data.toString();
+    });
+
+    child.on('close', code => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeoutId);
+
+        if (code === 0) {
+          resolve({
+            success: true,
+            output: stdout.trim(),
+          });
+        } else {
+          resolve({
+            success: false,
+            error: stderr.trim() || `Command exited with code ${code}`,
+            output: stdout.trim(),
+          });
+        }
+      }
+    });
+
+    child.on('error', error => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeoutId);
+        resolve({
+          success: false,
+          error: error.message,
+          output: stdout,
+        });
+      }
+    });
+  });
 /**
  * Parse pkg list output into structured format
  * @param {string} output - Raw pkg list output
  * @returns {Array} Array of package objects
  */
-const parsePkgListOutput = (output) => {
-    const lines = output.split('\n').filter(line => line.trim());
-    const packages = [];
-    
-    // Skip header line if present
-    let startIndex = 0;
-    if (lines[0] && lines[0].startsWith('NAME')) {
-        startIndex = 1;
+const parsePkgListOutput = output => {
+  const lines = output.split('\n').filter(line => line.trim());
+  const packages = [];
+
+  // Skip header line if present
+  let startIndex = 0;
+  if (lines[0] && lines[0].startsWith('NAME')) {
+    startIndex = 1;
+  }
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line) {
+      // Format: NAME (PUBLISHER) VERSION IFO
+      const match = line.match(/^(\S+)(?:\s+\(([^)]+)\))?\s+(\S+)\s+(.*)$/);
+      if (match) {
+        const [, name, publisher, version, flags] = match;
+        packages.push({
+          name,
+          publisher: publisher || null,
+          version,
+          flags,
+          installed: flags.includes('i'),
+          frozen: flags.includes('f'),
+          manually_installed: flags.includes('m'),
+          obsolete: flags.includes('o'),
+          renamed: flags.includes('r'),
+        });
+      }
     }
-    
-    for (let i = startIndex; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line) {
-            // Format: NAME (PUBLISHER) VERSION IFO
-            const match = line.match(/^(\S+)(?:\s+\(([^)]+)\))?\s+(\S+)\s+(.*)$/);
-            if (match) {
-                const [, name, publisher, version, flags] = match;
-                packages.push({
-                    name: name,
-                    publisher: publisher || null,
-                    version: version,
-                    flags: flags,
-                    installed: flags.includes('i'),
-                    frozen: flags.includes('f'),
-                    manually_installed: flags.includes('m'),
-                    obsolete: flags.includes('o'),
-                    renamed: flags.includes('r')
-                });
-            }
-        }
-    }
-    
-    return packages;
+  }
+
+  return packages;
 };
 
 /**
@@ -126,32 +127,32 @@ const parsePkgListOutput = (output) => {
  * @param {string} output - Raw pkg search output
  * @returns {Array} Array of search result objects
  */
-const parsePkgSearchOutput = (output) => {
-    const lines = output.split('\n').filter(line => line.trim());
-    const results = [];
-    
-    // Skip header line if present
-    let startIndex = 0;
-    if (lines[0] && lines[0].startsWith('INDEX')) {
-        startIndex = 1;
+const parsePkgSearchOutput = output => {
+  const lines = output.split('\n').filter(line => line.trim());
+  const results = [];
+
+  // Skip header line if present
+  let startIndex = 0;
+  if (lines[0] && lines[0].startsWith('INDEX')) {
+    startIndex = 1;
+  }
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line) {
+      const parts = line.split(/\s+/);
+      if (parts.length >= 4) {
+        results.push({
+          index: parts[0],
+          action: parts[1],
+          value: parts[2],
+          package: parts[3],
+        });
+      }
     }
-    
-    for (let i = startIndex; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line) {
-            const parts = line.split(/\s+/);
-            if (parts.length >= 4) {
-                results.push({
-                    index: parts[0],
-                    action: parts[1], 
-                    value: parts[2],
-                    package: parts[3]
-                });
-            }
-        }
-    }
-    
-    return results;
+  }
+
+  return results;
 };
 
 /**
@@ -221,61 +222,60 @@ const parsePkgSearchOutput = (output) => {
  *         description: Failed to list packages
  */
 export const listPackages = async (req, res) => {
-    try {
-        const { filter, format = 'default', all = false } = req.query;
-        
-        let command = 'pfexec pkg list';
-        
-        if (all === 'true' || all === true) {
-            command += ' -a';
-        }
-        
-        if (format === 'parsable') {
-            command += ' -H';
-        }
-        
-        if (filter) {
-            command += ` ${filter}`;
-        }
-        
-        const result = await executeCommand(command);
-        
-        if (!result.success) {
-            return res.status(500).json({
-                error: 'Failed to list packages',
-                details: result.error
-            });
-        }
-        
-        let packages;
-        if (format === 'parsable') {
-            // For parsable format, return raw lines
-            packages = result.output.split('\n').filter(line => line.trim());
-        } else {
-            packages = parsePkgListOutput(result.output);
-        }
-        
-        res.json({
-            packages: packages,
-            total: packages.length,
-            format: format,
-            filter: filter || null,
-            all_packages: all === 'true' || all === true
-        });
-        
-    } catch (error) {
-        log.api.error('Error listing packages', {
-            error: error.message,
-            stack: error.stack,
-            filter: filter,
-            format: format,
-            all: all
-        });
-        res.status(500).json({ 
-            error: 'Failed to list packages',
-            details: error.message 
-        });
+  try {
+    const { filter, format = 'default', all = false } = req.query;
+
+    let command = 'pfexec pkg list';
+
+    if (all === 'true' || all === true) {
+      command += ' -a';
     }
+
+    if (format === 'parsable') {
+      command += ' -H';
+    }
+
+    if (filter) {
+      command += ` ${filter}`;
+    }
+
+    const result = await executeCommand(command);
+
+    if (!result.success) {
+      return res.status(500).json({
+        error: 'Failed to list packages',
+        details: result.error,
+      });
+    }
+
+    let packages;
+    if (format === 'parsable') {
+      // For parsable format, return raw lines
+      packages = result.output.split('\n').filter(line => line.trim());
+    } else {
+      packages = parsePkgListOutput(result.output);
+    }
+
+    res.json({
+      packages,
+      total: packages.length,
+      format,
+      filter: filter || null,
+      all_packages: all === 'true' || all === true,
+    });
+  } catch (error) {
+    log.api.error('Error listing packages', {
+      error: error.message,
+      stack: error.stack,
+      filter,
+      format,
+      all,
+    });
+    res.status(500).json({
+      error: 'Failed to list packages',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -337,59 +337,58 @@ export const listPackages = async (req, res) => {
  *         description: Failed to search packages
  */
 export const searchPackages = async (req, res) => {
-    try {
-        const { query, local = false, remote = false } = req.query;
-        
-        if (!query) {
-            return res.status(400).json({ 
-                error: 'Search query is required' 
-            });
-        }
-        
-        let command = 'pfexec pkg search';
-        
-        if (local === 'true' || local === true) {
-            command += ' -l';
-        }
-        
-        if (remote === 'true' || remote === true) {
-            command += ' -r';
-        }
-        
-        command += ` ${query}`;
-        
-        const result = await executeCommand(command);
-        
-        if (!result.success) {
-            return res.status(500).json({
-                error: 'Failed to search packages',
-                details: result.error
-            });
-        }
-        
-        const results = parsePkgSearchOutput(result.output);
-        
-        res.json({
-            results: results,
-            total: results.length,
-            query: query,
-            local: local === 'true' || local === true,
-            remote: remote === 'true' || remote === true
-        });
-        
-    } catch (error) {
-        log.api.error('Error searching packages', {
-            error: error.message,
-            stack: error.stack,
-            query: query,
-            local: local,
-            remote: remote
-        });
-        res.status(500).json({ 
-            error: 'Failed to search packages',
-            details: error.message 
-        });
+  try {
+    const { query, local = false, remote = false } = req.query;
+
+    if (!query) {
+      return res.status(400).json({
+        error: 'Search query is required',
+      });
     }
+
+    let command = 'pfexec pkg search';
+
+    if (local === 'true' || local === true) {
+      command += ' -l';
+    }
+
+    if (remote === 'true' || remote === true) {
+      command += ' -r';
+    }
+
+    command += ` ${query}`;
+
+    const result = await executeCommand(command);
+
+    if (!result.success) {
+      return res.status(500).json({
+        error: 'Failed to search packages',
+        details: result.error,
+      });
+    }
+
+    const results = parsePkgSearchOutput(result.output);
+
+    res.json({
+      results,
+      total: results.length,
+      query,
+      local: local === 'true' || local === true,
+      remote: remote === 'true' || remote === true,
+    });
+  } catch (error) {
+    log.api.error('Error searching packages', {
+      error: error.message,
+      stack: error.stack,
+      query,
+      local,
+      remote,
+    });
+    res.status(500).json({
+      error: 'Failed to search packages',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -433,50 +432,49 @@ export const searchPackages = async (req, res) => {
  *         description: Failed to get package information
  */
 export const getPackageInfo = async (req, res) => {
-    try {
-        const { package: pkgName, remote = false } = req.query;
-        
-        if (!pkgName) {
-            return res.status(400).json({ 
-                error: 'Package name is required' 
-            });
-        }
-        
-        let command = 'pfexec pkg info';
-        
-        if (remote === 'true' || remote === true) {
-            command += ' -r';
-        }
-        
-        command += ` ${pkgName}`;
-        
-        const result = await executeCommand(command);
-        
-        if (!result.success) {
-            return res.status(500).json({
-                error: 'Failed to get package information',
-                details: result.error
-            });
-        }
-        
-        res.json({
-            package: pkgName,
-            info: result.output,
-            remote: remote === 'true' || remote === true
-        });
-        
-    } catch (error) {
-        log.api.error('Error getting package info', {
-            error: error.message,
-            stack: error.stack,
-            package: pkgName,
-            remote: remote
-        });
-        res.status(500).json({ 
-            error: 'Failed to get package information',
-            details: error.message 
-        });
+  try {
+    const { package: pkgName, remote = false } = req.query;
+
+    if (!pkgName) {
+      return res.status(400).json({
+        error: 'Package name is required',
+      });
     }
+
+    let command = 'pfexec pkg info';
+
+    if (remote === 'true' || remote === true) {
+      command += ' -r';
+    }
+
+    command += ` ${pkgName}`;
+
+    const result = await executeCommand(command);
+
+    if (!result.success) {
+      return res.status(500).json({
+        error: 'Failed to get package information',
+        details: result.error,
+      });
+    }
+
+    res.json({
+      package: pkgName,
+      info: result.output,
+      remote: remote === 'true' || remote === true,
+    });
+  } catch (error) {
+    log.api.error('Error getting package info', {
+      error: error.message,
+      stack: error.stack,
+      package: pkgName,
+      remote,
+    });
+    res.status(500).json({
+      error: 'Failed to get package information',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -541,62 +539,67 @@ export const getPackageInfo = async (req, res) => {
  *         description: Failed to create installation task
  */
 export const installPackages = async (req, res) => {
-    try {
-        const { 
-            packages, 
-            accept_licenses = false, 
-            dry_run = false, 
-            be_name, 
-            created_by = 'api' 
-        } = req.body;
+  try {
+    const {
+      packages,
+      accept_licenses = false,
+      dry_run = false,
+      be_name,
+      created_by = 'api',
+    } = req.body;
 
-        if (!packages || !Array.isArray(packages) || packages.length === 0) {
-            return res.status(400).json({ 
-                error: 'packages array is required and must not be empty' 
-            });
-        }
-
-        // Create task for package installation
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'pkg_install',
-            priority: TaskPriority.MEDIUM,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    packages: packages,
-                    accept_licenses: accept_licenses,
-                    dry_run: dry_run,
-                    be_name: be_name
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Package installation task created for ${packages.length} package(s)`,
-            task_id: task.id,
-            packages: packages,
-            dry_run: dry_run
-        });
-
-    } catch (error) {
-        log.api.error('Error installing packages', {
-            error: error.message,
-            stack: error.stack,
-            packages: packages,
-            dry_run: dry_run,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create package installation task',
-            details: error.message 
-        });
+    if (!packages || !Array.isArray(packages) || packages.length === 0) {
+      return res.status(400).json({
+        error: 'packages array is required and must not be empty',
+      });
     }
+
+    // Create task for package installation
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'pkg_install',
+      priority: TaskPriority.MEDIUM,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            packages,
+            accept_licenses,
+            dry_run,
+            be_name,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Package installation task created for ${packages.length} package(s)`,
+      task_id: task.id,
+      packages,
+      dry_run,
+    });
+  } catch (error) {
+    log.api.error('Error installing packages', {
+      error: error.message,
+      stack: error.stack,
+      packages,
+      dry_run,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create package installation task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -642,58 +645,58 @@ export const installPackages = async (req, res) => {
  *         description: Failed to create uninstallation task
  */
 export const uninstallPackages = async (req, res) => {
-    try {
-        const { 
-            packages, 
-            dry_run = false, 
-            be_name, 
-            created_by = 'api' 
-        } = req.body;
+  try {
+    const { packages, dry_run = false, be_name, created_by = 'api' } = req.body;
 
-        if (!packages || !Array.isArray(packages) || packages.length === 0) {
-            return res.status(400).json({ 
-                error: 'packages array is required and must not be empty' 
-            });
-        }
-
-        // Create task for package uninstallation
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'pkg_uninstall',
-            priority: TaskPriority.MEDIUM,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    packages: packages,
-                    dry_run: dry_run,
-                    be_name: be_name
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Package uninstallation task created for ${packages.length} package(s)`,
-            task_id: task.id,
-            packages: packages,
-            dry_run: dry_run
-        });
-
-    } catch (error) {
-        log.api.error('Error uninstalling packages', {
-            error: error.message,
-            stack: error.stack,
-            packages: packages,
-            dry_run: dry_run,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create package uninstallation task',
-            details: error.message 
-        });
+    if (!packages || !Array.isArray(packages) || packages.length === 0) {
+      return res.status(400).json({
+        error: 'packages array is required and must not be empty',
+      });
     }
+
+    // Create task for package uninstallation
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'pkg_uninstall',
+      priority: TaskPriority.MEDIUM,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            packages,
+            dry_run,
+            be_name,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Package uninstallation task created for ${packages.length} package(s)`,
+      task_id: task.id,
+      packages,
+      dry_run,
+    });
+  } catch (error) {
+    log.api.error('Error uninstalling packages', {
+      error: error.message,
+      stack: error.stack,
+      packages,
+      dry_run,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create package uninstallation task',
+      details: error.message,
+    });
+  }
 };

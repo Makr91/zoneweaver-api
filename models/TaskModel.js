@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -70,12 +70,12 @@ const { DataTypes } = Sequelize;
  * @description Defines standard priority levels for different operations
  */
 export const TaskPriority = {
-    CRITICAL: 100,    // Delete operations
-    HIGH: 80,         // Stop operations
-    MEDIUM: 60,       // Start operations
-    LOW: 40,          // Restart operations
-    BACKGROUND: 20,   // Discovery, console operations
-    SERVICE: 50       // Service operations
+  CRITICAL: 100, // Delete operations
+  HIGH: 80, // Stop operations
+  MEDIUM: 60, // Start operations
+  LOW: 40, // Restart operations
+  BACKGROUND: 20, // Discovery, console operations
+  SERVICE: 50, // Service operations
 };
 
 /**
@@ -83,74 +83,78 @@ export const TaskPriority = {
  * @description Sequelize model representing tasks in the operation queue
  * @type {import('sequelize').Model}
  */
-const Tasks = db.define('tasks', {
+const Tasks = db.define(
+  'tasks',
+  {
     id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-        comment: 'Unique task identifier'
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+      comment: 'Unique task identifier',
     },
     zone_name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Target zone name for the operation'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Target zone name for the operation',
     },
     operation: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Type of operation (start, stop, restart, delete, etc.)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Type of operation (start, stop, restart, delete, etc.)',
     },
     status: {
-        type: DataTypes.STRING,
-        defaultValue: 'pending',
-        comment: 'Current task status (pending, running, completed, failed, cancelled)'
+      type: DataTypes.STRING,
+      defaultValue: 'pending',
+      comment: 'Current task status (pending, running, completed, failed, cancelled)',
     },
     priority: {
-        type: DataTypes.INTEGER,
-        defaultValue: TaskPriority.MEDIUM,
-        comment: 'Task priority (higher number = higher priority)'
+      type: DataTypes.INTEGER,
+      defaultValue: TaskPriority.MEDIUM,
+      comment: 'Task priority (higher number = higher priority)',
     },
     created_by: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Entity name that created the task'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Entity name that created the task',
     },
     depends_on: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        comment: 'Task dependency - must complete before this task can run'
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'Task dependency - must complete before this task can run',
     },
     error_message: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'Error message if task failed'
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Error message if task failed',
     },
     created_at: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Timestamp when task was created'
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp when task was created',
     },
     started_at: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Timestamp when task execution started'
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Timestamp when task execution started',
     },
     completed_at: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Timestamp when task completed'
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Timestamp when task completed',
     },
     metadata: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'JSON metadata for task execution (networking parameters, etc.)'
-    }
-}, {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'JSON metadata for task execution (networking parameters, etc.)',
+    },
+  },
+  {
     freezeTableName: true,
-    comment: 'Task queue for zone operations with priority and dependency management'
-});
+    comment: 'Task queue for zone operations with priority and dependency management',
+  }
+);
 
 // Set up associations
 Tasks.belongsTo(Tasks, { as: 'DependsOnTask', foreignKey: 'depends_on' });
- 
+
 export default Tasks;

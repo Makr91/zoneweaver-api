@@ -29,13 +29,15 @@ class ConfigLoader {
   load() {
     try {
       // Check environment variable first (set by SMF), then fallback to local config
-      const configPath = process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+      const configPath =
+        process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
       console.log(`Loading configuration from: ${configPath}`);
       const fileContents = fs.readFileSync(configPath, 'utf8');
       const fullConfig = yaml.load(fileContents);
       this.config = fullConfig.zoneweaver_api_backend || fullConfig;
     } catch (error) {
-      const attemptedPath = process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+      const attemptedPath =
+        process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
       console.error('Error loading config file:', error);
       console.error('Tried path:', attemptedPath);
       throw new Error('Failed to load configuration');
@@ -47,7 +49,7 @@ class ConfigLoader {
    * @description Retrieves nested configuration values using dot notation (e.g., 'api_keys.bootstrap_enabled')
    * @param {string} key - Dot-notation key path to the configuration value
    * @returns {any} The configuration value or undefined if not found
-   * 
+   *
    * @example
    * const bootstrapEnabled = config.get('api_keys.bootstrap_enabled');
    * const httpPort = config.get('server.http_port');
@@ -55,7 +57,7 @@ class ConfigLoader {
   get(key) {
     const keys = key.split('.');
     let value = this.config;
-    
+
     for (const k of keys) {
       if (value && typeof value === 'object' && k in value) {
         value = value[k];
@@ -63,7 +65,7 @@ class ConfigLoader {
         return undefined;
       }
     }
-    
+
     return value;
   }
 

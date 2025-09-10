@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -81,97 +81,101 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const DiskIOStats = db.define('disk_io_stats', {
+const DiskIOStats = db.define(
+  'disk_io_stats',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the disk is located'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the disk is located',
     },
     pool: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Pool name this disk belongs to'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Pool name this disk belongs to',
     },
     device_name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Physical device name (e.g., c0t5F8DB4C192001CC8d0s1)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Physical device name (e.g., c0t5F8DB4C192001CC8d0s1)',
     },
     alloc: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Allocated space on device with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Allocated space on device with units',
     },
     free: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Free space on device with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Free space on device with units',
     },
     read_ops: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Read operations count (cumulative)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Read operations count (cumulative)',
     },
     write_ops: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Write operations count (cumulative)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Write operations count (cumulative)',
     },
     read_bandwidth: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Read bandwidth with units (e.g., "4.83K")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Read bandwidth with units (e.g., "4.83K")',
     },
     write_bandwidth: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Write bandwidth with units (e.g., "675K")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Write bandwidth with units (e.g., "675K")',
     },
     read_ops_per_sec: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-        comment: 'Read operations per second (calculated from delta)'
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: 'Read operations per second (calculated from delta)',
     },
     write_ops_per_sec: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-        comment: 'Write operations per second (calculated from delta)'
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      comment: 'Write operations per second (calculated from delta)',
     },
     read_bandwidth_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Read bandwidth in bytes per second'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Read bandwidth in bytes per second',
     },
     write_bandwidth_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Write bandwidth in bytes per second'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Write bandwidth in bytes per second',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'Per-disk I/O statistics from zpool iostat -Hv (collected every 10 seconds)',
     indexes: [
-        {
-            fields: ['host', 'device_name', 'scan_timestamp']
-        },
-        {
-            fields: ['host', 'pool', 'scan_timestamp']
-        },
-        {
-            fields: ['scan_timestamp']
-        },
-        {
-            fields: ['pool', 'scan_timestamp']
-        },
-        {
-            fields: ['device_name']
-        }
-    ]
-});
- 
+      {
+        fields: ['host', 'device_name', 'scan_timestamp'],
+      },
+      {
+        fields: ['host', 'pool', 'scan_timestamp'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+      {
+        fields: ['pool', 'scan_timestamp'],
+      },
+      {
+        fields: ['device_name'],
+      },
+    ],
+  }
+);
+
 export default DiskIOStats;

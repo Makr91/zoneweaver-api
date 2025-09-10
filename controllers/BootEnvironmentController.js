@@ -5,11 +5,11 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { spawn } from "child_process";
-import Tasks, { TaskPriority } from "../models/TaskModel.js";
-import yj from "yieldable-json";
-import os from "os";
-import { log } from "../lib/Logger.js";
+import { spawn } from 'child_process';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import yj from 'yieldable-json';
+import os from 'os';
+import { log } from '../lib/Logger.js';
 
 /**
  * Execute command safely with proper error handling
@@ -17,108 +17,107 @@ import { log } from "../lib/Logger.js";
  * @param {number} timeout - Timeout in milliseconds
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (command, timeout = 30000) => {
-    return new Promise((resolve) => {
-        const child = spawn('sh', ['-c', command], {
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
-        
-        let stdout = '';
-        let stderr = '';
-        let completed = false;
-        
-        const timeoutId = setTimeout(() => {
-            if (!completed) {
-                completed = true;
-                child.kill('SIGTERM');
-                resolve({
-                    success: false,
-                    error: `Command timed out after ${timeout}ms`,
-                    output: stdout
-                });
-            }
-        }, timeout);
-        
-        child.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
-        
-        child.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-        
-        child.on('close', (code) => {
-            if (!completed) {
-                completed = true;
-                clearTimeout(timeoutId);
-                
-                if (code === 0) {
-                    resolve({
-                        success: true,
-                        output: stdout.trim()
-                    });
-                } else {
-                    resolve({
-                        success: false,
-                        error: stderr.trim() || `Command exited with code ${code}`,
-                        output: stdout.trim()
-                    });
-                }
-            }
-        });
-        
-        child.on('error', (error) => {
-            if (!completed) {
-                completed = true;
-                clearTimeout(timeoutId);
-                resolve({
-                    success: false,
-                    error: error.message,
-                    output: stdout
-                });
-            }
-        });
+const executeCommand = async (command, timeout = 30000) =>
+  new Promise(resolve => {
+    const child = spawn('sh', ['-c', command], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-};
+
+    let stdout = '';
+    let stderr = '';
+    let completed = false;
+
+    const timeoutId = setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        child.kill('SIGTERM');
+        resolve({
+          success: false,
+          error: `Command timed out after ${timeout}ms`,
+          output: stdout,
+        });
+      }
+    }, timeout);
+
+    child.stdout.on('data', data => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', data => {
+      stderr += data.toString();
+    });
+
+    child.on('close', code => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeoutId);
+
+        if (code === 0) {
+          resolve({
+            success: true,
+            output: stdout.trim(),
+          });
+        } else {
+          resolve({
+            success: false,
+            error: stderr.trim() || `Command exited with code ${code}`,
+            output: stdout.trim(),
+          });
+        }
+      }
+    });
+
+    child.on('error', error => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeoutId);
+        resolve({
+          success: false,
+          error: error.message,
+          output: stdout,
+        });
+      }
+    });
+  });
 
 /**
  * Parse beadm list output into structured format
  * @param {string} output - Raw beadm list output
  * @returns {Array} Array of boot environment objects
  */
-const parseBeadmListOutput = (output) => {
-    const lines = output.split('\n').filter(line => line.trim());
-    const bootEnvironments = [];
-    
-    // Skip header line if present
-    let startIndex = 0;
-    if (lines[0] && (lines[0].startsWith('BE') || lines[0].includes('Active'))) {
-        startIndex = 1;
+const parseBeadmListOutput = output => {
+  const lines = output.split('\n').filter(line => line.trim());
+  const bootEnvironments = [];
+
+  // Skip header line if present
+  let startIndex = 0;
+  if (lines[0] && (lines[0].startsWith('BE') || lines[0].includes('Active'))) {
+    startIndex = 1;
+  }
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line) {
+      // Format: BE Active Mountpoint Space Policy Created
+      const parts = line.split(/\s+/);
+      if (parts.length >= 4) {
+        const be = {
+          name: parts[0],
+          active: parts[1] || '-',
+          mountpoint: parts[2] || '-',
+          space: parts[3] || '-',
+          policy: parts[4] || '-',
+          created: parts[5] ? `${parts[5]} ${parts[6] || ''}`.trim() : '-',
+          is_active_now: parts[1].includes('N'),
+          is_active_on_reboot: parts[1].includes('R'),
+          is_temporary: parts[1].includes('T'),
+        };
+        bootEnvironments.push(be);
+      }
     }
-    
-    for (let i = startIndex; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line) {
-            // Format: BE Active Mountpoint Space Policy Created
-            const parts = line.split(/\s+/);
-            if (parts.length >= 4) {
-                const be = {
-                    name: parts[0],
-                    active: parts[1] || '-',
-                    mountpoint: parts[2] || '-',
-                    space: parts[3] || '-',
-                    policy: parts[4] || '-',
-                    created: parts[5] ? `${parts[5]} ${parts[6] || ''}`.trim() : '-',
-                    is_active_now: parts[1].includes('N'),
-                    is_active_on_reboot: parts[1].includes('R'),
-                    is_temporary: parts[1].includes('T')
-                };
-                bootEnvironments.push(be);
-            }
-        }
-    }
-    
-    return bootEnvironments;
+  }
+
+  return bootEnvironments;
 };
 
 /**
@@ -126,71 +125,73 @@ const parseBeadmListOutput = (output) => {
  * @param {string} output - Raw beadm list -d output
  * @returns {Array} Array of boot environment objects with datasets
  */
-const parseBeadmDetailedOutput = (output) => {
-    const lines = output.split('\n').filter(line => line.trim());
-    const bootEnvironments = [];
-    let currentBE = null;
-    
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        
-        // Skip header
-        if (trimmed.startsWith('BE/Dataset') || trimmed.startsWith('--')) {
-            continue;
-        }
-        
-        // Check if this is a new BE (no leading spaces and only one part - the BE name)
-        if (!line.startsWith(' ') && !line.startsWith('\t')) {
-            // This is a BE name line (format: just the BE name on its own line)
-            const parts = trimmed.split(/\s+/);
-            if (parts.length === 1) {
-                // Create new BE with name only, metadata will come from first dataset
-                currentBE = {
-                    name: parts[0],
-                    active: '-',
-                    mountpoint: '-', 
-                    space: '-',
-                    policy: '-',
-                    created: '-',
-                    datasets: [],
-                    is_active_now: false,
-                    is_active_on_reboot: false,
-                    is_temporary: false
-                };
-                bootEnvironments.push(currentBE);
-            }
-        } else if (currentBE && (line.startsWith('   ') || line.startsWith('\t'))) {
-            // This is a dataset line - contains the actual metadata
-            const parts = trimmed.split(/\s+/);
-            if (parts.length >= 4) {
-                const datasetInfo = {
-                    dataset: parts[0],
-                    active: parts[1] || '-',
-                    mountpoint: parts[2] || '-',
-                    space: parts[3] || '-',
-                    policy: parts[4] || '-',
-                    created: parts[5] ? `${parts[5]} ${parts[6] || ''}`.trim() : '-'
-                };
-                
-                currentBE.datasets.push(datasetInfo);
-                
-                // Use the first dataset's metadata for the BE's main properties
-                if (currentBE.datasets.length === 1) {
-                    currentBE.active = datasetInfo.active;
-                    currentBE.mountpoint = datasetInfo.mountpoint;
-                    currentBE.space = datasetInfo.space;
-                    currentBE.policy = datasetInfo.policy;
-                    currentBE.created = datasetInfo.created;
-                    currentBE.is_active_now = datasetInfo.active.includes('N');
-                    currentBE.is_active_on_reboot = datasetInfo.active.includes('R');
-                    currentBE.is_temporary = datasetInfo.active.includes('T');
-                }
-            }
-        }
+const parseBeadmDetailedOutput = output => {
+  const lines = output.split('\n').filter(line => line.trim());
+  const bootEnvironments = [];
+  let currentBE = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
     }
-    
-    return bootEnvironments;
+
+    // Skip header
+    if (trimmed.startsWith('BE/Dataset') || trimmed.startsWith('--')) {
+      continue;
+    }
+
+    // Check if this is a new BE (no leading spaces and only one part - the BE name)
+    if (!line.startsWith(' ') && !line.startsWith('\t')) {
+      // This is a BE name line (format: just the BE name on its own line)
+      const parts = trimmed.split(/\s+/);
+      if (parts.length === 1) {
+        // Create new BE with name only, metadata will come from first dataset
+        currentBE = {
+          name: parts[0],
+          active: '-',
+          mountpoint: '-',
+          space: '-',
+          policy: '-',
+          created: '-',
+          datasets: [],
+          is_active_now: false,
+          is_active_on_reboot: false,
+          is_temporary: false,
+        };
+        bootEnvironments.push(currentBE);
+      }
+    } else if (currentBE && (line.startsWith('   ') || line.startsWith('\t'))) {
+      // This is a dataset line - contains the actual metadata
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 4) {
+        const datasetInfo = {
+          dataset: parts[0],
+          active: parts[1] || '-',
+          mountpoint: parts[2] || '-',
+          space: parts[3] || '-',
+          policy: parts[4] || '-',
+          created: parts[5] ? `${parts[5]} ${parts[6] || ''}`.trim() : '-',
+        };
+
+        currentBE.datasets.push(datasetInfo);
+
+        // Use the first dataset's metadata for the BE's main properties
+        if (currentBE.datasets.length === 1) {
+          currentBE.active = datasetInfo.active;
+          currentBE.mountpoint = datasetInfo.mountpoint;
+          currentBE.space = datasetInfo.space;
+          currentBE.policy = datasetInfo.policy;
+          currentBE.created = datasetInfo.created;
+          currentBE.is_active_now = datasetInfo.active.includes('N');
+          currentBE.is_active_on_reboot = datasetInfo.active.includes('R');
+          currentBE.is_temporary = datasetInfo.active.includes('T');
+        }
+      }
+    }
+  }
+
+  return bootEnvironments;
 };
 
 /**
@@ -263,64 +264,63 @@ const parseBeadmDetailedOutput = (output) => {
  *         description: Failed to list boot environments
  */
 export const listBootEnvironments = async (req, res) => {
-    try {
-        const { detailed = false, snapshots = false, name } = req.query;
-        
-        let command = 'pfexec beadm list';
-        
-        if (detailed === 'true' || detailed === true) {
-            command += ' -d';
-        }
-        
-        if (snapshots === 'true' || snapshots === true) {
-            command += ' -s';
-        }
-        
-        if (name) {
-            command += ` ${name}`;
-        }
-        
-        const result = await executeCommand(command);
-        
-        if (!result.success) {
-            return res.status(500).json({
-                error: 'Failed to list boot environments',
-                details: result.error
-            });
-        }
-        
-        let bootEnvironments;
-        if (detailed === 'true' || detailed === true) {
-            bootEnvironments = parseBeadmDetailedOutput(result.output);
-        } else {
-            bootEnvironments = parseBeadmListOutput(result.output);
-        }
-        
-        // Find active BE
-        const activeBE = bootEnvironments.find(be => be.is_active_now);
-        
-        res.json({
-            boot_environments: bootEnvironments,
-            total: bootEnvironments.length,
-            active_be: activeBE ? activeBE.name : null,
-            detailed: detailed === 'true' || detailed === true,
-            snapshots: snapshots === 'true' || snapshots === true,
-            filter: name || null
-        });
-        
-    } catch (error) {
-        log.api.error('Error listing boot environments', {
-            error: error.message,
-            stack: error.stack,
-            detailed: detailed,
-            snapshots: snapshots,
-            name: name
-        });
-        res.status(500).json({ 
-            error: 'Failed to list boot environments',
-            details: error.message 
-        });
+  try {
+    const { detailed = false, snapshots = false, name } = req.query;
+
+    let command = 'pfexec beadm list';
+
+    if (detailed === 'true' || detailed === true) {
+      command += ' -d';
     }
+
+    if (snapshots === 'true' || snapshots === true) {
+      command += ' -s';
+    }
+
+    if (name) {
+      command += ` ${name}`;
+    }
+
+    const result = await executeCommand(command);
+
+    if (!result.success) {
+      return res.status(500).json({
+        error: 'Failed to list boot environments',
+        details: result.error,
+      });
+    }
+
+    let bootEnvironments;
+    if (detailed === 'true' || detailed === true) {
+      bootEnvironments = parseBeadmDetailedOutput(result.output);
+    } else {
+      bootEnvironments = parseBeadmListOutput(result.output);
+    }
+
+    // Find active BE
+    const activeBE = bootEnvironments.find(be => be.is_active_now);
+
+    res.json({
+      boot_environments: bootEnvironments,
+      total: bootEnvironments.length,
+      active_be: activeBE ? activeBE.name : null,
+      detailed: detailed === 'true' || detailed === true,
+      snapshots: snapshots === 'true' || snapshots === true,
+      filter: name || null,
+    });
+  } catch (error) {
+    log.api.error('Error listing boot environments', {
+      error: error.message,
+      stack: error.stack,
+      detailed,
+      snapshots,
+      name,
+    });
+    res.status(500).json({
+      error: 'Failed to list boot environments',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -389,75 +389,80 @@ export const listBootEnvironments = async (req, res) => {
  *         description: Failed to create boot environment task
  */
 export const createBootEnvironment = async (req, res) => {
-    try {
-        const { 
-            name, 
-            description, 
-            source_be, 
-            snapshot, 
-            activate = false,
-            zpool,
-            properties = {},
-            created_by = 'api' 
-        } = req.body;
+  try {
+    const {
+      name,
+      description,
+      source_be,
+      snapshot,
+      activate = false,
+      zpool,
+      properties = {},
+      created_by = 'api',
+    } = req.body;
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Boot environment name is required' 
-            });
-        }
-
-        // Validate name (basic validation)
-        if (!/^[a-zA-Z0-9\-_.]+$/.test(name)) {
-            return res.status(400).json({
-                error: 'Boot environment name contains invalid characters'
-            });
-        }
-
-        // Create task for boot environment creation
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'beadm_create',
-            priority: TaskPriority.MEDIUM,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name,
-                    description: description,
-                    source_be: source_be,
-                    snapshot: snapshot,
-                    activate: activate,
-                    zpool: zpool,
-                    properties: properties
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Boot environment creation task created for '${name}'`,
-            task_id: task.id,
-            be_name: name,
-            activate: activate
-        });
-
-    } catch (error) {
-        log.api.error('Error creating boot environment task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            activate: activate,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create boot environment task',
-            details: error.message 
-        });
+    if (!name) {
+      return res.status(400).json({
+        error: 'Boot environment name is required',
+      });
     }
+
+    // Validate name (basic validation)
+    if (!/^[a-zA-Z0-9\-_.]+$/.test(name)) {
+      return res.status(400).json({
+        error: 'Boot environment name contains invalid characters',
+      });
+    }
+
+    // Create task for boot environment creation
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'beadm_create',
+      priority: TaskPriority.MEDIUM,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+            description,
+            source_be,
+            snapshot,
+            activate,
+            zpool,
+            properties,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Boot environment creation task created for '${name}'`,
+      task_id: task.id,
+      be_name: name,
+      activate,
+    });
+  } catch (error) {
+    log.api.error('Error creating boot environment task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      activate,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create boot environment task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -510,58 +515,63 @@ export const createBootEnvironment = async (req, res) => {
  *         description: Failed to create deletion task
  */
 export const deleteBootEnvironment = async (req, res) => {
-    try {
-        const { name } = req.params;
-        const { force = false, snapshots = false, created_by = 'api' } = req.query;
+  try {
+    const { name } = req.params;
+    const { force = false, snapshots = false, created_by = 'api' } = req.query;
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Boot environment name is required' 
-            });
-        }
-
-        // Create task for boot environment deletion
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'beadm_delete',
-            priority: TaskPriority.HIGH,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name,
-                    force: force === 'true' || force === true,
-                    snapshots: snapshots === 'true' || snapshots === true
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Boot environment deletion task created for '${name}'`,
-            task_id: task.id,
-            be_name: name,
-            force: force === 'true' || force === true,
-            snapshots: snapshots === 'true' || snapshots === true
-        });
-
-    } catch (error) {
-        log.api.error('Error creating boot environment deletion task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            force: force,
-            snapshots: snapshots,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create boot environment deletion task',
-            details: error.message 
-        });
+    if (!name) {
+      return res.status(400).json({
+        error: 'Boot environment name is required',
+      });
     }
+
+    // Create task for boot environment deletion
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'beadm_delete',
+      priority: TaskPriority.HIGH,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+            force: force === 'true' || force === true,
+            snapshots: snapshots === 'true' || snapshots === true,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Boot environment deletion task created for '${name}'`,
+      task_id: task.id,
+      be_name: name,
+      force: force === 'true' || force === true,
+      snapshots: snapshots === 'true' || snapshots === true,
+    });
+  } catch (error) {
+    log.api.error('Error creating boot environment deletion task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      force,
+      snapshots,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create boot environment deletion task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -617,55 +627,60 @@ export const deleteBootEnvironment = async (req, res) => {
  *         description: Failed to create activation task
  */
 export const activateBootEnvironment = async (req, res) => {
-    try {
-        const { name } = req.params;
-        const { temporary = false, created_by = 'api' } = req.body || {};
+  try {
+    const { name } = req.params;
+    const { temporary = false, created_by = 'api' } = req.body || {};
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Boot environment name is required' 
-            });
-        }
-
-        // Create task for boot environment activation
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'beadm_activate',
-            priority: TaskPriority.HIGH,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name,
-                    temporary: temporary
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Boot environment activation task created for '${name}'${temporary ? ' (temporary)' : ''}`,
-            task_id: task.id,
-            be_name: name,
-            temporary: temporary
-        });
-
-    } catch (error) {
-        log.api.error('Error creating boot environment activation task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            temporary: temporary,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create boot environment activation task',
-            details: error.message 
-        });
+    if (!name) {
+      return res.status(400).json({
+        error: 'Boot environment name is required',
+      });
     }
+
+    // Create task for boot environment activation
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'beadm_activate',
+      priority: TaskPriority.HIGH,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+            temporary,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Boot environment activation task created for '${name}'${temporary ? ' (temporary)' : ''}`,
+      task_id: task.id,
+      be_name: name,
+      temporary,
+    });
+  } catch (error) {
+    log.api.error('Error creating boot environment activation task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      temporary,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create boot environment activation task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -713,63 +728,68 @@ export const activateBootEnvironment = async (req, res) => {
  *         description: Failed to create mount task
  */
 export const mountBootEnvironment = async (req, res) => {
-    try {
-        const { name } = req.params;
-        const { mountpoint, shared_mode, created_by = 'api' } = req.body;
+  try {
+    const { name } = req.params;
+    const { mountpoint, shared_mode, created_by = 'api' } = req.body;
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Boot environment name is required' 
-            });
-        }
-
-        if (!mountpoint) {
-            return res.status(400).json({ 
-                error: 'Mountpoint is required' 
-            });
-        }
-
-        // Create task for boot environment mounting
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'beadm_mount',
-            priority: TaskPriority.LOW,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name,
-                    mountpoint: mountpoint,
-                    shared_mode: shared_mode
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Boot environment mount task created for '${name}' at '${mountpoint}'`,
-            task_id: task.id,
-            be_name: name,
-            mountpoint: mountpoint
-        });
-
-    } catch (error) {
-        log.api.error('Error creating boot environment mount task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            mountpoint: mountpoint,
-            shared_mode: shared_mode,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create boot environment mount task',
-            details: error.message 
-        });
+    if (!name) {
+      return res.status(400).json({
+        error: 'Boot environment name is required',
+      });
     }
+
+    if (!mountpoint) {
+      return res.status(400).json({
+        error: 'Mountpoint is required',
+      });
+    }
+
+    // Create task for boot environment mounting
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'beadm_mount',
+      priority: TaskPriority.LOW,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+            mountpoint,
+            shared_mode,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Boot environment mount task created for '${name}' at '${mountpoint}'`,
+      task_id: task.id,
+      be_name: name,
+      mountpoint,
+    });
+  } catch (error) {
+    log.api.error('Error creating boot environment mount task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      mountpoint,
+      shared_mode,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create boot environment mount task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -812,53 +832,58 @@ export const mountBootEnvironment = async (req, res) => {
  *         description: Failed to create unmount task
  */
 export const unmountBootEnvironment = async (req, res) => {
-    try {
-        const { name } = req.params;
-        const { force = false, created_by = 'api' } = req.body || {};
+  try {
+    const { name } = req.params;
+    const { force = false, created_by = 'api' } = req.body || {};
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Boot environment name is required' 
-            });
-        }
-
-        // Create task for boot environment unmounting
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'beadm_unmount',
-            priority: TaskPriority.LOW,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name,
-                    force: force
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Boot environment unmount task created for '${name}'`,
-            task_id: task.id,
-            be_name: name,
-            force: force
-        });
-
-    } catch (error) {
-        log.api.error('Error creating boot environment unmount task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            force: force,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create boot environment unmount task',
-            details: error.message 
-        });
+    if (!name) {
+      return res.status(400).json({
+        error: 'Boot environment name is required',
+      });
     }
+
+    // Create task for boot environment unmounting
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'beadm_unmount',
+      priority: TaskPriority.LOW,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+            force,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Boot environment unmount task created for '${name}'`,
+      task_id: task.id,
+      be_name: name,
+      force,
+    });
+  } catch (error) {
+    log.api.error('Error creating boot environment unmount task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      force,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create boot environment unmount task',
+      details: error.message,
+    });
+  }
 };

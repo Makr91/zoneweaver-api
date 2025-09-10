@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -63,87 +63,91 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const IPAddresses = db.define('ip_addresses', {
+const IPAddresses = db.define(
+  'ip_addresses',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the IP address is configured'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the IP address is configured',
     },
     addrobj: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Address object name (e.g., vnich3_hv_04_0_6/v4)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Address object name (e.g., vnich3_hv_04_0_6/v4)',
     },
     interface: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Network interface name'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Network interface name',
     },
     type: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Address type (static, dhcp, addrconf)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Address type (static, dhcp, addrconf)',
     },
     state: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Address state (ok, tentative, duplicate, etc.)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Address state (ok, tentative, duplicate, etc.)',
     },
     addr: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'IP address with prefix length (e.g., 10.6.0.14/24)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'IP address with prefix length (e.g., 10.6.0.14/24)',
     },
     ip_address: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'IP address without prefix'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'IP address without prefix',
     },
     prefix_length: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Network prefix length'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Network prefix length',
     },
     ip_version: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'IP version (v4 or v6)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'IP version (v4 or v6)',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'IP address assignments from ipadm show-addr',
     indexes: [
-        {
-            unique: true,
-            fields: ['host', 'addrobj', 'scan_timestamp']
-        },
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['interface']
-        },
-        {
-            fields: ['ip_address']
-        },
-        {
-            fields: ['ip_version']
-        },
-        {
-            fields: ['type']
-        },
-        {
-            fields: ['state']
-        },
-        {
-            fields: ['scan_timestamp']
-        }
-    ]
-});
- 
+      {
+        unique: true,
+        fields: ['host', 'addrobj', 'scan_timestamp'],
+      },
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['interface'],
+      },
+      {
+        fields: ['ip_address'],
+      },
+      {
+        fields: ['ip_version'],
+      },
+      {
+        fields: ['type'],
+      },
+      {
+        fields: ['state'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+    ],
+  }
+);
+
 export default IPAddresses;

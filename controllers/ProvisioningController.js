@@ -8,96 +8,102 @@ import { log } from '../lib/Logger.js';
 const execAsync = util.promisify(exec);
 
 const packages = {
-    'ansible': 'ansible',
-    'vagrant': 'vagrant',
-    'isc-dhcp': 'dhcpd',
-    'zrepl': 'zrepl',
-    'dtrace': 'dtrace',
-    'git': 'git',
-    'mtr': 'mtr',
-    'fping': 'fping',
-    'lsof': 'lsof',
-    'sysstat': 'sysstat',
-    'tree': 'tree',
-    'tmux': 'tmux',
-    'ooce/library/libarchive': 'bsdtar', // libarchive provides bsdtar
-    'htop': 'htop',
-    'ncdu': 'ncdu',
-    'smartmontools': 'smartctl',
-    'zadm': 'zadm',
-    'rsync': 'rsync',
-    'nano': 'nano'
+  ansible: 'ansible',
+  vagrant: 'vagrant',
+  'isc-dhcp': 'dhcpd',
+  zrepl: 'zrepl',
+  dtrace: 'dtrace',
+  git: 'git',
+  mtr: 'mtr',
+  fping: 'fping',
+  lsof: 'lsof',
+  sysstat: 'sysstat',
+  tree: 'tree',
+  tmux: 'tmux',
+  'ooce/library/libarchive': 'bsdtar', // libarchive provides bsdtar
+  htop: 'htop',
+  ncdu: 'ncdu',
+  smartmontools: 'smartctl',
+  zadm: 'zadm',
+  rsync: 'rsync',
+  nano: 'nano',
 };
 
-const checkPackage = async (binaryName) => {
-    try {
-        await execAsync(`which ${binaryName}`);
-        return true;
-    } catch (error) {
-        return false;
-    }
+const checkPackage = async binaryName => {
+  try {
+    await execAsync(`which ${binaryName}`);
+    return true;
+  } catch (error) {
+    return false;
+  }
 };
 
-const installPackage = async (packageName) => {
-    try {
-        // Create a task for package installation (will be serialized with other package operations)
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'pkg_install',
-            priority: TaskPriority.NORMAL,
-            created_by: 'provisioning_service',
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    packages: [packageName],
-                    accept_licenses: true,
-                    dry_run: false
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
+const installPackage = async packageName => {
+  try {
+    // Create a task for package installation (will be serialized with other package operations)
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'pkg_install',
+      priority: TaskPriority.NORMAL,
+      created_by: 'provisioning_service',
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            packages: [packageName],
+            accept_licenses: true,
+            dry_run: false,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
 
-        log.app.info('Package installation task created', {
-            package: packageName,
-            task_id: task.id
-        });
-        return { success: true, task_id: task.id };
-    } catch (error) {
-        log.app.error('Failed to create installation task', {
-            package: packageName,
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: error.message };
-    }
+    log.app.info('Package installation task created', {
+      package: packageName,
+      task_id: task.id,
+    });
+    return { success: true, task_id: task.id };
+  } catch (error) {
+    log.app.error('Failed to create installation task', {
+      package: packageName,
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: error.message };
+  }
 };
 
 export const checkAndInstallPackages = async () => {
-    const provisioningConfig = config.get('provisioning');
-    if (!provisioningConfig || !provisioningConfig.install_tools) {
-        // Silently skip if provisioning is disabled
-        return;
-    }
+  const provisioningConfig = config.get('provisioning');
+  if (!provisioningConfig || !provisioningConfig.install_tools) {
+    // Silently skip if provisioning is disabled
+    return;
+  }
 
-    log.app.info('Starting package provisioning check');
+  log.app.info('Starting package provisioning check');
 
-    const missingPackages = [];
-    for (const [packageName, binaryName] of Object.entries(packages)) {
-        const isInstalled = await checkPackage(binaryName);
-        if (!isInstalled) {
-            missingPackages.push({ package: packageName, binary: binaryName });
-            await installPackage(packageName);
-        }
+  const missingPackages = [];
+  for (const [packageName, binaryName] of Object.entries(packages)) {
+    const isInstalled = await checkPackage(binaryName);
+    if (!isInstalled) {
+      missingPackages.push({ package: packageName, binary: binaryName });
+      await installPackage(packageName);
     }
+  }
 
-    if (missingPackages.length > 0) {
-        log.app.info('Package provisioning check complete', {
-            missing_packages: missingPackages.length,
-            packages: missingPackages
-        });
-    }
+  if (missingPackages.length > 0) {
+    log.app.info('Package provisioning check complete', {
+      missing_packages: missingPackages.length,
+      packages: missingPackages,
+    });
+  }
 };
 
 /**
@@ -121,9 +127,9 @@ export const checkAndInstallPackages = async () => {
  *         description: Failed to get provisioning status
  */
 export const getProvisioningStatus = async (req, res) => {
-    const status = {};
-    for (const [packageName, binaryName] of Object.entries(packages)) {
-        status[packageName] = await checkPackage(binaryName);
-    }
-    res.json(status);
+  const status = {};
+  for (const [packageName, binaryName] of Object.entries(packages)) {
+    status[packageName] = await checkPackage(binaryName);
+  }
+  res.json(status);
 };

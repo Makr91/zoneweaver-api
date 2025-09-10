@@ -5,11 +5,11 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { spawn } from "child_process";
-import Tasks, { TaskPriority } from "../models/TaskModel.js";
-import yj from "yieldable-json";
-import os from "os";
-import { log } from "../lib/Logger.js";
+import { spawn } from 'child_process';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import yj from 'yieldable-json';
+import os from 'os';
+import { log } from '../lib/Logger.js';
 
 /**
  * Execute command safely with proper error handling
@@ -17,117 +17,116 @@ import { log } from "../lib/Logger.js";
  * @param {number} timeout - Timeout in milliseconds
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (command, timeout = 30000) => {
-    return new Promise((resolve) => {
-        const child = spawn('sh', ['-c', command], {
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
-        
-        let stdout = '';
-        let stderr = '';
-        let completed = false;
-        
-        const timeoutId = setTimeout(() => {
-            if (!completed) {
-                completed = true;
-                child.kill('SIGTERM');
-                resolve({
-                    success: false,
-                    error: `Command timed out after ${timeout}ms`,
-                    output: stdout
-                });
-            }
-        }, timeout);
-        
-        child.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
-        
-        child.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-        
-        child.on('close', (code) => {
-            if (!completed) {
-                completed = true;
-                clearTimeout(timeoutId);
-                
-                if (code === 0) {
-                    resolve({
-                        success: true,
-                        output: stdout.trim()
-                    });
-                } else {
-                    resolve({
-                        success: false,
-                        error: stderr.trim() || `Command exited with code ${code}`,
-                        output: stdout.trim()
-                    });
-                }
-            }
-        });
-        
-        child.on('error', (error) => {
-            if (!completed) {
-                completed = true;
-                clearTimeout(timeoutId);
-                resolve({
-                    success: false,
-                    error: error.message,
-                    output: stdout
-                });
-            }
-        });
+const executeCommand = async (command, timeout = 30000) =>
+  new Promise(resolve => {
+    const child = spawn('sh', ['-c', command], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-};
+
+    let stdout = '';
+    let stderr = '';
+    let completed = false;
+
+    const timeoutId = setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        child.kill('SIGTERM');
+        resolve({
+          success: false,
+          error: `Command timed out after ${timeout}ms`,
+          output: stdout,
+        });
+      }
+    }, timeout);
+
+    child.stdout.on('data', data => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', data => {
+      stderr += data.toString();
+    });
+
+    child.on('close', code => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeoutId);
+
+        if (code === 0) {
+          resolve({
+            success: true,
+            output: stdout.trim(),
+          });
+        } else {
+          resolve({
+            success: false,
+            error: stderr.trim() || `Command exited with code ${code}`,
+            output: stdout.trim(),
+          });
+        }
+      }
+    });
+
+    child.on('error', error => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeoutId);
+        resolve({
+          success: false,
+          error: error.message,
+          output: stdout,
+        });
+      }
+    });
+  });
 
 /**
  * Parse pkg publisher output into structured format
  * @param {string} output - Raw pkg publisher output
  * @returns {Array} Array of publisher objects
  */
-const parsePublisherOutput = (output) => {
-    const lines = output.split('\n').filter(line => line.trim());
-    const publishers = [];
-    
-    // Skip header line if present
-    let startIndex = 0;
-    if (lines[0] && lines[0].startsWith('PUBLISHER')) {
-        startIndex = 1;
-    }
-    
-    for (let i = startIndex; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line) {
-            // Format: PUBLISHER TYPE STATUS P LOCATION
-            // Use regex to properly handle whitespace and capture groups
-            const match = line.match(/^(\S+)\s+(\S+(?:\s+\S+)*?)\s+(online|offline)\s+([FT-])\s+(.+)$/i);
-            
-            if (match) {
-                publishers.push({
-                    name: match[1],
-                    type: match[2],
-                    status: match[3],
-                    proxy: match[4],
-                    location: match[5]
-                });
-            } else {
-                // Fallback to original parsing if regex doesn't match
-                const parts = line.split(/\s+/);
-                if (parts.length >= 5) {
-                    publishers.push({
-                        name: parts[0],
-                        type: parts[1],
-                        status: parts[2],
-                        proxy: parts[3],
-                        location: parts.slice(4).join(' ')
-                    });
-                }
-            }
+const parsePublisherOutput = output => {
+  const lines = output.split('\n').filter(line => line.trim());
+  const publishers = [];
+
+  // Skip header line if present
+  let startIndex = 0;
+  if (lines[0] && lines[0].startsWith('PUBLISHER')) {
+    startIndex = 1;
+  }
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line) {
+      // Format: PUBLISHER TYPE STATUS P LOCATION
+      // Use regex to properly handle whitespace and capture groups
+      const match = line.match(/^(\S+)\s+(\S+(?:\s+\S+)*?)\s+(online|offline)\s+([FT-])\s+(.+)$/i);
+
+      if (match) {
+        publishers.push({
+          name: match[1],
+          type: match[2],
+          status: match[3],
+          proxy: match[4],
+          location: match[5],
+        });
+      } else {
+        // Fallback to original parsing if regex doesn't match
+        const parts = line.split(/\s+/);
+        if (parts.length >= 5) {
+          publishers.push({
+            name: parts[0],
+            type: parts[1],
+            status: parts[2],
+            proxy: parts[3],
+            location: parts.slice(4).join(' '),
+          });
         }
+      }
     }
-    
-    return publishers;
+  }
+
+  return publishers;
 };
 
 /**
@@ -135,27 +134,27 @@ const parsePublisherOutput = (output) => {
  * @param {string} output - Raw pkg publisher -F tsv output
  * @returns {Array} Array of detailed publisher objects
  */
-const parsePublisherTsvOutput = (output) => {
-    const lines = output.split('\n').filter(line => line.trim());
-    const publishers = [];
-    
-    for (const line of lines) {
-        const parts = line.split('\t');
-        if (parts.length >= 5) {
-            publishers.push({
-                name: parts[0],
-                sticky: parts[1] === 'true',
-                syspub: parts[2] === 'true', 
-                enabled: parts[3] === 'true',
-                type: parts[4],
-                status: parts[5],
-                location: parts[6],
-                proxy: parts[7] || null
-            });
-        }
+const parsePublisherTsvOutput = output => {
+  const lines = output.split('\n').filter(line => line.trim());
+  const publishers = [];
+
+  for (const line of lines) {
+    const parts = line.split('\t');
+    if (parts.length >= 5) {
+      publishers.push({
+        name: parts[0],
+        sticky: parts[1] === 'true',
+        syspub: parts[2] === 'true',
+        enabled: parts[3] === 'true',
+        type: parts[4],
+        status: parts[5],
+        location: parts[6],
+        proxy: parts[7] || null,
+      });
     }
-    
-    return publishers;
+  }
+
+  return publishers;
 };
 
 /**
@@ -221,60 +220,59 @@ const parsePublisherTsvOutput = (output) => {
  *         description: Failed to list repositories
  */
 export const listRepositories = async (req, res) => {
-    try {
-        const { format = 'default', enabled_only = false, publisher } = req.query;
-        
-        let command = 'pfexec pkg publisher';
-        
-        if (enabled_only === 'true' || enabled_only === true) {
-            command += ' -n';
-        }
-        
-        if (format === 'tsv' || format === 'detailed') {
-            command += ' -F tsv';
-        }
-        
-        if (publisher) {
-            command += ` ${publisher}`;
-        }
-        
-        const result = await executeCommand(command);
-        
-        if (!result.success) {
-            return res.status(500).json({
-                error: 'Failed to list repositories',
-                details: result.error
-            });
-        }
-        
-        let publishers;
-        if (format === 'tsv' || format === 'detailed') {
-            publishers = parsePublisherTsvOutput(result.output);
-        } else {
-            publishers = parsePublisherOutput(result.output);
-        }
-        
-        res.json({
-            publishers: publishers,
-            total: publishers.length,
-            format: format,
-            enabled_only: enabled_only === 'true' || enabled_only === true,
-            filter: publisher || null
-        });
-        
-    } catch (error) {
-        log.api.error('Error listing repositories', {
-            error: error.message,
-            stack: error.stack,
-            format: format,
-            enabled_only: enabled_only,
-            publisher: publisher
-        });
-        res.status(500).json({ 
-            error: 'Failed to list repositories',
-            details: error.message 
-        });
+  try {
+    const { format = 'default', enabled_only = false, publisher } = req.query;
+
+    let command = 'pfexec pkg publisher';
+
+    if (enabled_only === 'true' || enabled_only === true) {
+      command += ' -n';
     }
+
+    if (format === 'tsv' || format === 'detailed') {
+      command += ' -F tsv';
+    }
+
+    if (publisher) {
+      command += ` ${publisher}`;
+    }
+
+    const result = await executeCommand(command);
+
+    if (!result.success) {
+      return res.status(500).json({
+        error: 'Failed to list repositories',
+        details: result.error,
+      });
+    }
+
+    let publishers;
+    if (format === 'tsv' || format === 'detailed') {
+      publishers = parsePublisherTsvOutput(result.output);
+    } else {
+      publishers = parsePublisherOutput(result.output);
+    }
+
+    res.json({
+      publishers,
+      total: publishers.length,
+      format,
+      enabled_only: enabled_only === 'true' || enabled_only === true,
+      filter: publisher || null,
+    });
+  } catch (error) {
+    log.api.error('Error listing repositories', {
+      error: error.message,
+      stack: error.stack,
+      format,
+      enabled_only,
+      publisher,
+    });
+    res.status(500).json({
+      error: 'Failed to list repositories',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -365,91 +363,96 @@ export const listRepositories = async (req, res) => {
  *         description: Failed to create repository addition task
  */
 export const addRepository = async (req, res) => {
-    try {
-        const { 
-            name, 
-            origin, 
-            mirrors = [],
+  try {
+    const {
+      name,
+      origin,
+      mirrors = [],
+      ssl_cert,
+      ssl_key,
+      enabled = true,
+      sticky = true,
+      search_first = false,
+      search_before,
+      search_after,
+      properties = {},
+      proxy,
+      created_by = 'api',
+    } = req.body;
+
+    if (!name) {
+      return res.status(400).json({
+        error: 'Publisher name is required',
+      });
+    }
+
+    if (!origin) {
+      return res.status(400).json({
+        error: 'Origin URI is required',
+      });
+    }
+
+    // Validate name (basic validation)
+    if (!/^[a-zA-Z0-9\-_.]+$/.test(name)) {
+      return res.status(400).json({
+        error: 'Publisher name contains invalid characters',
+      });
+    }
+
+    // Create task for repository addition
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'repository_add',
+      priority: TaskPriority.MEDIUM,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+            origin,
+            mirrors,
             ssl_cert,
             ssl_key,
-            enabled = true,
-            sticky = true,
-            search_first = false,
+            enabled,
+            sticky,
+            search_first,
             search_before,
             search_after,
-            properties = {},
+            properties,
             proxy,
-            created_by = 'api' 
-        } = req.body;
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Publisher name is required' 
-            });
-        }
-
-        if (!origin) {
-            return res.status(400).json({ 
-                error: 'Origin URI is required' 
-            });
-        }
-
-        // Validate name (basic validation)
-        if (!/^[a-zA-Z0-9\-_.]+$/.test(name)) {
-            return res.status(400).json({
-                error: 'Publisher name contains invalid characters'
-            });
-        }
-
-        // Create task for repository addition
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'repository_add',
-            priority: TaskPriority.MEDIUM,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name,
-                    origin: origin,
-                    mirrors: mirrors,
-                    ssl_cert: ssl_cert,
-                    ssl_key: ssl_key,
-                    enabled: enabled,
-                    sticky: sticky,
-                    search_first: search_first,
-                    search_before: search_before,
-                    search_after: search_after,
-                    properties: properties,
-                    proxy: proxy
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Repository addition task created for publisher '${name}'`,
-            task_id: task.id,
-            publisher_name: name,
-            origin: origin
-        });
-
-    } catch (error) {
-        log.api.error('Error creating repository addition task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            origin: origin,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create repository addition task',
-            details: error.message 
-        });
-    }
+    res.status(202).json({
+      success: true,
+      message: `Repository addition task created for publisher '${name}'`,
+      task_id: task.id,
+      publisher_name: name,
+      origin,
+    });
+  } catch (error) {
+    log.api.error('Error creating repository addition task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      origin,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create repository addition task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -490,52 +493,57 @@ export const addRepository = async (req, res) => {
  *         description: Failed to create removal task
  */
 export const removeRepository = async (req, res) => {
-    try {
-        const { name } = req.params;
-        const { created_by = 'api' } = req.query;
+  try {
+    const { name } = req.params;
+    const { created_by = 'api' } = req.query;
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Publisher name is required' 
-            });
-        }
-
-        // Create task for repository removal
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'repository_remove',
-            priority: TaskPriority.MEDIUM,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Repository removal task created for publisher '${name}'`,
-            task_id: task.id,
-            publisher_name: name
-        });
-
-    } catch (error) {
-        log.api.error('Error creating repository removal task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create repository removal task',
-            details: error.message 
-        });
+    if (!name) {
+      return res.status(400).json({
+        error: 'Publisher name is required',
+      });
     }
+
+    // Create task for repository removal
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'repository_remove',
+      priority: TaskPriority.MEDIUM,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Repository removal task created for publisher '${name}'`,
+      task_id: task.id,
+      publisher_name: name,
+    });
+  } catch (error) {
+    log.api.error('Error creating repository removal task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create repository removal task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -634,13 +642,49 @@ export const removeRepository = async (req, res) => {
  *         description: Failed to create modification task
  */
 export const modifyRepository = async (req, res) => {
-    try {
-        const { name } = req.params;
-        const { 
-            origins_to_add = [],
-            origins_to_remove = [],
-            mirrors_to_add = [],
-            mirrors_to_remove = [],
+  try {
+    const { name } = req.params;
+    const {
+      origins_to_add = [],
+      origins_to_remove = [],
+      mirrors_to_add = [],
+      mirrors_to_remove = [],
+      ssl_cert,
+      ssl_key,
+      enabled,
+      sticky,
+      search_first,
+      search_before,
+      search_after,
+      properties_to_set = {},
+      properties_to_unset = [],
+      proxy,
+      reset_uuid = false,
+      refresh = false,
+      created_by = 'api',
+    } = req.body;
+
+    if (!name) {
+      return res.status(400).json({
+        error: 'Publisher name is required',
+      });
+    }
+
+    // Create task for repository modification
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'repository_modify',
+      priority: TaskPriority.MEDIUM,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+            origins_to_add,
+            origins_to_remove,
+            mirrors_to_add,
+            mirrors_to_remove,
             ssl_cert,
             ssl_key,
             enabled,
@@ -648,72 +692,41 @@ export const modifyRepository = async (req, res) => {
             search_first,
             search_before,
             search_after,
-            properties_to_set = {},
-            properties_to_unset = [],
+            properties_to_set,
+            properties_to_unset,
             proxy,
-            reset_uuid = false,
-            refresh = false,
-            created_by = 'api' 
-        } = req.body;
+            reset_uuid,
+            refresh,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Publisher name is required' 
-            });
-        }
-
-        // Create task for repository modification
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'repository_modify',
-            priority: TaskPriority.MEDIUM,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name,
-                    origins_to_add: origins_to_add,
-                    origins_to_remove: origins_to_remove,
-                    mirrors_to_add: mirrors_to_add,
-                    mirrors_to_remove: mirrors_to_remove,
-                    ssl_cert: ssl_cert,
-                    ssl_key: ssl_key,
-                    enabled: enabled,
-                    sticky: sticky,
-                    search_first: search_first,
-                    search_before: search_before,
-                    search_after: search_after,
-                    properties_to_set: properties_to_set,
-                    properties_to_unset: properties_to_unset,
-                    proxy: proxy,
-                    reset_uuid: reset_uuid,
-                    refresh: refresh
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Repository modification task created for publisher '${name}'`,
-            task_id: task.id,
-            publisher_name: name
-        });
-
-    } catch (error) {
-        log.api.error('Error creating repository modification task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create repository modification task',
-            details: error.message 
-        });
-    }
+    res.status(202).json({
+      success: true,
+      message: `Repository modification task created for publisher '${name}'`,
+      task_id: task.id,
+      publisher_name: name,
+    });
+  } catch (error) {
+    log.api.error('Error creating repository modification task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create repository modification task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -752,52 +765,57 @@ export const modifyRepository = async (req, res) => {
  *         description: Failed to create enable task
  */
 export const enableRepository = async (req, res) => {
-    try {
-        const { name } = req.params;
-        const { created_by = 'api' } = req.body || {};
+  try {
+    const { name } = req.params;
+    const { created_by = 'api' } = req.body || {};
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Publisher name is required' 
-            });
-        }
-
-        // Create task for repository enabling
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'repository_enable',
-            priority: TaskPriority.LOW,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Repository enable task created for publisher '${name}'`,
-            task_id: task.id,
-            publisher_name: name
-        });
-
-    } catch (error) {
-        log.api.error('Error creating repository enable task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create repository enable task',
-            details: error.message 
-        });
+    if (!name) {
+      return res.status(400).json({
+        error: 'Publisher name is required',
+      });
     }
+
+    // Create task for repository enabling
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'repository_enable',
+      priority: TaskPriority.LOW,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Repository enable task created for publisher '${name}'`,
+      task_id: task.id,
+      publisher_name: name,
+    });
+  } catch (error) {
+    log.api.error('Error creating repository enable task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create repository enable task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -836,50 +854,55 @@ export const enableRepository = async (req, res) => {
  *         description: Failed to create disable task
  */
 export const disableRepository = async (req, res) => {
-    try {
-        const { name } = req.params;
-        const { created_by = 'api' } = req.body || {};
+  try {
+    const { name } = req.params;
+    const { created_by = 'api' } = req.body || {};
 
-        if (!name) {
-            return res.status(400).json({ 
-                error: 'Publisher name is required' 
-            });
-        }
-
-        // Create task for repository disabling
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'repository_disable',
-            priority: TaskPriority.LOW,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    name: name
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `Repository disable task created for publisher '${name}'`,
-            task_id: task.id,
-            publisher_name: name
-        });
-
-    } catch (error) {
-        log.api.error('Error creating repository disable task', {
-            error: error.message,
-            stack: error.stack,
-            name: name,
-            created_by: created_by
-        });
-        res.status(500).json({ 
-            error: 'Failed to create repository disable task',
-            details: error.message 
-        });
+    if (!name) {
+      return res.status(400).json({
+        error: 'Publisher name is required',
+      });
     }
+
+    // Create task for repository disabling
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'repository_disable',
+      priority: TaskPriority.LOW,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Repository disable task created for publisher '${name}'`,
+      task_id: task.id,
+      publisher_name: name,
+    });
+  } catch (error) {
+    log.api.error('Error creating repository disable task', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      created_by,
+    });
+    res.status(500).json({
+      error: 'Failed to create repository disable task',
+      details: error.message,
+    });
+  }
 };

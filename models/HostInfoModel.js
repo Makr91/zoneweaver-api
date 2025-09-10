@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -83,124 +83,128 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const HostInfo = db.define('host_info', {
+const HostInfo = db.define(
+  'host_info',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
-        comment: 'Host identifier/name'
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      comment: 'Host identifier/name',
     },
     hostname: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'System hostname from os.hostname()'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'System hostname from os.hostname()',
     },
     platform: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Operating system platform'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Operating system platform',
     },
     release: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'OS release version'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'OS release version',
     },
     arch: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'System architecture'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'System architecture',
     },
     uptime: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'System uptime in seconds'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'System uptime in seconds',
     },
     network_acct_enabled: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-        comment: 'Whether network accounting is enabled (acctadm net)'
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Whether network accounting is enabled (acctadm net)',
     },
     network_acct_file: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Network accounting log file path'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Network accounting log file path',
     },
     last_network_scan: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Last network interface configuration scan timestamp'
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Last network interface configuration scan timestamp',
     },
     last_network_stats_scan: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Last network statistics scan timestamp'
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Last network statistics scan timestamp',
     },
     last_network_usage_scan: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Last network usage accounting scan timestamp'
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Last network usage accounting scan timestamp',
     },
     last_storage_scan: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Last storage/ZFS scan timestamp'
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Last storage/ZFS scan timestamp',
     },
     last_cpu_scan: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Last CPU statistics scan timestamp'
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Last CPU statistics scan timestamp',
     },
     last_memory_scan: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Last memory statistics scan timestamp'
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Last memory statistics scan timestamp',
     },
     cpu_count: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Number of CPU cores detected'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Number of CPU cores detected',
     },
     total_memory_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Total physical memory in bytes'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Total physical memory in bytes',
     },
     network_scan_errors: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0,
-        comment: 'Count of consecutive network scan errors'
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      comment: 'Count of consecutive network scan errors',
     },
     storage_scan_errors: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0,
-        comment: 'Count of consecutive storage scan errors'
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      comment: 'Count of consecutive storage scan errors',
     },
     last_error_message: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'Last error message encountered during scans'
-    }
-}, {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Last error message encountered during scans',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'Host information and scan status tracking',
     indexes: [
-        {
-            unique: true,
-            fields: ['host']
-        },
-        {
-            fields: ['last_network_scan']
-        },
-        {
-            fields: ['last_storage_scan']
-        },
-        {
-            fields: ['network_scan_errors']
-        },
-        {
-            fields: ['storage_scan_errors']
-        }
-    ]
-});
- 
+      {
+        unique: true,
+        fields: ['host'],
+      },
+      {
+        fields: ['last_network_scan'],
+      },
+      {
+        fields: ['last_storage_scan'],
+      },
+      {
+        fields: ['network_scan_errors'],
+      },
+      {
+        fields: ['storage_scan_errors'],
+      },
+    ],
+  }
+);
+
 export default HostInfo;

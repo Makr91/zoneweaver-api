@@ -21,13 +21,13 @@ import { log } from '../lib/Logger.js';
  *         description: Internal server error
  */
 export const getRoot = async (req, res) => {
-    try {
-        const entities = await Entities.findAll({
-            where: { is_active: true },
-            order: [['name', 'ASC']]
-        });
+  try {
+    const entities = await Entities.findAll({
+      where: { is_active: true },
+      order: [['name', 'ASC']],
+    });
 
-        let html = `
+    let html = `
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -50,18 +50,18 @@ export const getRoot = async (req, res) => {
                     <h1>Registered ZoneweaverInstances</h1>
         `;
 
-        if (entities && entities.length > 0) {
-            html += '<ul>';
-            entities.forEach(entity => {
-                const url = `https://${entity.name}`;
-                html += `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${entity.name}</a></li>`;
-            });
-            html += '</ul>';
-        } else {
-            html += '<p class="no-entities">No registered Zoneweaverinstances found.</p>';
-        }
+    if (entities && entities.length > 0) {
+      html += '<ul>';
+      entities.forEach(entity => {
+        const url = `https://${entity.name}`;
+        html += `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${entity.name}</a></li>`;
+      });
+      html += '</ul>';
+    } else {
+      html += '<p class="no-entities">No registered Zoneweaverinstances found.</p>';
+    }
 
-        html += `
+    html += `
                 </div>
                 <div class="container" style="margin-top: 2rem;">
                     <h2>API Documentation</h2>
@@ -73,12 +73,14 @@ export const getRoot = async (req, res) => {
             </html>
         `;
 
-        res.status(200).send(html);
-    } catch (error) {
-        log.api.error('Error fetching entities for root path', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).send('<h1>Error 500: Internal Server Error</h1><p>Could not fetch entity list.</p>');
-    }
+    res.status(200).send(html);
+  } catch (error) {
+    log.api.error('Error fetching entities for root path', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res
+      .status(500)
+      .send('<h1>Error 500: Internal Server Error</h1><p>Could not fetch entity list.</p>');
+  }
 };

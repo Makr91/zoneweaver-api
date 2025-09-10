@@ -1,5 +1,5 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const { DataTypes } = Sequelize;
@@ -39,41 +39,45 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Last time session was accessed
  */
-const ZloginSessions = db.define('zlogin_sessions', {
+const ZloginSessions = db.define(
+  'zlogin_sessions',
+  {
     id: {
-        type: DataTypes.UUID,
-        defaultValue: () => uuidv4(),
-        primaryKey: true,
-        comment: 'Unique session identifier'
+      type: DataTypes.UUID,
+      defaultValue: () => uuidv4(),
+      primaryKey: true,
+      comment: 'Unique session identifier',
     },
     zone_name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Zone name for this zlogin session'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Zone name for this zlogin session',
     },
     pid: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Process ID of the node-pty process (null when connecting)'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Process ID of the node-pty process (null when connecting)',
     },
     status: {
-        type: DataTypes.STRING,
-        defaultValue: 'active',
-        comment: 'Session status (connecting, active, closed)'
+      type: DataTypes.STRING,
+      defaultValue: 'active',
+      comment: 'Session status (connecting, active, closed)',
     },
     created_at: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Timestamp when session was created'
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp when session was created',
     },
     last_accessed: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Timestamp when session was last accessed'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp when session was last accessed',
+    },
+  },
+  {
     freezeTableName: true,
-    comment: 'Zlogin sessions for browser-based terminal access to zones'
-});
+    comment: 'Zlogin sessions for browser-based terminal access to zones',
+  }
+);
 
 export default ZloginSessions;

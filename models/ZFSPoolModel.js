@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -87,111 +87,115 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const ZFSPools = db.define('zfs_pools', {
+const ZFSPools = db.define(
+  'zfs_pools',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the pool is located'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the pool is located',
     },
     pool: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'ZFS pool name'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'ZFS pool name',
     },
     alloc: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Allocated space with units (e.g., "6.05G")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Allocated space with units (e.g., "6.05G")',
     },
     free: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Free space with units (e.g., "61.9G")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Free space with units (e.g., "61.9G")',
     },
     alloc_bytes: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Allocated space in bytes (for calculations)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Allocated space in bytes (for calculations)',
     },
     free_bytes: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Free space in bytes (for calculations)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Free space in bytes (for calculations)',
     },
     capacity: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'Capacity usage percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'Capacity usage percentage',
     },
     read_ops: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Read operations count'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Read operations count',
     },
     write_ops: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Write operations count'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Write operations count',
     },
     read_bandwidth: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Read bandwidth with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Read bandwidth with units',
     },
     write_bandwidth: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Write bandwidth with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Write bandwidth with units',
     },
     health: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Pool health status (ONLINE, DEGRADED, FAULTED, etc.)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Pool health status (ONLINE, DEGRADED, FAULTED, etc.)',
     },
     status: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Pool status information'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Pool status information',
     },
     errors: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'Error information or descriptions'
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Error information or descriptions',
     },
     scan_type: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        defaultValue: 'iostat',
-        comment: 'Type of scan (iostat, status, etc.)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'iostat',
+      comment: 'Type of scan (iostat, status, etc.)',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'ZFS pool status and I/O statistics (collected every 5 minutes)',
     indexes: [
-        {
-            fields: ['host', 'pool', 'scan_timestamp']
-        },
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['scan_timestamp']
-        },
-        {
-            fields: ['pool', 'scan_timestamp']
-        },
-        {
-            fields: ['health']
-        },
-        {
-            fields: ['scan_type']
-        }
-    ]
-});
- 
+      {
+        fields: ['host', 'pool', 'scan_timestamp'],
+      },
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+      {
+        fields: ['pool', 'scan_timestamp'],
+      },
+      {
+        fields: ['health'],
+      },
+      {
+        fields: ['scan_type'],
+      },
+    ],
+  }
+);
+
 export default ZFSPools;

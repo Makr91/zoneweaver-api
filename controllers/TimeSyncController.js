@@ -5,12 +5,12 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync } from "child_process";
-import Tasks, { TaskPriority } from "../models/TaskModel.js";
-import yj from "yieldable-json";
-import fs from "fs";
-import path from "path";
-import { log } from "../lib/Logger.js";
+import { execSync } from 'child_process';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import yj from 'yieldable-json';
+import fs from 'fs';
+import path from 'path';
+import { log } from '../lib/Logger.js';
 
 /**
  * Execute command safely with proper error handling
@@ -19,19 +19,19 @@ import { log } from "../lib/Logger.js";
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
 const executeCommand = async (command, timeout = 30000) => {
-    try {
-        const output = execSync(command, { 
-            encoding: 'utf8',
-            timeout: timeout
-        });
-        return { success: true, output: output.trim() };
-    } catch (error) {
-        return { 
-            success: false, 
-            error: error.message,
-            output: error.stdout || ''
-        };
-    }
+  try {
+    const output = execSync(command, {
+      encoding: 'utf8',
+      timeout,
+    });
+    return { success: true, output: output.trim() };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      output: error.stdout || '',
+    };
+  }
 };
 
 /**
@@ -39,80 +39,82 @@ const executeCommand = async (command, timeout = 30000) => {
  * @returns {Promise<{service: string, status: string, available: boolean, details?: object}>}
  */
 const detectTimeService = async () => {
-    // Check for NTP first (using proper service name)
-    const ntpCheck = await executeCommand('svcs network/ntp 2>/dev/null');
-    if (ntpCheck.success) {
-        const ntpDetails = await executeCommand('svcs -l network/ntp');
-        return {
-            service: 'ntp',
-            status: 'available',
-            available: true,
-            details: parseServiceDetails(ntpDetails.output)
-        };
-    }
-
-    // Check for Chrony
-    const chronyCheck = await executeCommand('svcs network/chrony 2>/dev/null');
-    if (chronyCheck.success) {
-        const chronyDetails = await executeCommand('svcs -l network/chrony');
-        return {
-            service: 'chrony',
-            status: 'available',
-            available: true,
-            details: parseServiceDetails(chronyDetails.output)
-        };
-    }
-
-    // Check for NTPsec
-    const ntpsecCheck = await executeCommand('svcs network/ntpsec 2>/dev/null');
-    if (ntpsecCheck.success) {
-        const ntpsecDetails = await executeCommand('svcs -l network/ntpsec');
-        return {
-            service: 'ntpsec',
-            status: 'available',
-            available: true,
-            details: parseServiceDetails(ntpsecDetails.output)
-        };
-    }
-
-    // Check if any service exists but is disabled
-    const allServices = await executeCommand('svcs -a | grep -E "(network/ntp|network/chrony|network/ntpsec)" 2>/dev/null');
-    if (allServices.success && allServices.output) {
-        const lines = allServices.output.split('\n');
-        for (const line of lines) {
-            if (line.includes('network/ntp:default')) {
-                return {
-                    service: 'ntp',
-                    status: 'disabled',
-                    available: true,
-                    details: { state: 'disabled', note: 'Service exists but is disabled' }
-                };
-            }
-            if (line.includes('network/chrony:default')) {
-                return {
-                    service: 'chrony',
-                    status: 'disabled',
-                    available: true,
-                    details: { state: 'disabled', note: 'Service exists but is disabled' }
-                };
-            }
-            if (line.includes('network/ntpsec:default')) {
-                return {
-                    service: 'ntpsec',
-                    status: 'disabled',
-                    available: true,
-                    details: { state: 'disabled', note: 'Service exists but is disabled' }
-                };
-            }
-        }
-    }
-
+  // Check for NTP first (using proper service name)
+  const ntpCheck = await executeCommand('svcs network/ntp 2>/dev/null');
+  if (ntpCheck.success) {
+    const ntpDetails = await executeCommand('svcs -l network/ntp');
     return {
-        service: 'none',
-        status: 'unavailable',
-        available: false,
-        details: { note: 'No time synchronization service found (NTP, Chrony, or NTPsec)' }
+      service: 'ntp',
+      status: 'available',
+      available: true,
+      details: parseServiceDetails(ntpDetails.output),
     };
+  }
+
+  // Check for Chrony
+  const chronyCheck = await executeCommand('svcs network/chrony 2>/dev/null');
+  if (chronyCheck.success) {
+    const chronyDetails = await executeCommand('svcs -l network/chrony');
+    return {
+      service: 'chrony',
+      status: 'available',
+      available: true,
+      details: parseServiceDetails(chronyDetails.output),
+    };
+  }
+
+  // Check for NTPsec
+  const ntpsecCheck = await executeCommand('svcs network/ntpsec 2>/dev/null');
+  if (ntpsecCheck.success) {
+    const ntpsecDetails = await executeCommand('svcs -l network/ntpsec');
+    return {
+      service: 'ntpsec',
+      status: 'available',
+      available: true,
+      details: parseServiceDetails(ntpsecDetails.output),
+    };
+  }
+
+  // Check if any service exists but is disabled
+  const allServices = await executeCommand(
+    'svcs -a | grep -E "(network/ntp|network/chrony|network/ntpsec)" 2>/dev/null'
+  );
+  if (allServices.success && allServices.output) {
+    const lines = allServices.output.split('\n');
+    for (const line of lines) {
+      if (line.includes('network/ntp:default')) {
+        return {
+          service: 'ntp',
+          status: 'disabled',
+          available: true,
+          details: { state: 'disabled', note: 'Service exists but is disabled' },
+        };
+      }
+      if (line.includes('network/chrony:default')) {
+        return {
+          service: 'chrony',
+          status: 'disabled',
+          available: true,
+          details: { state: 'disabled', note: 'Service exists but is disabled' },
+        };
+      }
+      if (line.includes('network/ntpsec:default')) {
+        return {
+          service: 'ntpsec',
+          status: 'disabled',
+          available: true,
+          details: { state: 'disabled', note: 'Service exists but is disabled' },
+        };
+      }
+    }
+  }
+
+  return {
+    service: 'none',
+    status: 'unavailable',
+    available: false,
+    details: { note: 'No time synchronization service found (NTP, Chrony, or NTPsec)' },
+  };
 };
 
 /**
@@ -120,20 +122,20 @@ const detectTimeService = async () => {
  * @param {string} serviceOutput - Output from svcs -l command
  * @returns {object} Parsed service details
  */
-const parseServiceDetails = (serviceOutput) => {
-    const details = {};
-    const lines = serviceOutput.split('\n');
-    
-    for (const line of lines) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length >= 2) {
-            const key = parts[0];
-            const value = parts.slice(1).join(' ');
-            details[key] = value;
-        }
+const parseServiceDetails = serviceOutput => {
+  const details = {};
+  const lines = serviceOutput.split('\n');
+
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const key = parts[0];
+      const value = parts.slice(1).join(' ');
+      details[key] = value;
     }
-    
-    return details;
+  }
+
+  return details;
 };
 
 /**
@@ -141,75 +143,77 @@ const parseServiceDetails = (serviceOutput) => {
  * @param {string} ntpqOutput - Raw output from ntpq -p command
  * @returns {Array<Object>} Array of NTP peer objects
  */
-const parseNtpPeers = (ntpqOutput) => {
-    const lines = ntpqOutput.split('\n');
-    const peers = [];
-    
-    // Skip header lines and process peer data
-    for (let i = 2; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        
-        // Parse peer line - format: remote refid st t when poll reach delay offset jitter
-        const parts = line.split(/\s+/);
-        if (parts.length >= 10) {
-            const remote = parts[0];
-            const peer = {
-                indicator: remote.charAt(0), // *, +, -, x, ., space
-                remote: remote.substring(1),
-                refid: parts[1],
-                stratum: parseInt(parts[2]) || 16,
-                type: parts[3],
-                when: parts[4],
-                poll: parseInt(parts[5]) || 0,
-                reach: parts[6],
-                delay: parseFloat(parts[7]) || 0,
-                offset: parseFloat(parts[8]) || 0,
-                jitter: parseFloat(parts[9]) || 0
-            };
-            
-            // Determine peer status
-            switch (peer.indicator) {
-                case '*':
-                    peer.status = 'selected_primary';
-                    peer.description = 'Selected as primary time source';
-                    break;
-                case '+':
-                    peer.status = 'selected_backup';
-                    peer.description = 'Selected as backup time source';
-                    break;
-                case '-':
-                    peer.status = 'rejected';
-                    peer.description = 'Rejected by clustering algorithm';
-                    break;
-                case 'x':
-                    peer.status = 'falseticker';
-                    peer.description = 'Rejected as false ticker';
-                    break;
-                case '.':
-                    peer.status = 'excess';
-                    peer.description = 'Excess peer (not used)';
-                    break;
-                case ' ':
-                default:
-                    peer.status = 'candidate';
-                    peer.description = 'Candidate for selection';
-                    break;
-            }
-            
-            // Calculate reachability percentage
-            if (peer.reach !== '0') {
-                const reachValue = parseInt(peer.reach, 8) || 0;
-                peer.reachability_percent = Math.round((reachValue / 255) * 100);
-            } else {
-                peer.reachability_percent = 0;
-            }
-            
-            peers.push(peer);
-        }
+const parseNtpPeers = ntpqOutput => {
+  const lines = ntpqOutput.split('\n');
+  const peers = [];
+
+  // Skip header lines and process peer data
+  for (let i = 2; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      continue;
     }
-    
-    return peers;
+
+    // Parse peer line - format: remote refid st t when poll reach delay offset jitter
+    const parts = line.split(/\s+/);
+    if (parts.length >= 10) {
+      const remote = parts[0];
+      const peer = {
+        indicator: remote.charAt(0), // *, +, -, x, ., space
+        remote: remote.substring(1),
+        refid: parts[1],
+        stratum: parseInt(parts[2]) || 16,
+        type: parts[3],
+        when: parts[4],
+        poll: parseInt(parts[5]) || 0,
+        reach: parts[6],
+        delay: parseFloat(parts[7]) || 0,
+        offset: parseFloat(parts[8]) || 0,
+        jitter: parseFloat(parts[9]) || 0,
+      };
+
+      // Determine peer status
+      switch (peer.indicator) {
+        case '*':
+          peer.status = 'selected_primary';
+          peer.description = 'Selected as primary time source';
+          break;
+        case '+':
+          peer.status = 'selected_backup';
+          peer.description = 'Selected as backup time source';
+          break;
+        case '-':
+          peer.status = 'rejected';
+          peer.description = 'Rejected by clustering algorithm';
+          break;
+        case 'x':
+          peer.status = 'falseticker';
+          peer.description = 'Rejected as false ticker';
+          break;
+        case '.':
+          peer.status = 'excess';
+          peer.description = 'Excess peer (not used)';
+          break;
+        case ' ':
+        default:
+          peer.status = 'candidate';
+          peer.description = 'Candidate for selection';
+          break;
+      }
+
+      // Calculate reachability percentage
+      if (peer.reach !== '0') {
+        const reachValue = parseInt(peer.reach, 8) || 0;
+        peer.reachability_percent = Math.round((reachValue / 255) * 100);
+      } else {
+        peer.reachability_percent = 0;
+      }
+
+      peers.push(peer);
+    }
+  }
+
+  return peers;
 };
 
 /**
@@ -217,48 +221,58 @@ const parseNtpPeers = (ntpqOutput) => {
  * @param {string} lastSample - Raw last sample string like "+928us[ +928us] +/-   19ms"
  * @returns {object} Object with delay, offset, jitter values (in milliseconds to match NTP format)
  */
-const parseChronySampleTiming = (lastSample) => {
-    const timing = {
-        delay: null, // Chrony doesn't provide delay equivalent
-        offset: 0,
-        jitter: 0
-    };
-    
-    if (!lastSample) return timing;
-    
-    // Parse offset from first value: "+928us[ +928us] +/-   19ms"
-    const offsetMatch = lastSample.match(/([+-]?\d+(?:\.\d+)?)(?:us|ms|ns|s)/);
-    if (offsetMatch) {
-        let offsetValue = parseFloat(offsetMatch[1]);
-        // Convert to milliseconds to match NTP format
-        if (lastSample.includes('us')) {
-            offsetValue = offsetValue / 1000; // µs to ms
-        } else if (lastSample.includes('ns')) {
-            offsetValue = offsetValue / 1000000; // ns to ms
-        } else if (lastSample.includes('s') && !lastSample.includes('us') && !lastSample.includes('ms')) {
-            offsetValue = offsetValue * 1000; // s to ms
-        }
-        // If 'ms', keep as-is
-        timing.offset = offsetValue;
-    }
-    
-    // Parse jitter from "+/-" value: "+928us[ +928us] +/-   19ms"
-    const jitterMatch = lastSample.match(/\+\/- +(\d+(?:\.\d+)?)(?:us|ms|ns|s)/);
-    if (jitterMatch) {
-        let jitterValue = parseFloat(jitterMatch[1]);
-        // Convert to milliseconds to match NTP format
-        if (jitterMatch[0].includes('us')) {
-            jitterValue = jitterValue / 1000; // µs to ms
-        } else if (jitterMatch[0].includes('ns')) {
-            jitterValue = jitterValue / 1000000; // ns to ms
-        } else if (jitterMatch[0].includes('s') && !jitterMatch[0].includes('us') && !jitterMatch[0].includes('ms')) {
-            jitterValue = jitterValue * 1000; // s to ms
-        }
-        // If 'ms', keep as-is
-        timing.jitter = jitterValue;
-    }
-    
+const parseChronySampleTiming = lastSample => {
+  const timing = {
+    delay: null, // Chrony doesn't provide delay equivalent
+    offset: 0,
+    jitter: 0,
+  };
+
+  if (!lastSample) {
     return timing;
+  }
+
+  // Parse offset from first value: "+928us[ +928us] +/-   19ms"
+  const offsetMatch = lastSample.match(/([+-]?\d+(?:\.\d+)?)(?:us|ms|ns|s)/);
+  if (offsetMatch) {
+    let offsetValue = parseFloat(offsetMatch[1]);
+    // Convert to milliseconds to match NTP format
+    if (lastSample.includes('us')) {
+      offsetValue = offsetValue / 1000; // µs to ms
+    } else if (lastSample.includes('ns')) {
+      offsetValue = offsetValue / 1000000; // ns to ms
+    } else if (
+      lastSample.includes('s') &&
+      !lastSample.includes('us') &&
+      !lastSample.includes('ms')
+    ) {
+      offsetValue = offsetValue * 1000; // s to ms
+    }
+    // If 'ms', keep as-is
+    timing.offset = offsetValue;
+  }
+
+  // Parse jitter from "+/-" value: "+928us[ +928us] +/-   19ms"
+  const jitterMatch = lastSample.match(/\+\/- +(\d+(?:\.\d+)?)(?:us|ms|ns|s)/);
+  if (jitterMatch) {
+    let jitterValue = parseFloat(jitterMatch[1]);
+    // Convert to milliseconds to match NTP format
+    if (jitterMatch[0].includes('us')) {
+      jitterValue = jitterValue / 1000; // µs to ms
+    } else if (jitterMatch[0].includes('ns')) {
+      jitterValue = jitterValue / 1000000; // ns to ms
+    } else if (
+      jitterMatch[0].includes('s') &&
+      !jitterMatch[0].includes('us') &&
+      !jitterMatch[0].includes('ms')
+    ) {
+      jitterValue = jitterValue * 1000; // s to ms
+    }
+    // If 'ms', keep as-is
+    timing.jitter = jitterValue;
+  }
+
+  return timing;
 };
 
 /**
@@ -266,94 +280,96 @@ const parseChronySampleTiming = (lastSample) => {
  * @param {string} chronycOutput - Raw output from chronyc sources command
  * @returns {Array<Object>} Array of chrony source objects
  */
-const parseChronySources = (chronycOutput) => {
-    const lines = chronycOutput.split('\n');
-    const sources = [];
-    
-    // Skip header lines and process source data
-    for (let i = 2; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        
-        // Parse source line - format: MS Name/IP address Stratum Poll Reach LastRx Last sample
-        const parts = line.split(/\s+/);
-        if (parts.length >= 8) {
-            const msField = parts[0];
-            const lastSample = parts.slice(6).join(' ');
-            const timing = parseChronySampleTiming(lastSample);
-            
-            const source = {
-                mode_indicator: msField.charAt(0), // M field: ^, =, #, ?
-                state_indicator: msField.charAt(1), // S field: *, +, -, x, ?, ~
-                indicator: msField.charAt(1), // Add indicator field for frontend compatibility
-                remote: parts[1], // Use 'remote' to match NTP peer structure
-                stratum: parseInt(parts[2]) || 16,
-                poll: parseInt(parts[3]) || 0,
-                reach: parseInt(parts[4]) || 0,
-                last_rx: parts[5],
-                last_sample: lastSample,
-                // Add timing fields to match NTP peer structure
-                delay: timing.delay,
-                offset: timing.offset,
-                jitter: timing.jitter
-            };
-            
-            // Interpret mode indicator
-            switch (source.mode_indicator) {
-                case '^':
-                    source.mode = 'server';
-                    break;
-                case '=':
-                    source.mode = 'peer';
-                    break;
-                case '#':
-                    source.mode = 'local_reference';
-                    break;
-                default:
-                    source.mode = 'unknown';
-                    break;
-            }
-            
-            // Interpret state indicator
-            switch (source.state_indicator) {
-                case '*':
-                    source.status = 'selected_primary';
-                    source.description = 'Selected as primary time source';
-                    break;
-                case '+':
-                    source.status = 'selected_backup';
-                    source.description = 'Selected as backup time source';
-                    break;
-                case '-':
-                    source.status = 'rejected';
-                    source.description = 'Rejected by selection algorithm';
-                    break;
-                case 'x':
-                    source.status = 'falseticker';
-                    source.description = 'Rejected as false ticker';
-                    break;
-                case '?':
-                    source.status = 'unreachable';
-                    source.description = 'Connectivity lost';
-                    break;
-                case '~':
-                    source.status = 'high_variance';
-                    source.description = 'Variable time source';
-                    break;
-                default:
-                    source.status = 'candidate';
-                    source.description = 'Candidate for selection';
-                    break;
-            }
-            
-            // Calculate reachability percentage (chrony uses octal like NTP)
-            source.reachability_percent = Math.round((parseInt(source.reach, 8) / 255) * 100);
-            
-            sources.push(source);
-        }
+const parseChronySources = chronycOutput => {
+  const lines = chronycOutput.split('\n');
+  const sources = [];
+
+  // Skip header lines and process source data
+  for (let i = 2; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      continue;
     }
-    
-    return sources;
+
+    // Parse source line - format: MS Name/IP address Stratum Poll Reach LastRx Last sample
+    const parts = line.split(/\s+/);
+    if (parts.length >= 8) {
+      const msField = parts[0];
+      const lastSample = parts.slice(6).join(' ');
+      const timing = parseChronySampleTiming(lastSample);
+
+      const source = {
+        mode_indicator: msField.charAt(0), // M field: ^, =, #, ?
+        state_indicator: msField.charAt(1), // S field: *, +, -, x, ?, ~
+        indicator: msField.charAt(1), // Add indicator field for frontend compatibility
+        remote: parts[1], // Use 'remote' to match NTP peer structure
+        stratum: parseInt(parts[2]) || 16,
+        poll: parseInt(parts[3]) || 0,
+        reach: parseInt(parts[4]) || 0,
+        last_rx: parts[5],
+        last_sample: lastSample,
+        // Add timing fields to match NTP peer structure
+        delay: timing.delay,
+        offset: timing.offset,
+        jitter: timing.jitter,
+      };
+
+      // Interpret mode indicator
+      switch (source.mode_indicator) {
+        case '^':
+          source.mode = 'server';
+          break;
+        case '=':
+          source.mode = 'peer';
+          break;
+        case '#':
+          source.mode = 'local_reference';
+          break;
+        default:
+          source.mode = 'unknown';
+          break;
+      }
+
+      // Interpret state indicator
+      switch (source.state_indicator) {
+        case '*':
+          source.status = 'selected_primary';
+          source.description = 'Selected as primary time source';
+          break;
+        case '+':
+          source.status = 'selected_backup';
+          source.description = 'Selected as backup time source';
+          break;
+        case '-':
+          source.status = 'rejected';
+          source.description = 'Rejected by selection algorithm';
+          break;
+        case 'x':
+          source.status = 'falseticker';
+          source.description = 'Rejected as false ticker';
+          break;
+        case '?':
+          source.status = 'unreachable';
+          source.description = 'Connectivity lost';
+          break;
+        case '~':
+          source.status = 'high_variance';
+          source.description = 'Variable time source';
+          break;
+        default:
+          source.status = 'candidate';
+          source.description = 'Candidate for selection';
+          break;
+      }
+
+      // Calculate reachability percentage (chrony uses octal like NTP)
+      source.reachability_percent = Math.round((parseInt(source.reach, 8) / 255) * 100);
+
+      sources.push(source);
+    }
+  }
+
+  return sources;
 };
 
 /**
@@ -361,26 +377,26 @@ const parseChronySources = (chronycOutput) => {
  * @returns {Promise<{success: boolean, timezone?: string, error?: string}>}
  */
 const getCurrentTimezone = async () => {
-    try {
-        if (!fs.existsSync('/etc/default/init')) {
-            return { success: false, error: 'Timezone configuration file not found' };
-        }
-        
-        const content = fs.readFileSync('/etc/default/init', 'utf8');
-        const lines = content.split('\n');
-        
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('TZ=')) {
-                const timezone = trimmed.substring(3).replace(/['"]/g, '');
-                return { success: true, timezone };
-            }
-        }
-        
-        return { success: false, error: 'TZ variable not found in /etc/default/init' };
-    } catch (error) {
-        return { success: false, error: error.message };
+  try {
+    if (!fs.existsSync('/etc/default/init')) {
+      return { success: false, error: 'Timezone configuration file not found' };
     }
+
+    const content = fs.readFileSync('/etc/default/init', 'utf8');
+    const lines = content.split('\n');
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('TZ=')) {
+        const timezone = trimmed.substring(3).replace(/['"]/g, '');
+        return { success: true, timezone };
+      }
+    }
+
+    return { success: false, error: 'TZ variable not found in /etc/default/init' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 };
 
 /**
@@ -388,52 +404,52 @@ const getCurrentTimezone = async () => {
  * @returns {Promise<{success: boolean, timezones?: Array, error?: string}>}
  */
 const getAvailableTimezones = async () => {
-    try {
-        const zoneinfoPath = '/usr/share/lib/zoneinfo';
-        if (!fs.existsSync(zoneinfoPath)) {
-            return { success: false, error: 'Timezone database not found' };
-        }
-        
-        const timezones = [];
-        
-        // Read continent directories
-        const continents = fs.readdirSync(zoneinfoPath, { withFileTypes: true })
-            .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-            .map(entry => entry.name);
-        
-        for (const continent of continents) {
-            const continentPath = path.join(zoneinfoPath, continent);
-            try {
-                const cities = fs.readdirSync(continentPath, { withFileTypes: true });
-                for (const city of cities) {
-                    if (city.isFile()) {
-                        timezones.push(`${continent}/${city.name}`);
-                    } else if (city.isDirectory()) {
-                        // Handle nested directories (like America/Argentina)
-                        const subcities = fs.readdirSync(path.join(continentPath, city.name));
-                        for (const subcity of subcities) {
-                            timezones.push(`${continent}/${city.name}/${subcity}`);
-                        }
-                    }
-                }
-            } catch (error) {
-                // Skip directories we can't read
-                continue;
-            }
-        }
-        
-        return { success: true, timezones: timezones.sort() };
-    } catch (error) {
-        return { success: false, error: error.message };
+  try {
+    const zoneinfoPath = '/usr/share/lib/zoneinfo';
+    if (!fs.existsSync(zoneinfoPath)) {
+      return { success: false, error: 'Timezone database not found' };
     }
+
+    const timezones = [];
+
+    // Read continent directories
+    const continents = fs
+      .readdirSync(zoneinfoPath, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map(entry => entry.name);
+
+    for (const continent of continents) {
+      const continentPath = path.join(zoneinfoPath, continent);
+      try {
+        const cities = fs.readdirSync(continentPath, { withFileTypes: true });
+        for (const city of cities) {
+          if (city.isFile()) {
+            timezones.push(`${continent}/${city.name}`);
+          } else if (city.isDirectory()) {
+            // Handle nested directories (like America/Argentina)
+            const subcities = fs.readdirSync(path.join(continentPath, city.name));
+            for (const subcity of subcities) {
+              timezones.push(`${continent}/${city.name}/${subcity}`);
+            }
+          }
+        }
+      } catch (error) {
+        // Skip directories we can't read
+        continue;
+      }
+    }
+
+    return { success: true, timezones: timezones.sort() };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 };
 
 /**
  * Generate default NTP configuration
  * @returns {string} Default NTP configuration content
  */
-const generateDefaultNtpConfig = () => {
-    return `# Generated by Zoneweaver API
+const generateDefaultNtpConfig = () => `# Generated by Zoneweaver API
 # Default NTP configuration for OmniOS
 
 driftfile /var/ntp/ntp.drift
@@ -456,14 +472,13 @@ restrict 1.pool.ntp.org nomodify noquery notrap
 restrict 2.pool.ntp.org nomodify noquery notrap
 restrict 3.pool.ntp.org nomodify noquery notrap
 `;
-};
 
 /**
  * Generate default Chrony configuration
  * @returns {string} Default Chrony configuration content
  */
-const generateDefaultChronyConfig = () => {
-    return `# Generated by Zoneweaver API - OmniOS Chrony Configuration
+const generateDefaultChronyConfig =
+  () => `# Generated by Zoneweaver API - OmniOS Chrony Configuration
 # Based on OmniOS default chrony.conf template
 
 #######################################################################
@@ -510,14 +525,12 @@ pidfile /var/run/chrony/chronyd.pid
 ! logdir /var/log/chrony
 ! log measurements statistics tracking
 `;
-};
 
 /**
  * Generate default NTPsec configuration
  * @returns {string} Default NTPsec configuration content
  */
-const generateDefaultNtpsecConfig = () => {
-    return `# Generated by Zoneweaver API
+const generateDefaultNtpsecConfig = () => `# Generated by Zoneweaver API
 # Default NTPsec configuration for OmniOS
 
 driftfile /var/lib/ntp/ntp.drift
@@ -540,86 +553,87 @@ restrict 1.pool.ntp.org nomodify noquery notrap
 restrict 2.pool.ntp.org nomodify noquery notrap
 restrict 3.pool.ntp.org nomodify noquery notrap
 `;
-};
 
 /**
  * Detect available time sync packages and services
  * @returns {Promise<{current: object, available: object}>}
  */
 const detectAvailableTimeSyncSystems = async () => {
-    const systems = {
-        ntp: {
-            package_name: 'service/network/ntp',
-            service_name: 'svc:/network/ntp:default',
-            config_file: '/etc/inet/ntp.conf',
-            installed: false,
-            enabled: false,
-            active: false,
-            can_switch_to: false
-        },
-        chrony: {
-            package_name: 'service/network/chrony',
-            service_name: 'svc:/network/chrony:default',
-            config_file: '/etc/inet/chrony.conf',
-            installed: false,
-            enabled: false,
-            active: false,
-            can_switch_to: false
-        },
-        ntpsec: {
-            package_name: 'service/network/ntpsec',
-            service_name: 'svc:/network/ntpsec:default',
-            config_file: '/etc/ntpsec/ntp.conf',
-            installed: false,
-            enabled: false,
-            active: false,
-            can_switch_to: false
+  const systems = {
+    ntp: {
+      package_name: 'service/network/ntp',
+      service_name: 'svc:/network/ntp:default',
+      config_file: '/etc/inet/ntp.conf',
+      installed: false,
+      enabled: false,
+      active: false,
+      can_switch_to: false,
+    },
+    chrony: {
+      package_name: 'service/network/chrony',
+      service_name: 'svc:/network/chrony:default',
+      config_file: '/etc/inet/chrony.conf',
+      installed: false,
+      enabled: false,
+      active: false,
+      can_switch_to: false,
+    },
+    ntpsec: {
+      package_name: 'service/network/ntpsec',
+      service_name: 'svc:/network/ntpsec:default',
+      config_file: '/etc/ntpsec/ntp.conf',
+      installed: false,
+      enabled: false,
+      active: false,
+      can_switch_to: false,
+    },
+  };
+
+  // Check current service status
+  const currentService = await detectTimeService();
+
+  // Check package installation status
+  for (const [systemName, systemInfo] of Object.entries(systems)) {
+    // Check if package is installed
+    const pkgResult = await executeCommand(`pkg list ${systemInfo.package_name} 2>/dev/null`);
+    systemInfo.installed = pkgResult.success;
+
+    if (systemInfo.installed) {
+      // Check service status using proper service name
+      const serviceResult = await executeCommand(`svcs network/${systemName} 2>/dev/null`);
+      if (serviceResult.success) {
+        const serviceLines = serviceResult.output.split('\n');
+        for (const line of serviceLines) {
+          if (line.includes(`network/${systemName}:default`)) {
+            const parts = line.trim().split(/\s+/);
+            systemInfo.enabled = parts[0] !== 'disabled';
+            systemInfo.active = parts[0] === 'online';
+            break;
+          }
         }
-    };
-
-    // Check current service status
-    const currentService = await detectTimeService();
-
-    // Check package installation status
-    for (const [systemName, systemInfo] of Object.entries(systems)) {
-        // Check if package is installed
-        const pkgResult = await executeCommand(`pkg list ${systemInfo.package_name} 2>/dev/null`);
-        systemInfo.installed = pkgResult.success;
-
-        if (systemInfo.installed) {
-            // Check service status using proper service name
-            const serviceResult = await executeCommand(`svcs network/${systemName} 2>/dev/null`);
-            if (serviceResult.success) {
-                const serviceLines = serviceResult.output.split('\n');
-                for (const line of serviceLines) {
-                    if (line.includes(`network/${systemName}:default`)) {
-                        const parts = line.trim().split(/\s+/);
-                        systemInfo.enabled = parts[0] !== 'disabled';
-                        systemInfo.active = parts[0] === 'online';
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Determine if we can switch to this system
-        systemInfo.can_switch_to = systemInfo.installed || (!systemInfo.installed && systemName !== currentService.service);
+      }
     }
 
-    return {
-        current: {
-            service: currentService.service,
-            status: currentService.status,
-            available: currentService.available
-        },
-        available: systems,
-        recommendations: {
-            modern: 'chrony',
-            traditional: 'ntp',
-            secure: 'ntpsec',
-            description: 'Chrony is recommended for modern systems, NTP for compatibility, NTPsec for enhanced security'
-        }
-    };
+    // Determine if we can switch to this system
+    systemInfo.can_switch_to =
+      systemInfo.installed || (!systemInfo.installed && systemName !== currentService.service);
+  }
+
+  return {
+    current: {
+      service: currentService.service,
+      status: currentService.status,
+      available: currentService.available,
+    },
+    available: systems,
+    recommendations: {
+      modern: 'chrony',
+      traditional: 'ntp',
+      secure: 'ntpsec',
+      description:
+        'Chrony is recommended for modern systems, NTP for compatibility, NTPsec for enhanced security',
+    },
+  };
 };
 
 /**
@@ -629,20 +643,22 @@ const detectAvailableTimeSyncSystems = async () => {
  * @returns {Array<string>} Array of server addresses
  */
 const extractServersFromConfig = (configContent, systemType) => {
-    const servers = [];
-    const lines = configContent.split('\n');
+  const servers = [];
+  const lines = configContent.split('\n');
 
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('server ') && !trimmed.includes('127.127.1.0')) {
-            const parts = trimmed.split(/\s+/);
-            if (parts.length >= 2) {
-                servers.push(parts[1]);
-            }
-        }
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('server ') && !trimmed.includes('127.127.1.0')) {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 2) {
+        servers.push(parts[1]);
+      }
     }
+  }
 
-    return servers.length > 0 ? servers : ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
+  return servers.length > 0
+    ? servers
+    : ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
 };
 
 /**
@@ -652,53 +668,53 @@ const extractServersFromConfig = (configContent, systemType) => {
  * @returns {string} Generated configuration content
  */
 const generateConfigForSystem = (targetSystem, servers) => {
-    let baseConfig = '';
-    
-    switch (targetSystem) {
-        case 'ntp':
-            baseConfig = generateDefaultNtpConfig();
-            break;
-        case 'chrony':
-            baseConfig = generateDefaultChronyConfig();
-            break;
-        case 'ntpsec':
-            baseConfig = generateDefaultNtpsecConfig();
-            break;
-        default:
-            throw new Error(`Unknown target system: ${targetSystem}`);
-    }
+  let baseConfig = '';
 
-    // Replace default servers with migrated ones
-    const lines = baseConfig.split('\n');
-    const newLines = [];
-    let inServerSection = false;
+  switch (targetSystem) {
+    case 'ntp':
+      baseConfig = generateDefaultNtpConfig();
+      break;
+    case 'chrony':
+      baseConfig = generateDefaultChronyConfig();
+      break;
+    case 'ntpsec':
+      baseConfig = generateDefaultNtpsecConfig();
+      break;
+    default:
+      throw new Error(`Unknown target system: ${targetSystem}`);
+  }
 
-    for (const line of lines) {
-        if (line.includes('server ') && line.includes('pool.ntp.org')) {
-            if (!inServerSection) {
-                // Replace with migrated servers
-                servers.forEach((server, index) => {
-                    if (targetSystem === 'chrony') {
-                        newLines.push(`server ${server} iburst`);
-                    } else {
-                        newLines.push(`server ${server} iburst`);
-                        // Add restrict line for NTP/NTPsec
-                        if (targetSystem === 'ntp' || targetSystem === 'ntpsec') {
-                            newLines.push(`restrict ${server} nomodify noquery notrap`);
-                        }
-                    }
-                });
-                inServerSection = true;
+  // Replace default servers with migrated ones
+  const lines = baseConfig.split('\n');
+  const newLines = [];
+  let inServerSection = false;
+
+  for (const line of lines) {
+    if (line.includes('server ') && line.includes('pool.ntp.org')) {
+      if (!inServerSection) {
+        // Replace with migrated servers
+        servers.forEach((server, index) => {
+          if (targetSystem === 'chrony') {
+            newLines.push(`server ${server} iburst`);
+          } else {
+            newLines.push(`server ${server} iburst`);
+            // Add restrict line for NTP/NTPsec
+            if (targetSystem === 'ntp' || targetSystem === 'ntpsec') {
+              newLines.push(`restrict ${server} nomodify noquery notrap`);
             }
-            // Skip original server lines
-        } else if (line.includes('restrict ') && line.includes('pool.ntp.org')) {
-            // Skip original restrict lines, we added them with servers
-        } else {
-            newLines.push(line);
-        }
+          }
+        });
+        inServerSection = true;
+      }
+      // Skip original server lines
+    } else if (line.includes('restrict ') && line.includes('pool.ntp.org')) {
+      // Skip original restrict lines, we added them with servers
+    } else {
+      newLines.push(line);
     }
+  }
 
-    return newLines.join('\n');
+  return newLines.join('\n');
 };
 
 /**
@@ -739,54 +755,55 @@ const generateConfigForSystem = (targetSystem, servers) => {
  *         description: Failed to get time sync status
  */
 export const getTimeSyncStatus = async (req, res) => {
-    try {
-        // Detect available service
-        const serviceInfo = await detectTimeService();
-        
-        let peers = [];
-        let syncStatus = null;
-        
-        if (serviceInfo.available && serviceInfo.details?.state === 'online') {
-            if (serviceInfo.service === 'ntp') {
-                // Get NTP peer information
-                const ntpqResult = await executeCommand('ntpq -p');
-                if (ntpqResult.success) {
-                    peers = parseNtpPeers(ntpqResult.output);
-                }
-            } else if (serviceInfo.service === 'chrony') {
-                // Get Chrony source information
-                const chronycResult = await executeCommand('chronyc sources');
-                if (chronycResult.success) {
-                    peers = parseChronySources(chronycResult.output);
-                }
-            }
+  try {
+    // Detect available service
+    const serviceInfo = await detectTimeService();
+
+    let peers = [];
+    const syncStatus = null;
+
+    if (serviceInfo.available && serviceInfo.details?.state === 'online') {
+      if (serviceInfo.service === 'ntp') {
+        // Get NTP peer information
+        const ntpqResult = await executeCommand('ntpq -p');
+        if (ntpqResult.success) {
+          peers = parseNtpPeers(ntpqResult.output);
         }
-        
-        // Get current timezone
-        const timezoneResult = await getCurrentTimezone();
-        
-        res.json({
-            service: serviceInfo.service,
-            status: serviceInfo.status,
-            available: serviceInfo.available,
-            service_details: serviceInfo.details,
-            peers: peers,
-            peer_count: peers.length,
-            synchronized_peers: peers.filter(p => p.status === 'selected_primary' || p.status === 'selected_backup').length,
-            timezone: timezoneResult.success ? timezoneResult.timezone : null,
-            last_checked: new Date().toISOString()
-        });
-        
-    } catch (error) {
-        log.api.error('Error getting time sync status', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get time sync status',
-            details: error.message 
-        });
+      } else if (serviceInfo.service === 'chrony') {
+        // Get Chrony source information
+        const chronycResult = await executeCommand('chronyc sources');
+        if (chronycResult.success) {
+          peers = parseChronySources(chronycResult.output);
+        }
+      }
     }
+
+    // Get current timezone
+    const timezoneResult = await getCurrentTimezone();
+
+    res.json({
+      service: serviceInfo.service,
+      status: serviceInfo.status,
+      available: serviceInfo.available,
+      service_details: serviceInfo.details,
+      peers,
+      peer_count: peers.length,
+      synchronized_peers: peers.filter(
+        p => p.status === 'selected_primary' || p.status === 'selected_backup'
+      ).length,
+      timezone: timezoneResult.success ? timezoneResult.timezone : null,
+      last_checked: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error getting time sync status', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get time sync status',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -820,69 +837,68 @@ export const getTimeSyncStatus = async (req, res) => {
  *         description: Failed to get configuration
  */
 export const getTimeSyncConfig = async (req, res) => {
-    try {
-        // Detect available service
-        const serviceInfo = await detectTimeService();
-        
-        if (!serviceInfo.available) {
-            return res.status(404).json({
-                error: 'No time synchronization service available',
-                service: serviceInfo.service,
-                details: serviceInfo.details
-            });
-        }
-        
-        let configFile = '';
-        let currentConfig = '';
-        let configExists = false;
-        let suggestedDefaults = {};
-        
-        if (serviceInfo.service === 'ntp') {
-            configFile = '/etc/inet/ntp.conf';
-            suggestedDefaults = {
-                servers: ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'],
-                config_template: generateDefaultNtpConfig()
-            };
-        } else if (serviceInfo.service === 'chrony') {
-            configFile = '/etc/inet/chrony.conf';
-            suggestedDefaults = {
-                servers: ['0.omnios.pool.ntp.org'],
-                config_template: generateDefaultChronyConfig()
-            };
-        }
-        
-        // Read existing config if it exists
-        try {
-            if (fs.existsSync(configFile)) {
-                currentConfig = fs.readFileSync(configFile, 'utf8');
-                configExists = true;
-            }
-        } catch (error) {
-            log.filesystem.warn('Failed to read time sync config file', {
-                config_file: configFile,
-                error: error.message
-            });
-        }
-        
-        res.json({
-            service: serviceInfo.service,
-            config_file: configFile,
-            config_exists: configExists,
-            current_config: currentConfig,
-            suggested_defaults: suggestedDefaults,
-            service_details: serviceInfo.details
-        });
-        
-    } catch (error) {
-        log.api.error('Error getting time sync status', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get time sync status',
-            details: error.message 
-        });
+  try {
+    // Detect available service
+    const serviceInfo = await detectTimeService();
+
+    if (!serviceInfo.available) {
+      return res.status(404).json({
+        error: 'No time synchronization service available',
+        service: serviceInfo.service,
+        details: serviceInfo.details,
+      });
     }
+
+    let configFile = '';
+    let currentConfig = '';
+    let configExists = false;
+    let suggestedDefaults = {};
+
+    if (serviceInfo.service === 'ntp') {
+      configFile = '/etc/inet/ntp.conf';
+      suggestedDefaults = {
+        servers: ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'],
+        config_template: generateDefaultNtpConfig(),
+      };
+    } else if (serviceInfo.service === 'chrony') {
+      configFile = '/etc/inet/chrony.conf';
+      suggestedDefaults = {
+        servers: ['0.omnios.pool.ntp.org'],
+        config_template: generateDefaultChronyConfig(),
+      };
+    }
+
+    // Read existing config if it exists
+    try {
+      if (fs.existsSync(configFile)) {
+        currentConfig = fs.readFileSync(configFile, 'utf8');
+        configExists = true;
+      }
+    } catch (error) {
+      log.filesystem.warn('Failed to read time sync config file', {
+        config_file: configFile,
+        error: error.message,
+      });
+    }
+
+    res.json({
+      service: serviceInfo.service,
+      config_file: configFile,
+      config_exists: configExists,
+      current_config: currentConfig,
+      suggested_defaults: suggestedDefaults,
+      service_details: serviceInfo.details,
+    });
+  } catch (error) {
+    log.api.error('Error getting time sync status', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get time sync status',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -924,63 +940,73 @@ export const getTimeSyncConfig = async (req, res) => {
  *         description: Invalid configuration content
  */
 export const updateTimeSyncConfig = async (req, res) => {
-    try {
-        const { config_content, backup_existing = true, restart_service = true, created_by = 'api' } = req.body;
-        
-        if (!config_content || typeof config_content !== 'string') {
-            return res.status(400).json({ 
-                error: 'config_content is required and must be a string' 
-            });
-        }
-        
-        // Detect available service
-        const serviceInfo = await detectTimeService();
-        
-        if (!serviceInfo.available) {
-            return res.status(404).json({
-                error: 'No time synchronization service available',
-                service: serviceInfo.service,
-                details: serviceInfo.details
-            });
-        }
-        
-        // Create task for config update
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'update_time_sync_config',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    service: serviceInfo.service,
-                    config_content: config_content,
-                    backup_existing: backup_existing,
-                    restart_service: restart_service
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-        
-        res.status(202).json({
-            success: true,
-            message: `Time sync configuration update task created for ${serviceInfo.service}`,
-            task_id: task.id,
-            service: serviceInfo.service
-        });
-        
-    } catch (error) {
-        log.api.error('Error getting time sync config', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get time sync configuration',
-            details: error.message 
-        });
+  try {
+    const {
+      config_content,
+      backup_existing = true,
+      restart_service = true,
+      created_by = 'api',
+    } = req.body;
+
+    if (!config_content || typeof config_content !== 'string') {
+      return res.status(400).json({
+        error: 'config_content is required and must be a string',
+      });
     }
+
+    // Detect available service
+    const serviceInfo = await detectTimeService();
+
+    if (!serviceInfo.available) {
+      return res.status(404).json({
+        error: 'No time synchronization service available',
+        service: serviceInfo.service,
+        details: serviceInfo.details,
+      });
+    }
+
+    // Create task for config update
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'update_time_sync_config',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            service: serviceInfo.service,
+            config_content,
+            backup_existing,
+            restart_service,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Time sync configuration update task created for ${serviceInfo.service}`,
+      task_id: task.id,
+      service: serviceInfo.service,
+    });
+  } catch (error) {
+    log.api.error('Error getting time sync config', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get time sync configuration',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -1015,58 +1041,63 @@ export const updateTimeSyncConfig = async (req, res) => {
  *         description: No time sync service available
  */
 export const forceTimeSync = async (req, res) => {
-    try {
-        const { server, timeout = 30, created_by = 'api' } = req.body || {};
-        
-        // Detect available service
-        const serviceInfo = await detectTimeService();
-        
-        if (!serviceInfo.available) {
-            return res.status(404).json({
-                error: 'No time synchronization service available',
-                service: serviceInfo.service,
-                details: serviceInfo.details
-            });
-        }
-        
-        // Create task for forced sync
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'force_time_sync',
-            priority: TaskPriority.HIGH,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    service: serviceInfo.service,
-                    server: server,
-                    timeout: timeout
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-        
-        res.status(202).json({
-            success: true,
-            message: `Time sync task created for ${serviceInfo.service}${server ? ` using server ${server}` : ''}`,
-            task_id: task.id,
-            service: serviceInfo.service,
-            server: server || 'auto-detect'
-        });
-        
-    } catch (error) {
-        log.api.error('Error updating time sync config', {
-            error: error.message,
-            stack: error.stack,
-            service: serviceInfo?.service
-        });
-        res.status(500).json({ 
-            error: 'Failed to create time sync config update task',
-            details: error.message 
-        });
+  try {
+    const { server, timeout = 30, created_by = 'api' } = req.body || {};
+
+    // Detect available service
+    const serviceInfo = await detectTimeService();
+
+    if (!serviceInfo.available) {
+      return res.status(404).json({
+        error: 'No time synchronization service available',
+        service: serviceInfo.service,
+        details: serviceInfo.details,
+      });
     }
+
+    // Create task for forced sync
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'force_time_sync',
+      priority: TaskPriority.HIGH,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            service: serviceInfo.service,
+            server,
+            timeout,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Time sync task created for ${serviceInfo.service}${server ? ` using server ${server}` : ''}`,
+      task_id: task.id,
+      service: serviceInfo.service,
+      server: server || 'auto-detect',
+    });
+  } catch (error) {
+    log.api.error('Error updating time sync config', {
+      error: error.message,
+      stack: error.stack,
+      service: serviceInfo?.service,
+    });
+    res.status(500).json({
+      error: 'Failed to create time sync config update task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -1098,36 +1129,37 @@ export const forceTimeSync = async (req, res) => {
  *         description: Failed to get timezone
  */
 export const getTimezone = async (req, res) => {
-    try {
-        const timezoneResult = await getCurrentTimezone();
-        
-        if (!timezoneResult.success) {
-            return res.status(500).json({
-                error: 'Failed to get current timezone',
-                details: timezoneResult.error
-            });
-        }
-        
-        // Get count of available timezones
-        const availableTimezones = await getAvailableTimezones();
-        
-        res.json({
-            timezone: timezoneResult.timezone,
-            config_file: '/etc/default/init',
-            available_timezones_count: availableTimezones.success ? availableTimezones.timezones.length : 0,
-            last_checked: new Date().toISOString()
-        });
-        
-    } catch (error) {
-        log.api.error('Error creating force time sync task', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to create time sync task',
-            details: error.message 
-        });
+  try {
+    const timezoneResult = await getCurrentTimezone();
+
+    if (!timezoneResult.success) {
+      return res.status(500).json({
+        error: 'Failed to get current timezone',
+        details: timezoneResult.error,
+      });
     }
+
+    // Get count of available timezones
+    const availableTimezones = await getAvailableTimezones();
+
+    res.json({
+      timezone: timezoneResult.timezone,
+      config_file: '/etc/default/init',
+      available_timezones_count: availableTimezones.success
+        ? availableTimezones.timezones.length
+        : 0,
+      last_checked: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error creating force time sync task', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to create time sync task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -1166,60 +1198,65 @@ export const getTimezone = async (req, res) => {
  *         description: Invalid timezone or request
  */
 export const setTimezone = async (req, res) => {
-    try {
-        const { timezone, backup_existing = true, created_by = 'api' } = req.body;
-        
-        if (!timezone || typeof timezone !== 'string') {
-            return res.status(400).json({ 
-                error: 'timezone is required and must be a string' 
-            });
-        }
-        
-        // Validate timezone exists
-        const zonePath = `/usr/share/lib/zoneinfo/${timezone}`;
-        if (!fs.existsSync(zonePath)) {
-            return res.status(400).json({
-                error: 'Invalid timezone',
-                timezone: timezone,
-                details: `Timezone file not found: ${zonePath}`
-            });
-        }
-        
-        // Create task for timezone update
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'set_timezone',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    timezone: timezone,
-                    backup_existing: backup_existing
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-        
-        res.status(202).json({
-            success: true,
-            message: `Timezone update task created: ${timezone}`,
-            task_id: task.id,
-            timezone: timezone
-        });
-        
-    } catch (error) {
-        log.api.error('Error getting timezone', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get timezone',
-            details: error.message 
-        });
+  try {
+    const { timezone, backup_existing = true, created_by = 'api' } = req.body;
+
+    if (!timezone || typeof timezone !== 'string') {
+      return res.status(400).json({
+        error: 'timezone is required and must be a string',
+      });
     }
+
+    // Validate timezone exists
+    const zonePath = `/usr/share/lib/zoneinfo/${timezone}`;
+    if (!fs.existsSync(zonePath)) {
+      return res.status(400).json({
+        error: 'Invalid timezone',
+        timezone,
+        details: `Timezone file not found: ${zonePath}`,
+      });
+    }
+
+    // Create task for timezone update
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'set_timezone',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            timezone,
+            backup_existing,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `Timezone update task created: ${timezone}`,
+      task_id: task.id,
+      timezone,
+    });
+  } catch (error) {
+    log.api.error('Error getting timezone', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get timezone',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -1266,61 +1303,60 @@ export const setTimezone = async (req, res) => {
  *                   type: boolean
  */
 export const listTimezones = async (req, res) => {
-    try {
-        const { region, search, limit = 100 } = req.query;
-        
-        const availableTimezones = await getAvailableTimezones();
-        
-        if (!availableTimezones.success) {
-            return res.status(500).json({
-                error: 'Failed to get available timezones',
-                details: availableTimezones.error
-            });
-        }
-        
-        let timezones = availableTimezones.timezones;
-        let filtered = false;
-        
-        // Apply region filter
-        if (region) {
-            timezones = timezones.filter(tz => tz.startsWith(region + '/'));
-            filtered = true;
-        }
-        
-        // Apply search filter
-        if (search) {
-            const searchLower = search.toLowerCase();
-            timezones = timezones.filter(tz => tz.toLowerCase().includes(searchLower));
-            filtered = true;
-        }
-        
-        // Apply limit
-        const total = timezones.length;
-        timezones = timezones.slice(0, parseInt(limit));
-        
-        res.json({
-            timezones: timezones,
-            total: total,
-            showing: timezones.length,
-            filtered: filtered,
-            filters: {
-                region: region || null,
-                search: search || null,
-                limit: parseInt(limit)
-            }
-        });
-        
-    } catch (error) {
-        log.api.error('Error setting timezone', {
-            error: error.message,
-            stack: error.stack,
-            timezone: timezone
-        });
-        res.status(500).json({ 
-            error: 'Failed to create timezone update task',
-            details: error.message 
-        });
+  try {
+    const { region, search, limit = 100 } = req.query;
+
+    const availableTimezones = await getAvailableTimezones();
+
+    if (!availableTimezones.success) {
+      return res.status(500).json({
+        error: 'Failed to get available timezones',
+        details: availableTimezones.error,
+      });
     }
+
+    let { timezones } = availableTimezones;
+    let filtered = false;
+
+    // Apply region filter
+    if (region) {
+      timezones = timezones.filter(tz => tz.startsWith(`${region}/`));
+      filtered = true;
+    }
+
+    // Apply search filter
+    if (search) {
+      const searchLower = search.toLowerCase();
+      timezones = timezones.filter(tz => tz.toLowerCase().includes(searchLower));
+      filtered = true;
+    }
+
+    // Apply limit
+    const total = timezones.length;
+    timezones = timezones.slice(0, parseInt(limit));
+
+    res.json({
+      timezones,
+      total,
+      showing: timezones.length,
+      filtered,
+      filters: {
+        region: region || null,
+        search: search || null,
+        limit: parseInt(limit),
+      },
+    });
+  } catch (error) {
+    log.api.error('Error setting timezone', {
+      error: error.message,
+      stack: error.stack,
+      timezone,
+    });
+    res.status(500).json({
+      error: 'Failed to create timezone update task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -1376,21 +1412,20 @@ export const listTimezones = async (req, res) => {
  *         description: Failed to get available systems
  */
 export const getAvailableTimeSyncSystems = async (req, res) => {
-    try {
-        const systemsInfo = await detectAvailableTimeSyncSystems();
-        
-        res.json(systemsInfo);
-        
-    } catch (error) {
-        log.api.error('Error listing timezones', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to list timezones',
-            details: error.message 
-        });
-    }
+  try {
+    const systemsInfo = await detectAvailableTimeSyncSystems();
+
+    res.json(systemsInfo);
+  } catch (error) {
+    log.api.error('Error listing timezones', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to list timezones',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -1435,104 +1470,115 @@ export const getAvailableTimeSyncSystems = async (req, res) => {
  *         description: Cannot switch to requested system
  */
 export const switchTimeSyncSystem = async (req, res) => {
-    try {
-        const { target_system, preserve_servers = true, install_if_needed = true, created_by = 'api' } = req.body;
-        
-        if (!target_system || !['ntp', 'chrony', 'ntpsec', 'none'].includes(target_system)) {
-            return res.status(400).json({ 
-                error: 'target_system is required and must be one of: ntp, chrony, ntpsec, none' 
-            });
-        }
-        
-        // Get current system info
-        const systemsInfo = await detectAvailableTimeSyncSystems();
-        const currentSystem = systemsInfo.current.service;
-        
-        // Check if already using target system
-        if (currentSystem === target_system) {
-            return res.status(400).json({
-                error: `Already using ${target_system}`,
-                current_system: currentSystem,
-                target_system: target_system
-            });
-        }
-        
-        // Check if we can switch to target system
-        if (target_system !== 'none') {
-            const targetInfo = systemsInfo.available[target_system];
-            if (!targetInfo) {
-                return res.status(400).json({
-                    error: `Unknown target system: ${target_system}`
-                });
-            }
-            
-            if (!targetInfo.can_switch_to) {
-                return res.status(409).json({
-                    error: `Cannot switch to ${target_system}`,
-                    details: `System is not available for switching`,
-                    target_info: targetInfo
-                });
-            }
-            
-            // If package is not installed and install_if_needed is false
-            if (!targetInfo.installed && !install_if_needed) {
-                return res.status(409).json({
-                    error: `Cannot switch to ${target_system}`,
-                    details: `Package ${targetInfo.package_name} is not installed and install_if_needed is false`,
-                    requires_installation: true
-                });
-            }
-        }
-        
-        // Create task for system switch
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'switch_time_sync_system',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    current_system: currentSystem,
-                    target_system: target_system,
-                    preserve_servers: preserve_servers,
-                    install_if_needed: install_if_needed,
-                    systems_info: systemsInfo
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-        
-        // Estimate duration based on what needs to be done
-        let estimatedDuration = '30-60 seconds';
-        if (target_system !== 'none') {
-            const targetInfo = systemsInfo.available[target_system];
-            if (!targetInfo.installed && install_if_needed) {
-                estimatedDuration = '2-5 minutes';
-            }
-        }
-        
-        res.status(202).json({
-            success: true,
-            message: `Time sync system switch task created: ${currentSystem} → ${target_system}`,
-            task_id: task.id,
-            current_system: currentSystem,
-            target_system: target_system,
-            requires_installation: target_system !== 'none' ? !systemsInfo.available[target_system]?.installed : false,
-            estimated_duration: estimatedDuration
-        });
-        
-    } catch (error) {
-        log.api.error('Error switching time sync system', {
-            error: error.message,
-            stack: error.stack,
-            target_system: target_system
-        });
-        res.status(500).json({ 
-            error: 'Failed to create time sync system switch task',
-            details: error.message 
-        });
+  try {
+    const {
+      target_system,
+      preserve_servers = true,
+      install_if_needed = true,
+      created_by = 'api',
+    } = req.body;
+
+    if (!target_system || !['ntp', 'chrony', 'ntpsec', 'none'].includes(target_system)) {
+      return res.status(400).json({
+        error: 'target_system is required and must be one of: ntp, chrony, ntpsec, none',
+      });
     }
+
+    // Get current system info
+    const systemsInfo = await detectAvailableTimeSyncSystems();
+    const currentSystem = systemsInfo.current.service;
+
+    // Check if already using target system
+    if (currentSystem === target_system) {
+      return res.status(400).json({
+        error: `Already using ${target_system}`,
+        current_system: currentSystem,
+        target_system,
+      });
+    }
+
+    // Check if we can switch to target system
+    if (target_system !== 'none') {
+      const targetInfo = systemsInfo.available[target_system];
+      if (!targetInfo) {
+        return res.status(400).json({
+          error: `Unknown target system: ${target_system}`,
+        });
+      }
+
+      if (!targetInfo.can_switch_to) {
+        return res.status(409).json({
+          error: `Cannot switch to ${target_system}`,
+          details: `System is not available for switching`,
+          target_info: targetInfo,
+        });
+      }
+
+      // If package is not installed and install_if_needed is false
+      if (!targetInfo.installed && !install_if_needed) {
+        return res.status(409).json({
+          error: `Cannot switch to ${target_system}`,
+          details: `Package ${targetInfo.package_name} is not installed and install_if_needed is false`,
+          requires_installation: true,
+        });
+      }
+    }
+
+    // Create task for system switch
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'switch_time_sync_system',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            current_system: currentSystem,
+            target_system,
+            preserve_servers,
+            install_if_needed,
+            systems_info: systemsInfo,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    // Estimate duration based on what needs to be done
+    let estimatedDuration = '30-60 seconds';
+    if (target_system !== 'none') {
+      const targetInfo = systemsInfo.available[target_system];
+      if (!targetInfo.installed && install_if_needed) {
+        estimatedDuration = '2-5 minutes';
+      }
+    }
+
+    res.status(202).json({
+      success: true,
+      message: `Time sync system switch task created: ${currentSystem} → ${target_system}`,
+      task_id: task.id,
+      current_system: currentSystem,
+      target_system,
+      requires_installation:
+        target_system !== 'none' ? !systemsInfo.available[target_system]?.installed : false,
+      estimated_duration: estimatedDuration,
+    });
+  } catch (error) {
+    log.api.error('Error switching time sync system', {
+      error: error.message,
+      stack: error.stack,
+      target_system,
+    });
+    res.status(500).json({
+      error: 'Failed to create time sync system switch task',
+      details: error.message,
+    });
+  }
 };

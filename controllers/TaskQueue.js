@@ -1,22 +1,22 @@
-import { execSync, spawn } from "child_process";
-import Tasks, { TaskPriority } from "../models/TaskModel.js";
-import Zones from "../models/ZoneModel.js";
-import VncSessions from "../models/VncSessionModel.js";
-import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
-import NetworkUsage from "../models/NetworkUsageModel.js";
-import IPAddresses from "../models/IPAddressModel.js";
-import yj from "yieldable-json";
-import { Op } from "sequelize";
-import os from "os";
-import config from "../config/ConfigLoader.js";
-import { setRebootRequired } from "../lib/RebootManager.js";
+import { execSync, spawn } from 'child_process';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import Zones from '../models/ZoneModel.js';
+import VncSessions from '../models/VncSessionModel.js';
+import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
+import NetworkUsage from '../models/NetworkUsageModel.js';
+import IPAddresses from '../models/IPAddressModel.js';
+import yj from 'yieldable-json';
+import { Op } from 'sequelize';
+import os from 'os';
+import config from '../config/ConfigLoader.js';
+import { setRebootRequired } from '../lib/RebootManager.js';
 import {
-    enableService,
-    disableService,
-    restartService,
-    refreshService
-} from "../lib/ServiceManager.js";
-import { log, createTimer } from "../lib/Logger.js";
+  enableService,
+  disableService,
+  restartService,
+  refreshService,
+} from '../lib/ServiceManager.js';
+import { log, createTimer } from '../lib/Logger.js';
 
 /**
  * @fileoverview Task Queue controller for Zoneweaver API
@@ -28,60 +28,60 @@ import { log, createTimer } from "../lib/Logger.js";
  * Operations in the same category cannot run simultaneously
  */
 const OPERATION_CATEGORIES = {
-    // Package management operations (conflict with each other)
-    'pkg_install': 'package_management',
-    'pkg_uninstall': 'package_management',
-    'pkg_update': 'package_management',
-    'pkg_refresh': 'package_management',
-    'beadm_create': 'package_management',
-    'beadm_delete': 'package_management',
-    'beadm_activate': 'package_management',
-    'beadm_mount': 'package_management',
-    'beadm_unmount': 'package_management',
-    'repository_add': 'package_management',
-    'repository_remove': 'package_management',
-    'repository_modify': 'package_management',
-    'repository_enable': 'package_management',
-    'repository_disable': 'package_management',
-    
-    // Network datalink operations (may conflict with each other)
-    'create_vnic': 'network_datalink',
-    'delete_vnic': 'network_datalink',
-    'set_vnic_properties': 'network_datalink',
-    'create_aggregate': 'network_datalink',
-    'delete_aggregate': 'network_datalink',
-    'modify_aggregate_links': 'network_datalink',
-    'create_etherstub': 'network_datalink',
-    'delete_etherstub': 'network_datalink',
-    'create_vlan': 'network_datalink',
-    'delete_vlan': 'network_datalink',
-    'create_bridge': 'network_datalink',
-    'delete_bridge': 'network_datalink',
-    'modify_bridge_links': 'network_datalink',
-    
-    // Network IP operations (may conflict with each other)
-    'create_ip_address': 'network_ip',
-    'delete_ip_address': 'network_ip',
-    'enable_ip_address': 'network_ip',
-    'disable_ip_address': 'network_ip',
-    
-    // System operations (serialized)
-    'set_hostname': 'system_config',
-    'update_time_sync_config': 'system_config',
-    'force_time_sync': 'system_config', 
-    'set_timezone': 'system_config',
-    
-    // Zone operations (safe to run concurrently - no category)
-    // start, stop, restart, delete, discover - no category = no conflicts
-    
-    // Service operations (safe to run concurrently - no category)
-    // service_enable, service_disable, service_restart, service_refresh - no category = no conflicts
+  // Package management operations (conflict with each other)
+  pkg_install: 'package_management',
+  pkg_uninstall: 'package_management',
+  pkg_update: 'package_management',
+  pkg_refresh: 'package_management',
+  beadm_create: 'package_management',
+  beadm_delete: 'package_management',
+  beadm_activate: 'package_management',
+  beadm_mount: 'package_management',
+  beadm_unmount: 'package_management',
+  repository_add: 'package_management',
+  repository_remove: 'package_management',
+  repository_modify: 'package_management',
+  repository_enable: 'package_management',
+  repository_disable: 'package_management',
+
+  // Network datalink operations (may conflict with each other)
+  create_vnic: 'network_datalink',
+  delete_vnic: 'network_datalink',
+  set_vnic_properties: 'network_datalink',
+  create_aggregate: 'network_datalink',
+  delete_aggregate: 'network_datalink',
+  modify_aggregate_links: 'network_datalink',
+  create_etherstub: 'network_datalink',
+  delete_etherstub: 'network_datalink',
+  create_vlan: 'network_datalink',
+  delete_vlan: 'network_datalink',
+  create_bridge: 'network_datalink',
+  delete_bridge: 'network_datalink',
+  modify_bridge_links: 'network_datalink',
+
+  // Network IP operations (may conflict with each other)
+  create_ip_address: 'network_ip',
+  delete_ip_address: 'network_ip',
+  enable_ip_address: 'network_ip',
+  disable_ip_address: 'network_ip',
+
+  // System operations (serialized)
+  set_hostname: 'system_config',
+  update_time_sync_config: 'system_config',
+  force_time_sync: 'system_config',
+  set_timezone: 'system_config',
+
+  // Zone operations (safe to run concurrently - no category)
+  // start, stop, restart, delete, discover - no category = no conflicts
+
+  // Service operations (safe to run concurrently - no category)
+  // service_enable, service_disable, service_restart, service_refresh - no category = no conflicts
 };
 
 /**
  * Task execution queue - in-memory tracking of running tasks
  */
-let runningTasks = new Map();
+const runningTasks = new Map();
 let taskProcessor = null;
 
 /**
@@ -92,7 +92,7 @@ let discoveryProcessor = null;
 /**
  * Track running operation categories to prevent conflicts
  */
-let runningCategories = new Set();
+const runningCategories = new Set();
 
 /**
  * Maximum number of concurrent tasks
@@ -111,100 +111,100 @@ const TASK_TIMEOUT = 5 * 60 * 1000;
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
 const executeCommand = async (command, timeout = TASK_TIMEOUT) => {
-    const timer = createTimer(`executeCommand: ${command.substring(0, 50)}`);
-    
-    return new Promise((resolve) => {
-        const child = spawn('sh', ['-c', command], {
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
-        
-        let stdout = '';
-        let stderr = '';
-        let completed = false;
-        
-        // Set up timeout
-        const timeoutId = setTimeout(() => {
-            if (!completed) {
-                completed = true;
-                child.kill('SIGTERM');
-                log.task.error('Command execution timeout', { 
-                    command: command.substring(0, 100),
-                    timeout_ms: timeout,
-                    stdout_preview: stdout.substring(0, 200)
-                });
-                timer.end();
-                resolve({
-                    success: false,
-                    error: `Command timed out after ${timeout}ms`,
-                    output: stdout
-                });
-            }
-        }, timeout);
-        
-        // Collect output
-        child.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
-        
-        child.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-        
-        // Handle completion
-        child.on('close', (code) => {
-            if (!completed) {
-                completed = true;
-                clearTimeout(timeoutId);
-                const duration = timer.end();
-                
-                if (code === 0) {
-                    // Log performance info if command took >1000ms
-                    if (duration > 1000) {
-                        log.performance.info('Slow command execution', {
-                            command: command.substring(0, 100),
-                            duration_ms: duration,
-                            stdout_size: stdout.length
-                        });
-                    }
-                    resolve({
-                        success: true,
-                        output: stdout.trim()
-                    });
-                } else {
-                    log.task.error('Command execution failed', {
-                        command: command.substring(0, 100),
-                        exit_code: code,
-                        stderr: stderr.trim().substring(0, 200),
-                        duration_ms: duration
-                    });
-                    resolve({
-                        success: false,
-                        error: stderr.trim() || `Command exited with code ${code}`,
-                        output: stdout.trim()
-                    });
-                }
-            }
-        });
-        
-        // Handle errors
-        child.on('error', (error) => {
-            if (!completed) {
-                completed = true;
-                clearTimeout(timeoutId);
-                const duration = timer.end();
-                log.task.error('Command execution error', {
-                    command: command.substring(0, 100),
-                    error: error.message,
-                    duration_ms: duration
-                });
-                resolve({
-                    success: false,
-                    error: error.message,
-                    output: stdout
-                });
-            }
-        });
+  const timer = createTimer(`executeCommand: ${command.substring(0, 50)}`);
+
+  return new Promise(resolve => {
+    const child = spawn('sh', ['-c', command], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+
+    let stdout = '';
+    let stderr = '';
+    let completed = false;
+
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        child.kill('SIGTERM');
+        log.task.error('Command execution timeout', {
+          command: command.substring(0, 100),
+          timeout_ms: timeout,
+          stdout_preview: stdout.substring(0, 200),
+        });
+        timer.end();
+        resolve({
+          success: false,
+          error: `Command timed out after ${timeout}ms`,
+          output: stdout,
+        });
+      }
+    }, timeout);
+
+    // Collect output
+    child.stdout.on('data', data => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', data => {
+      stderr += data.toString();
+    });
+
+    // Handle completion
+    child.on('close', code => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeoutId);
+        const duration = timer.end();
+
+        if (code === 0) {
+          // Log performance info if command took >1000ms
+          if (duration > 1000) {
+            log.performance.info('Slow command execution', {
+              command: command.substring(0, 100),
+              duration_ms: duration,
+              stdout_size: stdout.length,
+            });
+          }
+          resolve({
+            success: true,
+            output: stdout.trim(),
+          });
+        } else {
+          log.task.error('Command execution failed', {
+            command: command.substring(0, 100),
+            exit_code: code,
+            stderr: stderr.trim().substring(0, 200),
+            duration_ms: duration,
+          });
+          resolve({
+            success: false,
+            error: stderr.trim() || `Command exited with code ${code}`,
+            output: stdout.trim(),
+          });
+        }
+      }
+    });
+
+    // Handle errors
+    child.on('error', error => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeoutId);
+        const duration = timer.end();
+        log.task.error('Command execution error', {
+          command: command.substring(0, 100),
+          error: error.message,
+          duration_ms: duration,
+        });
+        resolve({
+          success: false,
+          error: error.message,
+          output: stdout,
+        });
+      }
+    });
+  });
 };
 
 /**
@@ -212,123 +212,123 @@ const executeCommand = async (command, timeout = TASK_TIMEOUT) => {
  * @param {Object} task - Task object from database
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeTask = async (task) => {
-    const { operation, zone_name } = task;
-    
-    try {
-        switch (operation) {
-            case 'start':
-                return await executeStartTask(zone_name);
-            case 'stop':
-                return await executeStopTask(zone_name);
-            case 'restart':
-                return await executeRestartTask(zone_name);
-            case 'delete':
-                return await executeDeleteTask(zone_name);
-            case 'discover':
-                return await executeDiscoverTask();
-            case 'service_enable':
-                return await enableService(zone_name);
-            case 'service_disable':
-                return await disableService(zone_name);
-            case 'service_restart':
-                return await restartService(zone_name);
-            case 'service_refresh':
-                return await refreshService(zone_name);
-            case 'set_hostname':
-                return await executeSetHostnameTask(task.metadata);
-            case 'update_time_sync_config':
-                return await executeUpdateTimeSyncConfigTask(task.metadata);
-            case 'force_time_sync':
-                return await executeForceTimeSyncTask(task.metadata);
-            case 'set_timezone':
-                return await executeSetTimezoneTask(task.metadata);
-            case 'switch_time_sync_system':
-                return await executeSwitchTimeSyncSystemTask(task.metadata);
-            case 'create_ip_address':
-                return await executeCreateIPAddressTask(task.metadata);
-            case 'delete_ip_address':
-                return await executeDeleteIPAddressTask(task.metadata);
-            case 'enable_ip_address':
-                return await executeEnableIPAddressTask(task.metadata);
-            case 'disable_ip_address':
-                return await executeDisableIPAddressTask(task.metadata);
-            case 'create_vnic':
-                return await executeCreateVNICTask(task.metadata);
-            case 'delete_vnic':
-                return await executeDeleteVNICTask(task.metadata);
-            case 'set_vnic_properties':
-                return await executeSetVNICPropertiesTask(task.metadata);
-            case 'create_aggregate':
-                return await executeCreateAggregateTask(task.metadata);
-            case 'delete_aggregate':
-                return await executeDeleteAggregateTask(task.metadata);
-            case 'modify_aggregate_links':
-                return await executeModifyAggregateLinksTask(task.metadata);
-            case 'create_etherstub':
-                return await executeCreateEtherstubTask(task.metadata);
-            case 'delete_etherstub':
-                return await executeDeleteEtherstubTask(task.metadata);
-            case 'create_vlan':
-                return await executeCreateVlanTask(task.metadata);
-            case 'delete_vlan':
-                return await executeDeleteVlanTask(task.metadata);
-            case 'create_bridge':
-                return await executeCreateBridgeTask(task.metadata);
-            case 'delete_bridge':
-                return await executeDeleteBridgeTask(task.metadata);
-            case 'modify_bridge_links':
-                return await executeModifyBridgeLinksTask(task.metadata);
-            case 'pkg_install':
-                return await executePkgInstallTask(task.metadata);
-            case 'pkg_uninstall':
-                return await executePkgUninstallTask(task.metadata);
-            case 'pkg_update':
-                return await executePkgUpdateTask(task.metadata);
-            case 'pkg_refresh':
-                return await executePkgRefreshTask(task.metadata);
-            case 'beadm_create':
-                return await executeBeadmCreateTask(task.metadata);
-            case 'beadm_delete':
-                return await executeBeadmDeleteTask(task.metadata);
-            case 'beadm_activate':
-                return await executeBeadmActivateTask(task.metadata);
-            case 'beadm_mount':
-                return await executeBeadmMountTask(task.metadata);
-            case 'beadm_unmount':
-                return await executeBeadmUnmountTask(task.metadata);
-            case 'repository_add':
-                return await executeRepositoryAddTask(task.metadata);
-            case 'repository_remove':
-                return await executeRepositoryRemoveTask(task.metadata);
-            case 'repository_modify':
-                return await executeRepositoryModifyTask(task.metadata);
-            case 'repository_enable':
-                return await executeRepositoryEnableTask(task.metadata);
-            case 'repository_disable':
-                return await executeRepositoryDisableTask(task.metadata);
-            case 'process_trace':
-                return await executeProcessTraceTask(task.metadata);
-            case 'file_move':
-                return await executeFileMoveTask(task.metadata);
-            case 'file_copy':
-                return await executeFileCopyTask(task.metadata);
-            case 'file_archive_create':
-                return await executeFileArchiveCreateTask(task.metadata);
-            case 'file_archive_extract':
-                return await executeFileArchiveExtractTask(task.metadata);
-            default:
-                return { success: false, error: `Unknown operation: ${operation}` };
-        }
-    } catch (error) {
-        log.task.error('Task execution failed', {
-            operation,
-            zone_name,
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: error.message };
+const executeTask = async task => {
+  const { operation, zone_name } = task;
+
+  try {
+    switch (operation) {
+      case 'start':
+        return await executeStartTask(zone_name);
+      case 'stop':
+        return await executeStopTask(zone_name);
+      case 'restart':
+        return await executeRestartTask(zone_name);
+      case 'delete':
+        return await executeDeleteTask(zone_name);
+      case 'discover':
+        return await executeDiscoverTask();
+      case 'service_enable':
+        return await enableService(zone_name);
+      case 'service_disable':
+        return await disableService(zone_name);
+      case 'service_restart':
+        return await restartService(zone_name);
+      case 'service_refresh':
+        return await refreshService(zone_name);
+      case 'set_hostname':
+        return await executeSetHostnameTask(task.metadata);
+      case 'update_time_sync_config':
+        return await executeUpdateTimeSyncConfigTask(task.metadata);
+      case 'force_time_sync':
+        return await executeForceTimeSyncTask(task.metadata);
+      case 'set_timezone':
+        return await executeSetTimezoneTask(task.metadata);
+      case 'switch_time_sync_system':
+        return await executeSwitchTimeSyncSystemTask(task.metadata);
+      case 'create_ip_address':
+        return await executeCreateIPAddressTask(task.metadata);
+      case 'delete_ip_address':
+        return await executeDeleteIPAddressTask(task.metadata);
+      case 'enable_ip_address':
+        return await executeEnableIPAddressTask(task.metadata);
+      case 'disable_ip_address':
+        return await executeDisableIPAddressTask(task.metadata);
+      case 'create_vnic':
+        return await executeCreateVNICTask(task.metadata);
+      case 'delete_vnic':
+        return await executeDeleteVNICTask(task.metadata);
+      case 'set_vnic_properties':
+        return await executeSetVNICPropertiesTask(task.metadata);
+      case 'create_aggregate':
+        return await executeCreateAggregateTask(task.metadata);
+      case 'delete_aggregate':
+        return await executeDeleteAggregateTask(task.metadata);
+      case 'modify_aggregate_links':
+        return await executeModifyAggregateLinksTask(task.metadata);
+      case 'create_etherstub':
+        return await executeCreateEtherstubTask(task.metadata);
+      case 'delete_etherstub':
+        return await executeDeleteEtherstubTask(task.metadata);
+      case 'create_vlan':
+        return await executeCreateVlanTask(task.metadata);
+      case 'delete_vlan':
+        return await executeDeleteVlanTask(task.metadata);
+      case 'create_bridge':
+        return await executeCreateBridgeTask(task.metadata);
+      case 'delete_bridge':
+        return await executeDeleteBridgeTask(task.metadata);
+      case 'modify_bridge_links':
+        return await executeModifyBridgeLinksTask(task.metadata);
+      case 'pkg_install':
+        return await executePkgInstallTask(task.metadata);
+      case 'pkg_uninstall':
+        return await executePkgUninstallTask(task.metadata);
+      case 'pkg_update':
+        return await executePkgUpdateTask(task.metadata);
+      case 'pkg_refresh':
+        return await executePkgRefreshTask(task.metadata);
+      case 'beadm_create':
+        return await executeBeadmCreateTask(task.metadata);
+      case 'beadm_delete':
+        return await executeBeadmDeleteTask(task.metadata);
+      case 'beadm_activate':
+        return await executeBeadmActivateTask(task.metadata);
+      case 'beadm_mount':
+        return await executeBeadmMountTask(task.metadata);
+      case 'beadm_unmount':
+        return await executeBeadmUnmountTask(task.metadata);
+      case 'repository_add':
+        return await executeRepositoryAddTask(task.metadata);
+      case 'repository_remove':
+        return await executeRepositoryRemoveTask(task.metadata);
+      case 'repository_modify':
+        return await executeRepositoryModifyTask(task.metadata);
+      case 'repository_enable':
+        return await executeRepositoryEnableTask(task.metadata);
+      case 'repository_disable':
+        return await executeRepositoryDisableTask(task.metadata);
+      case 'process_trace':
+        return await executeProcessTraceTask(task.metadata);
+      case 'file_move':
+        return await executeFileMoveTask(task.metadata);
+      case 'file_copy':
+        return await executeFileCopyTask(task.metadata);
+      case 'file_archive_create':
+        return await executeFileArchiveCreateTask(task.metadata);
+      case 'file_archive_extract':
+        return await executeFileArchiveExtractTask(task.metadata);
+      default:
+        return { success: false, error: `Unknown operation: ${operation}` };
     }
+  } catch (error) {
+    log.task.error('Task execution failed', {
+      operation,
+      zone_name,
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: error.message };
+  }
 };
 
 /**
@@ -336,30 +336,29 @@ const executeTask = async (task) => {
  * @param {string} zoneName - Name of zone to start
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeStartTask = async (zoneName) => {
-    const result = await executeCommand(`pfexec zoneadm -z ${zoneName} boot`);
-    
-    if (result.success) {
-        // Update zone status in database
-        await Zones.update(
-            { 
-                status: 'running',
-                last_seen: new Date(),
-                is_orphaned: false
-            },
-            { where: { name: zoneName } }
-        );
-        
-        return { 
-            success: true, 
-            message: `Zone ${zoneName} started successfully` 
-        };
-    } else {
-        return { 
-            success: false, 
-            error: `Failed to start zone ${zoneName}: ${result.error}` 
-        };
-    }
+const executeStartTask = async zoneName => {
+  const result = await executeCommand(`pfexec zoneadm -z ${zoneName} boot`);
+
+  if (result.success) {
+    // Update zone status in database
+    await Zones.update(
+      {
+        status: 'running',
+        last_seen: new Date(),
+        is_orphaned: false,
+      },
+      { where: { name: zoneName } }
+    );
+
+    return {
+      success: true,
+      message: `Zone ${zoneName} started successfully`,
+    };
+  }
+  return {
+    success: false,
+    error: `Failed to start zone ${zoneName}: ${result.error}`,
+  };
 };
 
 /**
@@ -367,38 +366,37 @@ const executeStartTask = async (zoneName) => {
  * @param {string} zoneName - Name of zone to stop
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeStopTask = async (zoneName) => {
-    // First try graceful shutdown
-    let result = await executeCommand(`pfexec zoneadm -z ${zoneName} shutdown`);
-    
-    // If graceful shutdown fails, try halt
-    if (!result.success) {
-        result = await executeCommand(`pfexec zoneadm -z ${zoneName} halt`);
-    }
-    
-    if (result.success) {
-        // Update zone status in database
-        await Zones.update(
-            { 
-                status: 'installed',
-                last_seen: new Date()
-            },
-            { where: { name: zoneName } }
-        );
-        
-        // Terminate any active VNC sessions for this zone
-        await terminateVncSession(zoneName);
-        
-        return { 
-            success: true, 
-            message: `Zone ${zoneName} stopped successfully` 
-        };
-    } else {
-        return { 
-            success: false, 
-            error: `Failed to stop zone ${zoneName}: ${result.error}` 
-        };
-    }
+const executeStopTask = async zoneName => {
+  // First try graceful shutdown
+  let result = await executeCommand(`pfexec zoneadm -z ${zoneName} shutdown`);
+
+  // If graceful shutdown fails, try halt
+  if (!result.success) {
+    result = await executeCommand(`pfexec zoneadm -z ${zoneName} halt`);
+  }
+
+  if (result.success) {
+    // Update zone status in database
+    await Zones.update(
+      {
+        status: 'installed',
+        last_seen: new Date(),
+      },
+      { where: { name: zoneName } }
+    );
+
+    // Terminate any active VNC sessions for this zone
+    await terminateVncSession(zoneName);
+
+    return {
+      success: true,
+      message: `Zone ${zoneName} stopped successfully`,
+    };
+  }
+  return {
+    success: false,
+    error: `Failed to stop zone ${zoneName}: ${result.error}`,
+  };
 };
 
 /**
@@ -406,18 +404,18 @@ const executeStopTask = async (zoneName) => {
  * @param {string} zoneName - Name of zone to restart
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeRestartTask = async (zoneName) => {
-    // Stop first
-    const stopResult = await executeStopTask(zoneName);
-    if (!stopResult.success) {
-        return stopResult;
-    }
-    
-    // Wait a moment for clean shutdown
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Then start
-    return await executeStartTask(zoneName);
+const executeRestartTask = async zoneName => {
+  // Stop first
+  const stopResult = await executeStopTask(zoneName);
+  if (!stopResult.success) {
+    return stopResult;
+  }
+
+  // Wait a moment for clean shutdown
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  // Then start
+  return await executeStartTask(zoneName);
 };
 
 /**
@@ -425,64 +423,63 @@ const executeRestartTask = async (zoneName) => {
  * @param {string} zoneName - Name of zone to delete
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeDeleteTask = async (zoneName) => {
-    try {
-        // Terminate VNC session if active
-        await terminateVncSession(zoneName);
-        
-        // Stop zone if running
-        await executeCommand(`pfexec zoneadm -z ${zoneName} halt`);
-        
-        // Uninstall zone
-        const uninstallResult = await executeCommand(`pfexec zoneadm -z ${zoneName} uninstall -F`);
-        
-        if (!uninstallResult.success) {
-            return { 
-                success: false, 
-                error: `Failed to uninstall zone ${zoneName}: ${uninstallResult.error}` 
-            };
-        }
-        
-        // Delete zone configuration
-        const deleteResult = await executeCommand(`pfexec zonecfg -z ${zoneName} delete -F`);
-        
-        if (!deleteResult.success) {
-            return { 
-                success: false, 
-                error: `Failed to delete zone configuration ${zoneName}: ${deleteResult.error}` 
-            };
-        }
-        
-        // Remove zone from database
-        await Zones.destroy({ where: { name: zoneName } });
+const executeDeleteTask = async zoneName => {
+  try {
+    // Terminate VNC session if active
+    await terminateVncSession(zoneName);
 
-        // Clean up associated data
-        await NetworkInterfaces.destroy({ where: { zone: zoneName } });
-        await NetworkUsage.destroy({ where: { link: { [Op.like]: `${zoneName}%` } } });
-        await IPAddresses.destroy({ where: { interface: { [Op.like]: `${zoneName}%` } } });
-        
-        // Clean up any remaining tasks for this zone
-        await Tasks.update(
-            { status: 'cancelled' },
-            { 
-                where: { 
-                    zone_name: zoneName,
-                    status: 'pending'
-                } 
-            }
-        );
-        
-        return { 
-            success: true, 
-            message: `Zone ${zoneName} deleted successfully` 
-        };
-        
-    } catch (error) {
-        return { 
-            success: false, 
-            error: `Failed to delete zone ${zoneName}: ${error.message}` 
-        };
+    // Stop zone if running
+    await executeCommand(`pfexec zoneadm -z ${zoneName} halt`);
+
+    // Uninstall zone
+    const uninstallResult = await executeCommand(`pfexec zoneadm -z ${zoneName} uninstall -F`);
+
+    if (!uninstallResult.success) {
+      return {
+        success: false,
+        error: `Failed to uninstall zone ${zoneName}: ${uninstallResult.error}`,
+      };
     }
+
+    // Delete zone configuration
+    const deleteResult = await executeCommand(`pfexec zonecfg -z ${zoneName} delete -F`);
+
+    if (!deleteResult.success) {
+      return {
+        success: false,
+        error: `Failed to delete zone configuration ${zoneName}: ${deleteResult.error}`,
+      };
+    }
+
+    // Remove zone from database
+    await Zones.destroy({ where: { name: zoneName } });
+
+    // Clean up associated data
+    await NetworkInterfaces.destroy({ where: { zone: zoneName } });
+    await NetworkUsage.destroy({ where: { link: { [Op.like]: `${zoneName}%` } } });
+    await IPAddresses.destroy({ where: { interface: { [Op.like]: `${zoneName}%` } } });
+
+    // Clean up any remaining tasks for this zone
+    await Tasks.update(
+      { status: 'cancelled' },
+      {
+        where: {
+          zone_name: zoneName,
+          status: 'pending',
+        },
+      }
+    );
+
+    return {
+      success: true,
+      message: `Zone ${zoneName} deleted successfully`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to delete zone ${zoneName}: ${error.message}`,
+    };
+  }
 };
 
 /**
@@ -490,327 +487,331 @@ const executeDeleteTask = async (zoneName) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeDiscoverTask = async () => {
-    try {
-        // Get all zones from system using zadm
-        const result = await executeCommand('pfexec zadm show');
-        if (!result.success) {
-            return { success: false, error: `Failed to get system zones: ${result.error}` };
-        }
-        
-        const systemZones = await new Promise((resolve, reject) => {
-            yj.parseAsync(result.output, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const systemZoneNames = Object.keys(systemZones);
-        
-        // Get all zones from database
-        const dbZones = await Zones.findAll();
-        const dbZoneNames = dbZones.map(z => z.name);
-        
-        let discovered = 0;
-        let orphaned = 0;
-        
-        // Add new zones found on system but not in database
-        for (const zoneName of systemZoneNames) {
-            if (!dbZoneNames.includes(zoneName)) {
-                const zoneConfig = systemZones[zoneName];
-                
-                // Get current status
-                const statusResult = await executeCommand(`pfexec zoneadm -z ${zoneName} list -p`);
-                let status = 'configured';
-                if (statusResult.success) {
-                    const parts = statusResult.output.split(':');
-                    status = parts[2] || 'configured';
-                }
-                
-                await Zones.create({
-                    name: zoneName,
-                    zone_id: zoneConfig.zonename || zoneName,
-                    host: os.hostname(),
-                    status: status,
-                    brand: zoneConfig.brand || 'unknown',
-                    auto_discovered: true,
-                    last_seen: new Date()
-                });
-                
-                discovered++;
-            }
-        }
-        
-        // Mark zones as orphaned if they exist in database but not on system
-        for (const dbZone of dbZones) {
-            if (!systemZoneNames.includes(dbZone.name)) {
-                await dbZone.update({ is_orphaned: true });
-                orphaned++;
-            } else {
-                // Update existing zones
-                const zoneConfig = systemZones[dbZone.name];
-                const statusResult = await executeCommand(`pfexec zoneadm -z ${dbZone.name} list -p`);
-                let status = dbZone.status;
-                if (statusResult.success) {
-                    const parts = statusResult.output.split(':');
-                    status = parts[2] || dbZone.status;
-                }
-                
-                await dbZone.update({
-                    status: status,
-                    brand: zoneConfig.brand || dbZone.brand,
-                    last_seen: new Date(),
-                    is_orphaned: false
-                });
-            }
-        }
-        
-        return { 
-            success: true, 
-            message: `Discovery completed: ${discovered} new zones discovered, ${orphaned} zones orphaned` 
-        };
-        
-    } catch (error) {
-        return { 
-            success: false, 
-            error: `Zone discovery failed: ${error.message}` 
-        };
+  try {
+    // Get all zones from system using zadm
+    const result = await executeCommand('pfexec zadm show');
+    if (!result.success) {
+      return { success: false, error: `Failed to get system zones: ${result.error}` };
     }
+
+    const systemZones = await new Promise((resolve, reject) => {
+      yj.parseAsync(result.output, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+    const systemZoneNames = Object.keys(systemZones);
+
+    // Get all zones from database
+    const dbZones = await Zones.findAll();
+    const dbZoneNames = dbZones.map(z => z.name);
+
+    let discovered = 0;
+    let orphaned = 0;
+
+    // Add new zones found on system but not in database
+    for (const zoneName of systemZoneNames) {
+      if (!dbZoneNames.includes(zoneName)) {
+        const zoneConfig = systemZones[zoneName];
+
+        // Get current status
+        const statusResult = await executeCommand(`pfexec zoneadm -z ${zoneName} list -p`);
+        let status = 'configured';
+        if (statusResult.success) {
+          const parts = statusResult.output.split(':');
+          status = parts[2] || 'configured';
+        }
+
+        await Zones.create({
+          name: zoneName,
+          zone_id: zoneConfig.zonename || zoneName,
+          host: os.hostname(),
+          status,
+          brand: zoneConfig.brand || 'unknown',
+          auto_discovered: true,
+          last_seen: new Date(),
+        });
+
+        discovered++;
+      }
+    }
+
+    // Mark zones as orphaned if they exist in database but not on system
+    for (const dbZone of dbZones) {
+      if (!systemZoneNames.includes(dbZone.name)) {
+        await dbZone.update({ is_orphaned: true });
+        orphaned++;
+      } else {
+        // Update existing zones
+        const zoneConfig = systemZones[dbZone.name];
+        const statusResult = await executeCommand(`pfexec zoneadm -z ${dbZone.name} list -p`);
+        let { status } = dbZone;
+        if (statusResult.success) {
+          const parts = statusResult.output.split(':');
+          status = parts[2] || dbZone.status;
+        }
+
+        await dbZone.update({
+          status,
+          brand: zoneConfig.brand || dbZone.brand,
+          last_seen: new Date(),
+          is_orphaned: false,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      message: `Discovery completed: ${discovered} new zones discovered, ${orphaned} zones orphaned`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Zone discovery failed: ${error.message}`,
+    };
+  }
 };
 
 /**
  * Terminate VNC session for a zone
  * @param {string} zoneName - Name of zone
  */
-const terminateVncSession = async (zoneName) => {
-    try {
-        const session = await VncSessions.findOne({
-            where: { zone_name: zoneName, status: 'active' }
+const terminateVncSession = async zoneName => {
+  try {
+    const session = await VncSessions.findOne({
+      where: { zone_name: zoneName, status: 'active' },
+    });
+
+    if (session && session.process_id) {
+      try {
+        process.kill(session.process_id, 'SIGTERM');
+      } catch (error) {
+        log.task.warn('Failed to kill VNC process', {
+          zone_name: zoneName,
+          process_id: session.process_id,
+          error: error.message,
         });
-        
-        if (session && session.process_id) {
-            try {
-                process.kill(session.process_id, 'SIGTERM');
-            } catch (error) {
-                log.task.warn('Failed to kill VNC process', {
-                    zone_name: zoneName,
-                    process_id: session.process_id,
-                    error: error.message
-                });
-            }
-            
-            await session.update({ status: 'stopped' });
-        }
-    } catch (error) {
-        log.task.warn('Failed to terminate VNC session', {
-            zone_name: zoneName,
-            error: error.message
-        });
+      }
+
+      await session.update({ status: 'stopped' });
     }
+  } catch (error) {
+    log.task.warn('Failed to terminate VNC session', {
+      zone_name: zoneName,
+      error: error.message,
+    });
+  }
 };
 
 /**
  * Process next task from queue
  */
 const processNextTask = async () => {
-    try {
-        // Don't start new tasks if we're at max capacity
-        if (runningTasks.size >= MAX_CONCURRENT_TASKS) {
-            return;
-        }
-        
-        // Find highest priority pending task that's not blocked by dependencies
-        const task = await Tasks.findOne({
-            where: {
-                status: 'pending',
-                [Op.or]: [
-                    { depends_on: null },
-                    { 
-                        depends_on: {
-                            [Op.in]: await Tasks.findAll({
-                                where: { status: 'completed' },
-                                attributes: ['id']
-                            }).then(tasks => tasks.map(t => t.id))
-                        }
-                    }
-                ]
-            },
-            order: [['priority', 'DESC'], ['created_at', 'ASC']]
-        });
-        
-        if (!task) {
-            return; // No tasks available
-        }
-        
-        // Check for operation category conflicts
-        const operationCategory = OPERATION_CATEGORIES[task.operation];
-        if (operationCategory && runningCategories.has(operationCategory)) {
-            log.task.warn('Task waiting for category lock', {
-                task_id: task.id,
-                operation: task.operation,
-                category: operationCategory,
-                zone_name: task.zone_name
-            });
-            return; // Cannot start this task due to category conflict
-        }
-        
-        // Mark task as running
-        await task.update({ 
-            status: 'running',
-            started_at: new Date()
-        });
-        
-        runningTasks.set(task.id, task);
-        
-        // Add operation category to running set if it has one
-        if (operationCategory) {
-            runningCategories.add(operationCategory);
-            log.task.debug('Acquired category lock', {
-                task_id: task.id,
-                category: operationCategory
-            });
-        }
-        
-        log.task.info('Task started', {
-            task_id: task.id,
-            operation: task.operation,
-            zone_name: task.zone_name,
-            category: operationCategory || 'none'
-        });
-        
-        // Execute task with performance timing
-        const taskTimer = createTimer(`Task execution: ${task.operation}`);
-        const result = await executeTask(task);
-        const executionTime = taskTimer.end();
-        
-        // Update task status
-        await task.update({
-            status: result.success ? 'completed' : 'failed',
-            completed_at: new Date(),
-            error_message: result.error || null
-        });
-        
-        runningTasks.delete(task.id);
-        
-        // Release operation category lock if it had one
-        if (operationCategory) {
-            runningCategories.delete(operationCategory);
-            log.task.debug('Released category lock', {
-                task_id: task.id,
-                category: operationCategory
-            });
-        }
-        
-        if (result.success) {
-            // Only log slow tasks to reduce noise
-            if (executionTime > 5000) {
-                log.performance.warn('Slow task execution', {
-                    task_id: task.id,
-                    operation: task.operation,
-                    zone_name: task.zone_name,
-                    duration_ms: executionTime,
-                    message: result.message
-                });
-            }
-        } else {
-            log.task.error('Task execution failed', {
-                task_id: task.id,
-                operation: task.operation,
-                zone_name: task.zone_name,
-                duration_ms: executionTime,
-                error: result.error
-            });
-        }
-        
-    } catch (error) {
-        log.task.error('Task processing error', {
-            error: error.message,
-            stack: error.stack,
-            running_task_count: runningTasks.size,
-            running_categories: Array.from(runningCategories)
-        });
-        
-        // Make sure to clean up category lock on error
-        const task = await Tasks.findOne({
-            where: { status: 'running' },
-            order: [['started_at', 'DESC']]
-        });
-        
-        if (task) {
-            const operationCategory = OPERATION_CATEGORIES[task.operation];
-            if (operationCategory && runningCategories.has(operationCategory)) {
-                runningCategories.delete(operationCategory);
-                log.task.warn('Emergency category lock cleanup', {
-                    task_id: task.id,
-                    category: operationCategory,
-                    reason: 'Task processing error'
-                });
-            }
-        }
+  try {
+    // Don't start new tasks if we're at max capacity
+    if (runningTasks.size >= MAX_CONCURRENT_TASKS) {
+      return;
     }
+
+    // Find highest priority pending task that's not blocked by dependencies
+    const task = await Tasks.findOne({
+      where: {
+        status: 'pending',
+        [Op.or]: [
+          { depends_on: null },
+          {
+            depends_on: {
+              [Op.in]: await Tasks.findAll({
+                where: { status: 'completed' },
+                attributes: ['id'],
+              }).then(tasks => tasks.map(t => t.id)),
+            },
+          },
+        ],
+      },
+      order: [
+        ['priority', 'DESC'],
+        ['created_at', 'ASC'],
+      ],
+    });
+
+    if (!task) {
+      return; // No tasks available
+    }
+
+    // Check for operation category conflicts
+    const operationCategory = OPERATION_CATEGORIES[task.operation];
+    if (operationCategory && runningCategories.has(operationCategory)) {
+      log.task.warn('Task waiting for category lock', {
+        task_id: task.id,
+        operation: task.operation,
+        category: operationCategory,
+        zone_name: task.zone_name,
+      });
+      return; // Cannot start this task due to category conflict
+    }
+
+    // Mark task as running
+    await task.update({
+      status: 'running',
+      started_at: new Date(),
+    });
+
+    runningTasks.set(task.id, task);
+
+    // Add operation category to running set if it has one
+    if (operationCategory) {
+      runningCategories.add(operationCategory);
+      log.task.debug('Acquired category lock', {
+        task_id: task.id,
+        category: operationCategory,
+      });
+    }
+
+    log.task.info('Task started', {
+      task_id: task.id,
+      operation: task.operation,
+      zone_name: task.zone_name,
+      category: operationCategory || 'none',
+    });
+
+    // Execute task with performance timing
+    const taskTimer = createTimer(`Task execution: ${task.operation}`);
+    const result = await executeTask(task);
+    const executionTime = taskTimer.end();
+
+    // Update task status
+    await task.update({
+      status: result.success ? 'completed' : 'failed',
+      completed_at: new Date(),
+      error_message: result.error || null,
+    });
+
+    runningTasks.delete(task.id);
+
+    // Release operation category lock if it had one
+    if (operationCategory) {
+      runningCategories.delete(operationCategory);
+      log.task.debug('Released category lock', {
+        task_id: task.id,
+        category: operationCategory,
+      });
+    }
+
+    if (result.success) {
+      // Only log slow tasks to reduce noise
+      if (executionTime > 5000) {
+        log.performance.warn('Slow task execution', {
+          task_id: task.id,
+          operation: task.operation,
+          zone_name: task.zone_name,
+          duration_ms: executionTime,
+          message: result.message,
+        });
+      }
+    } else {
+      log.task.error('Task execution failed', {
+        task_id: task.id,
+        operation: task.operation,
+        zone_name: task.zone_name,
+        duration_ms: executionTime,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    log.task.error('Task processing error', {
+      error: error.message,
+      stack: error.stack,
+      running_task_count: runningTasks.size,
+      running_categories: Array.from(runningCategories),
+    });
+
+    // Make sure to clean up category lock on error
+    const task = await Tasks.findOne({
+      where: { status: 'running' },
+      order: [['started_at', 'DESC']],
+    });
+
+    if (task) {
+      const operationCategory = OPERATION_CATEGORIES[task.operation];
+      if (operationCategory && runningCategories.has(operationCategory)) {
+        runningCategories.delete(operationCategory);
+        log.task.warn('Emergency category lock cleanup', {
+          task_id: task.id,
+          category: operationCategory,
+          reason: 'Task processing error',
+        });
+      }
+    }
+  }
 };
 
 /**
  * Start the task processor
  */
 export const startTaskProcessor = () => {
-    if (taskProcessor) {
-        return; // Already running
-    }
-    
-    log.task.info('Starting task processor');
-    
-    // Process tasks every 2 seconds
-    taskProcessor = setInterval(async () => {
-        await processNextTask();
-    }, 2000);
-    
-    // Get zones configuration for discovery settings
-    const zonesConfig = config.getZones();
-    
-    // Start periodic discovery if enabled
-    if (zonesConfig.auto_discovery && zonesConfig.discovery_interval) {
-        log.task.info('Starting periodic zone discovery', {
-            interval_seconds: zonesConfig.discovery_interval
-        });
-        
-        // Start periodic discovery interval
-        discoveryProcessor = setInterval(async () => {
-            await Tasks.create({
-                zone_name: 'system',
-                operation: 'discover',
-                priority: TaskPriority.BACKGROUND,
-                created_by: 'system_periodic',
-                status: 'pending'
-            });
-        }, zonesConfig.discovery_interval * 1000);
-    }
-    
-    // Initial discovery task
-    setTimeout(async () => {
-        await Tasks.create({
-            zone_name: 'system',
-            operation: 'discover',
-            priority: TaskPriority.BACKGROUND,
-            created_by: 'system_startup',
-            status: 'pending'
-        });
-    }, 5000);
+  if (taskProcessor) {
+    return; // Already running
+  }
+
+  log.task.info('Starting task processor');
+
+  // Process tasks every 2 seconds
+  taskProcessor = setInterval(async () => {
+    await processNextTask();
+  }, 2000);
+
+  // Get zones configuration for discovery settings
+  const zonesConfig = config.getZones();
+
+  // Start periodic discovery if enabled
+  if (zonesConfig.auto_discovery && zonesConfig.discovery_interval) {
+    log.task.info('Starting periodic zone discovery', {
+      interval_seconds: zonesConfig.discovery_interval,
+    });
+
+    // Start periodic discovery interval
+    discoveryProcessor = setInterval(async () => {
+      await Tasks.create({
+        zone_name: 'system',
+        operation: 'discover',
+        priority: TaskPriority.BACKGROUND,
+        created_by: 'system_periodic',
+        status: 'pending',
+      });
+    }, zonesConfig.discovery_interval * 1000);
+  }
+
+  // Initial discovery task
+  setTimeout(async () => {
+    await Tasks.create({
+      zone_name: 'system',
+      operation: 'discover',
+      priority: TaskPriority.BACKGROUND,
+      created_by: 'system_startup',
+      status: 'pending',
+    });
+  }, 5000);
 };
 
 /**
  * Stop the task processor
  */
 export const stopTaskProcessor = () => {
-    if (taskProcessor) {
-        clearInterval(taskProcessor);
-        taskProcessor = null;
-        log.task.info('Task processor stopped');
-    }
-    
-    if (discoveryProcessor) {
-        clearInterval(discoveryProcessor);
-        discoveryProcessor = null;
-        log.task.info('Periodic discovery stopped');
-    }
+  if (taskProcessor) {
+    clearInterval(taskProcessor);
+    taskProcessor = null;
+    log.task.info('Task processor stopped');
+  }
+
+  if (discoveryProcessor) {
+    clearInterval(discoveryProcessor);
+    discoveryProcessor = null;
+    log.task.info('Periodic discovery stopped');
+  }
 };
 
 /**
@@ -875,44 +876,49 @@ export const stopTaskProcessor = () => {
  *                   type: integer
  */
 export const listTasks = async (req, res) => {
-    try {
-        const zonesConfig = config.getZones();
-        const defaultLimit = zonesConfig.default_pagination_limit || 50;
-        const { limit = defaultLimit, status, zone_name, operation, operation_ne, since } = req.query;
-        const whereClause = {};
+  try {
+    const zonesConfig = config.getZones();
+    const defaultLimit = zonesConfig.default_pagination_limit || 50;
+    const { limit = defaultLimit, status, zone_name, operation, operation_ne, since } = req.query;
+    const whereClause = {};
 
-        if (status) whereClause.status = status;
-        if (zone_name) whereClause.zone_name = zone_name;
-        if (operation) whereClause.operation = operation;
-        if (operation_ne) {
-            whereClause.operation = { [Op.ne]: operation_ne };
-        }
-        if (since) {
-            whereClause.created_at = { [Op.gte]: new Date(since) };
-        }
-        
-        const tasks = await Tasks.findAll({
-            where: whereClause,
-            order: [['created_at', 'DESC']],
-            limit: parseInt(limit)
-        });
-        
-        const total = await Tasks.count({ where: whereClause });
-        
-        res.json({
-            tasks: tasks,
-            total: total,
-            running_count: runningTasks.size
-        });
-        
-    } catch (error) {
-        log.database.error('Database error listing tasks', {
-            error: error.message,
-            stack: error.stack,
-            query_params: req.query
-        });
-        res.status(500).json({ error: 'Failed to retrieve tasks' });
+    if (status) {
+      whereClause.status = status;
     }
+    if (zone_name) {
+      whereClause.zone_name = zone_name;
+    }
+    if (operation) {
+      whereClause.operation = operation;
+    }
+    if (operation_ne) {
+      whereClause.operation = { [Op.ne]: operation_ne };
+    }
+    if (since) {
+      whereClause.created_at = { [Op.gte]: new Date(since) };
+    }
+
+    const tasks = await Tasks.findAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']],
+      limit: parseInt(limit),
+    });
+
+    const total = await Tasks.count({ where: whereClause });
+
+    res.json({
+      tasks,
+      total,
+      running_count: runningTasks.size,
+    });
+  } catch (error) {
+    log.database.error('Database error listing tasks', {
+      error: error.message,
+      stack: error.stack,
+      query_params: req.query,
+    });
+    res.status(500).json({ error: 'Failed to retrieve tasks' });
+  }
 };
 
 /**
@@ -942,24 +948,23 @@ export const listTasks = async (req, res) => {
  *         description: Task not found
  */
 export const getTaskDetails = async (req, res) => {
-    try {
-        const { taskId } = req.params;
-        
-        const task = await Tasks.findByPk(taskId);
-        if (!task) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
-        
-        res.json(task);
-        
-    } catch (error) {
-        log.database.error('Database error getting task details', {
-            error: error.message,
-            stack: error.stack,
-            task_id: req.params.taskId
-        });
-        res.status(500).json({ error: 'Failed to retrieve task details' });
+  try {
+    const { taskId } = req.params;
+
+    const task = await Tasks.findByPk(taskId);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
     }
+
+    res.json(task);
+  } catch (error) {
+    log.database.error('Database error getting task details', {
+      error: error.message,
+      stack: error.stack,
+      task_id: req.params.taskId,
+    });
+    res.status(500).json({ error: 'Failed to retrieve task details' });
+  }
 };
 
 /**
@@ -987,37 +992,36 @@ export const getTaskDetails = async (req, res) => {
  *         description: Task not found
  */
 export const cancelTask = async (req, res) => {
-    try {
-        const { taskId } = req.params;
-        
-        const task = await Tasks.findByPk(taskId);
-        if (!task) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
-        
-        if (task.status !== 'pending') {
-            return res.status(400).json({ 
-                error: 'Can only cancel pending tasks',
-                current_status: task.status
-            });
-        }
-        
-        await task.update({ status: 'cancelled' });
-        
-        res.json({
-            success: true,
-            task_id: taskId,
-            message: 'Task cancelled successfully'
-        });
-        
-    } catch (error) {
-        log.database.error('Database error cancelling task', {
-            error: error.message,
-            stack: error.stack,
-            task_id: req.params.taskId
-        });
-        res.status(500).json({ error: 'Failed to cancel task' });
+  try {
+    const { taskId } = req.params;
+
+    const task = await Tasks.findByPk(taskId);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
     }
+
+    if (task.status !== 'pending') {
+      return res.status(400).json({
+        error: 'Can only cancel pending tasks',
+        current_status: task.status,
+      });
+    }
+
+    await task.update({ status: 'cancelled' });
+
+    res.json({
+      success: true,
+      task_id: taskId,
+      message: 'Task cancelled successfully',
+    });
+  } catch (error) {
+    log.database.error('Database error cancelling task', {
+      error: error.message,
+      stack: error.stack,
+      task_id: req.params.taskId,
+    });
+    res.status(500).json({ error: 'Failed to cancel task' });
+  }
 };
 
 /**
@@ -1051,37 +1055,33 @@ export const cancelTask = async (req, res) => {
  *                   type: boolean
  */
 export const getTaskStats = async (req, res) => {
-    try {
-        const stats = await Tasks.findAll({
-            attributes: [
-                'status',
-                [Tasks.sequelize.fn('COUNT', '*'), 'count']
-            ],
-            group: ['status']
-        });
-        
-        const statMap = stats.reduce((acc, stat) => {
-            acc[stat.status] = parseInt(stat.dataValues.count);
-            return acc;
-        }, {});
-        
-        res.json({
-            pending_tasks: statMap.pending || 0,
-            running_tasks: runningTasks.size,
-            completed_tasks: statMap.completed || 0,
-            failed_tasks: statMap.failed || 0,
-            cancelled_tasks: statMap.cancelled || 0,
-            max_concurrent_tasks: config.getZones().max_concurrent_tasks || 5,
-            task_processor_running: taskProcessor !== null
-        });
-        
-    } catch (error) {
-        log.database.error('Database error getting task stats', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ error: 'Failed to retrieve task statistics' });
-    }
+  try {
+    const stats = await Tasks.findAll({
+      attributes: ['status', [Tasks.sequelize.fn('COUNT', '*'), 'count']],
+      group: ['status'],
+    });
+
+    const statMap = stats.reduce((acc, stat) => {
+      acc[stat.status] = parseInt(stat.dataValues.count);
+      return acc;
+    }, {});
+
+    res.json({
+      pending_tasks: statMap.pending || 0,
+      running_tasks: runningTasks.size,
+      completed_tasks: statMap.completed || 0,
+      failed_tasks: statMap.failed || 0,
+      cancelled_tasks: statMap.cancelled || 0,
+      max_concurrent_tasks: config.getZones().max_concurrent_tasks || 5,
+      task_processor_running: taskProcessor !== null,
+    });
+  } catch (error) {
+    log.database.error('Database error getting task stats', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({ error: 'Failed to retrieve task statistics' });
+  }
 };
 
 /**
@@ -1089,46 +1089,50 @@ export const getTaskStats = async (req, res) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeSetHostnameTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { hostname, apply_immediately } = metadata;
-
-        // Write to /etc/nodename
-        const writeResult = await executeCommand(`echo "${hostname}" | pfexec tee /etc/nodename`);
-        if (!writeResult.success) {
-            return { 
-                success: false, 
-                error: `Failed to write to /etc/nodename: ${writeResult.error}` 
-            };
+const executeSetHostnameTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
         }
+      });
+    });
+    const { hostname, apply_immediately } = metadata;
 
-        // Apply immediately if requested
-        if (apply_immediately) {
-            const hostnameResult = await executeCommand(`pfexec hostname ${hostname}`);
-            if (!hostnameResult.success) {
-                return { 
-                    success: false, 
-                    error: `Failed to set hostname immediately: ${hostnameResult.error}` 
-                };
-            }
-        }
-
-        return { 
-            success: true, 
-            message: `Hostname set to ${hostname}${apply_immediately ? ' (applied immediately)' : ' (reboot required)'}`,
-            requires_reboot: true,
-            reboot_reason: apply_immediately ? 'Hostname applied immediately but reboot required for full persistence' : 'Hostname written to /etc/nodename - reboot required to take effect'
-        };
-
-    } catch (error) {
-        return { success: false, error: `Hostname task failed: ${error.message}` };
+    // Write to /etc/nodename
+    const writeResult = await executeCommand(`echo "${hostname}" | pfexec tee /etc/nodename`);
+    if (!writeResult.success) {
+      return {
+        success: false,
+        error: `Failed to write to /etc/nodename: ${writeResult.error}`,
+      };
     }
+
+    // Apply immediately if requested
+    if (apply_immediately) {
+      const hostnameResult = await executeCommand(`pfexec hostname ${hostname}`);
+      if (!hostnameResult.success) {
+        return {
+          success: false,
+          error: `Failed to set hostname immediately: ${hostnameResult.error}`,
+        };
+      }
+    }
+
+    return {
+      success: true,
+      message: `Hostname set to ${hostname}${apply_immediately ? ' (applied immediately)' : ' (reboot required)'}`,
+      requires_reboot: true,
+      reboot_reason: apply_immediately
+        ? 'Hostname applied immediately but reboot required for full persistence'
+        : 'Hostname written to /etc/nodename - reboot required to take effect',
+    };
+  } catch (error) {
+    return { success: false, error: `Hostname task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1136,64 +1140,71 @@ const executeSetHostnameTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeCreateIPAddressTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { interface: iface, type, addrobj, address, primary, wait, temporary, down } = metadata;
-
-        let command = `pfexec ipadm create-addr`;
-        
-        // Add temporary flag
-        if (temporary) {
-            command += ` -t`;
-        }
-
-        // Build type-specific command
-        switch (type) {
-            case 'static':
-                command += ` -T static`;
-                if (down) command += ` -d`;
-                command += ` -a ${address} ${addrobj}`;
-                break;
-            case 'dhcp':
-                command += ` -T dhcp`;
-                if (primary) command += ` -1`;
-                if (wait) command += ` -w ${wait}`;
-                command += ` ${addrobj}`;
-                break;
-            case 'addrconf':
-                command += ` -T addrconf ${addrobj}`;
-                break;
-            default:
-                return { success: false, error: `Unknown address type: ${type}` };
-        }
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            // Clean up associated data
-            await NetworkInterfaces.destroy({ where: { link: vlan } });
-            await NetworkUsage.destroy({ where: { link: vlan } });
-
-            return { 
-                success: true, 
-                message: `VLAN ${vlan} deleted successfully` 
-            };
+const executeCreateIPAddressTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to delete VLAN ${vlan}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { interface: iface, type, addrobj, address, primary, wait, temporary, down } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `IP address creation task failed: ${error.message}` };
+    let command = `pfexec ipadm create-addr`;
+
+    // Add temporary flag
+    if (temporary) {
+      command += ` -t`;
     }
+
+    // Build type-specific command
+    switch (type) {
+      case 'static':
+        command += ` -T static`;
+        if (down) {
+          command += ` -d`;
+        }
+        command += ` -a ${address} ${addrobj}`;
+        break;
+      case 'dhcp':
+        command += ` -T dhcp`;
+        if (primary) {
+          command += ` -1`;
+        }
+        if (wait) {
+          command += ` -w ${wait}`;
+        }
+        command += ` ${addrobj}`;
+        break;
+      case 'addrconf':
+        command += ` -T addrconf ${addrobj}`;
+        break;
+      default:
+        return { success: false, error: `Unknown address type: ${type}` };
+    }
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      // Clean up associated data
+      await NetworkInterfaces.destroy({ where: { link: vlan } });
+      await NetworkUsage.destroy({ where: { link: vlan } });
+
+      return {
+        success: true,
+        message: `VLAN ${vlan} deleted successfully`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to delete VLAN ${vlan}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `IP address creation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1201,126 +1212,137 @@ const executeCreateIPAddressTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeDeleteIPAddressTask = async (metadataJson) => {
-    log.task.debug('IP address deletion task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { addrobj, release } = metadata;
+const executeDeleteIPAddressTask = async metadataJson => {
+  log.task.debug('IP address deletion task starting');
 
-        log.task.debug('IP address deletion task parameters', {
-            addrobj,
-            release
-        });
-
-        let command = `pfexec ipadm delete-addr`;
-        if (release) command += ` -r`;
-        command += ` ${addrobj}`;
-
-        log.task.debug('Executing IP address deletion command', { command });
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            log.task.debug('IP address deleted from system, cleaning up database');
-            
-            // Clean up all monitoring database entries for this IP address
-            const hostname = os.hostname();
-            const [interfaceName] = addrobj.split('/'); // Extract interface from addrobj (e.g., vnic0/v4static -> vnic0)
-            
-            let cleanupResults = {
-                ip_addresses: 0,
-                network_interfaces: 0,
-                ip_interface_deleted: false
-            };
-
-            // Check if there are any remaining IP addresses on this interface
-            log.task.debug('Checking for remaining IP addresses', { interface: interfaceName });
-            const remainingAddrsResult = await executeCommand(`pfexec ipadm show-addr ${interfaceName} -p`);
-            
-            if (!remainingAddrsResult.success || !remainingAddrsResult.output.trim()) {
-                // No remaining IP addresses, delete the IP interface
-                log.task.debug('No remaining IP addresses, deleting IP interface', { interface: interfaceName });
-                const deleteInterfaceResult = await executeCommand(`pfexec ipadm delete-if ${interfaceName}`);
-                
-                if (deleteInterfaceResult.success) {
-                    cleanupResults.ip_interface_deleted = true;
-                    log.task.info('IP interface deleted', { interface: interfaceName });
-                } else {
-                    log.task.warn('Failed to delete IP interface', {
-                        interface: interfaceName,
-                        error: deleteInterfaceResult.error
-                    });
-                }
-            } else {
-                log.task.debug('Interface still has IP addresses, keeping IP interface', { interface: interfaceName });
-            }
-
-            try {
-                // Clean up IPAddresses table (IP address monitoring data)
-                const ipAddressesDeleted = await IPAddresses.destroy({
-                    where: {
-                        host: hostname,
-                        addrobj: addrobj
-                    }
-                });
-                cleanupResults.ip_addresses = ipAddressesDeleted;
-                log.task.debug('Cleaned up IP address entries', {
-                    deleted_count: ipAddressesDeleted,
-                    addrobj
-                });
-
-                // Note: NetworkInterfaces table tracks interfaces (like VNICs), not IP addresses
-                // When deleting an IP address, we don't delete the interface entry itself
-                // since the interface may still exist with other IP addresses
-                cleanupResults.network_interfaces = 0;
-
-                const totalCleaned = cleanupResults.ip_addresses;
-                log.task.debug('Database cleanup completed', {
-                    total_cleaned: totalCleaned,
-                    addrobj
-                });
-
-                return { 
-                    success: true, 
-                    message: `IP address ${addrobj} deleted successfully${cleanupResults.ip_interface_deleted ? ` (IP interface ${interfaceName} also deleted)` : ''} (system + ${totalCleaned} database entries cleaned)`,
-                    cleanup_summary: cleanupResults
-                };
-
-            } catch (cleanupError) {
-                log.task.warn('IP address deleted but database cleanup failed', {
-                    addrobj,
-                    error: cleanupError.message
-                });
-                return { 
-                    success: true, 
-                    message: `IP address ${addrobj} deleted successfully${cleanupResults.ip_interface_deleted ? ` (IP interface ${interfaceName} also deleted)` : ''} (warning: database cleanup failed - ${cleanupError.message})`,
-                    cleanup_error: cleanupError.message
-                };
-            }
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            log.task.error('IP address deletion command failed', {
-                addrobj,
-                error: result.error
-            });
-            return { 
-                success: false, 
-                error: `Failed to delete IP address ${addrobj}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { addrobj, release } = metadata;
 
-    } catch (error) {
-        log.task.error('IP address deletion task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `IP address deletion task failed: ${error.message}` };
+    log.task.debug('IP address deletion task parameters', {
+      addrobj,
+      release,
+    });
+
+    let command = `pfexec ipadm delete-addr`;
+    if (release) {
+      command += ` -r`;
     }
+    command += ` ${addrobj}`;
+
+    log.task.debug('Executing IP address deletion command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.debug('IP address deleted from system, cleaning up database');
+
+      // Clean up all monitoring database entries for this IP address
+      const hostname = os.hostname();
+      const [interfaceName] = addrobj.split('/'); // Extract interface from addrobj (e.g., vnic0/v4static -> vnic0)
+
+      const cleanupResults = {
+        ip_addresses: 0,
+        network_interfaces: 0,
+        ip_interface_deleted: false,
+      };
+
+      // Check if there are any remaining IP addresses on this interface
+      log.task.debug('Checking for remaining IP addresses', { interface: interfaceName });
+      const remainingAddrsResult = await executeCommand(
+        `pfexec ipadm show-addr ${interfaceName} -p`
+      );
+
+      if (!remainingAddrsResult.success || !remainingAddrsResult.output.trim()) {
+        // No remaining IP addresses, delete the IP interface
+        log.task.debug('No remaining IP addresses, deleting IP interface', {
+          interface: interfaceName,
+        });
+        const deleteInterfaceResult = await executeCommand(
+          `pfexec ipadm delete-if ${interfaceName}`
+        );
+
+        if (deleteInterfaceResult.success) {
+          cleanupResults.ip_interface_deleted = true;
+          log.task.info('IP interface deleted', { interface: interfaceName });
+        } else {
+          log.task.warn('Failed to delete IP interface', {
+            interface: interfaceName,
+            error: deleteInterfaceResult.error,
+          });
+        }
+      } else {
+        log.task.debug('Interface still has IP addresses, keeping IP interface', {
+          interface: interfaceName,
+        });
+      }
+
+      try {
+        // Clean up IPAddresses table (IP address monitoring data)
+        const ipAddressesDeleted = await IPAddresses.destroy({
+          where: {
+            host: hostname,
+            addrobj,
+          },
+        });
+        cleanupResults.ip_addresses = ipAddressesDeleted;
+        log.task.debug('Cleaned up IP address entries', {
+          deleted_count: ipAddressesDeleted,
+          addrobj,
+        });
+
+        // Note: NetworkInterfaces table tracks interfaces (like VNICs), not IP addresses
+        // When deleting an IP address, we don't delete the interface entry itself
+        // since the interface may still exist with other IP addresses
+        cleanupResults.network_interfaces = 0;
+
+        const totalCleaned = cleanupResults.ip_addresses;
+        log.task.debug('Database cleanup completed', {
+          total_cleaned: totalCleaned,
+          addrobj,
+        });
+
+        return {
+          success: true,
+          message: `IP address ${addrobj} deleted successfully${cleanupResults.ip_interface_deleted ? ` (IP interface ${interfaceName} also deleted)` : ''} (system + ${totalCleaned} database entries cleaned)`,
+          cleanup_summary: cleanupResults,
+        };
+      } catch (cleanupError) {
+        log.task.warn('IP address deleted but database cleanup failed', {
+          addrobj,
+          error: cleanupError.message,
+        });
+        return {
+          success: true,
+          message: `IP address ${addrobj} deleted successfully${cleanupResults.ip_interface_deleted ? ` (IP interface ${interfaceName} also deleted)` : ''} (warning: database cleanup failed - ${cleanupError.message})`,
+          cleanup_error: cleanupError.message,
+        };
+      }
+    } else {
+      log.task.error('IP address deletion command failed', {
+        addrobj,
+        error: result.error,
+      });
+      return {
+        success: false,
+        error: `Failed to delete IP address ${addrobj}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('IP address deletion task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `IP address deletion task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1328,33 +1350,34 @@ const executeDeleteIPAddressTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeEnableIPAddressTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { addrobj } = metadata;
-
-        const result = await executeCommand(`pfexec ipadm enable-addr ${addrobj}`);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `IP address ${addrobj} enabled successfully` 
-            };
+const executeEnableIPAddressTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to enable IP address ${addrobj}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { addrobj } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `IP address enable task failed: ${error.message}` };
+    const result = await executeCommand(`pfexec ipadm enable-addr ${addrobj}`);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `IP address ${addrobj} enabled successfully`,
+      };
     }
+    return {
+      success: false,
+      error: `Failed to enable IP address ${addrobj}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `IP address enable task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1362,33 +1385,34 @@ const executeEnableIPAddressTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeDisableIPAddressTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { addrobj } = metadata;
-
-        const result = await executeCommand(`pfexec ipadm disable-addr ${addrobj}`);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `IP address ${addrobj} disabled successfully` 
-            };
+const executeDisableIPAddressTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to disable IP address ${addrobj}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { addrobj } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `IP address disable task failed: ${error.message}` };
+    const result = await executeCommand(`pfexec ipadm disable-addr ${addrobj}`);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `IP address ${addrobj} disabled successfully`,
+      };
     }
+    return {
+      success: false,
+      error: `Failed to disable IP address ${addrobj}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `IP address disable task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1396,149 +1420,150 @@ const executeDisableIPAddressTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeCreateVNICTask = async (metadataJson) => {
-    log.task.debug('VNIC creation task starting', {
-        metadata_type: typeof metadataJson,
-        metadata_length: metadataJson ? metadataJson.length : 0
-    });
-    
-    try {
-        if (!metadataJson) {
-            log.task.error('VNIC creation task metadata is undefined or null');
-            return { success: false, error: 'Task metadata is missing - cannot build dladm command' };
-        }
+const executeCreateVNICTask = async metadataJson => {
+  log.task.debug('VNIC creation task starting', {
+    metadata_type: typeof metadataJson,
+    metadata_length: metadataJson ? metadataJson.length : 0,
+  });
 
-        let metadata;
-        try {
-            metadata = await new Promise((resolve, reject) => {
-                yj.parseAsync(metadataJson, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            });
-            log.task.debug('Successfully parsed metadata', { metadata });
-        } catch (parseError) {
-            log.task.error('Failed to parse metadata JSON', {
-                error: parseError.message
-            });
-            return { success: false, error: `Invalid JSON metadata: ${parseError.message}` };
-        }
-
-        const { name, link, mac_address, mac_prefix, slot, vlan_id, temporary, properties } = metadata;
-
-        // Log command building parameters
-        log.task.debug('Building dladm create-vnic command', {
-            name,
-            link,
-            mac_address,
-            mac_prefix,
-            slot,
-            vlan_id,
-            temporary,
-            properties
-        });
-
-        let command = `pfexec dladm create-vnic`;
-        
-        // Add temporary flag
-        if (temporary) {
-            command += ` -t`;
-            log.task.debug('Added temporary flag to command');
-        }
-
-        // Add link
-        if (link) {
-            command += ` -l ${link}`;
-            log.task.debug('Added link to command', { link });
-        } else {
-            log.task.warn('Missing required link parameter');
-        }
-
-        // Add MAC address configuration
-        if (mac_address === 'factory') {
-            command += ` -m factory -n ${slot}`;
-            log.task.debug('Added factory MAC to command', { slot });
-        } else if (mac_address === 'random') {
-            command += ` -m random`;
-            log.task.debug('Added random MAC to command');
-            if (mac_prefix) {
-                command += ` -r ${mac_prefix}`;
-                log.task.debug('Added MAC prefix to command', { mac_prefix });
-            }
-        } else if (mac_address === 'auto') {
-            command += ` -m auto`;
-            log.task.debug('Added auto MAC to command');
-        } else if (mac_address && mac_address !== 'auto') {
-            // Specific MAC address provided
-            command += ` -m ${mac_address}`;
-            log.task.debug('Added specific MAC to command', { mac_address });
-        } else {
-            log.task.debug('Using default MAC assignment');
-        }
-
-        // Add VLAN ID if specified
-        if (vlan_id) {
-            command += ` -v ${vlan_id}`;
-            log.task.debug('Added VLAN ID to command', { vlan_id });
-        }
-
-        // Add properties if specified
-        if (properties && Object.keys(properties).length > 0) {
-            const propList = Object.entries(properties)
-                .map(([key, value]) => `${key}=${value}`)
-                .join(',');
-            command += ` -p ${propList}`;
-            log.task.debug('Added properties to command', { properties: propList });
-        }
-
-        // Add VNIC name
-        if (name) {
-            command += ` ${name}`;
-            log.task.debug('Added VNIC name to command', { name });
-        } else {
-            log.task.warn('Missing required VNIC name parameter');
-        }
-
-        log.task.debug('Final VNIC creation command', { command });
-
-        // Validate required parameters before executing
-        if (!name || !link) {
-            log.task.error('Missing required parameters - cannot execute command', {
-                name_missing: !name,
-                link_missing: !link
-            });
-            return { 
-                success: false, 
-                error: `Missing required parameters: ${!name ? 'name ' : ''}${!link ? 'link' : ''}` 
-            };
-        }
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            log.task.info('VNIC creation completed', { name, link });
-            return { 
-                success: true, 
-                message: `VNIC ${name} created successfully over ${link}` 
-            };
-        } else {
-            log.task.error('VNIC creation failed', {
-                name,
-                error: result.error
-            });
-            return { 
-                success: false, 
-                error: `Failed to create VNIC ${name}: ${result.error}` 
-            };
-        }
-
-    } catch (error) {
-        log.task.error('VNIC creation task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `VNIC creation task failed: ${error.message}` };
+  try {
+    if (!metadataJson) {
+      log.task.error('VNIC creation task metadata is undefined or null');
+      return { success: false, error: 'Task metadata is missing - cannot build dladm command' };
     }
+
+    let metadata;
+    try {
+      metadata = await new Promise((resolve, reject) => {
+        yj.parseAsync(metadataJson, (err, result) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(result);
+          }
+        });
+      });
+      log.task.debug('Successfully parsed metadata', { metadata });
+    } catch (parseError) {
+      log.task.error('Failed to parse metadata JSON', {
+        error: parseError.message,
+      });
+      return { success: false, error: `Invalid JSON metadata: ${parseError.message}` };
+    }
+
+    const { name, link, mac_address, mac_prefix, slot, vlan_id, temporary, properties } = metadata;
+
+    // Log command building parameters
+    log.task.debug('Building dladm create-vnic command', {
+      name,
+      link,
+      mac_address,
+      mac_prefix,
+      slot,
+      vlan_id,
+      temporary,
+      properties,
+    });
+
+    let command = `pfexec dladm create-vnic`;
+
+    // Add temporary flag
+    if (temporary) {
+      command += ` -t`;
+      log.task.debug('Added temporary flag to command');
+    }
+
+    // Add link
+    if (link) {
+      command += ` -l ${link}`;
+      log.task.debug('Added link to command', { link });
+    } else {
+      log.task.warn('Missing required link parameter');
+    }
+
+    // Add MAC address configuration
+    if (mac_address === 'factory') {
+      command += ` -m factory -n ${slot}`;
+      log.task.debug('Added factory MAC to command', { slot });
+    } else if (mac_address === 'random') {
+      command += ` -m random`;
+      log.task.debug('Added random MAC to command');
+      if (mac_prefix) {
+        command += ` -r ${mac_prefix}`;
+        log.task.debug('Added MAC prefix to command', { mac_prefix });
+      }
+    } else if (mac_address === 'auto') {
+      command += ` -m auto`;
+      log.task.debug('Added auto MAC to command');
+    } else if (mac_address && mac_address !== 'auto') {
+      // Specific MAC address provided
+      command += ` -m ${mac_address}`;
+      log.task.debug('Added specific MAC to command', { mac_address });
+    } else {
+      log.task.debug('Using default MAC assignment');
+    }
+
+    // Add VLAN ID if specified
+    if (vlan_id) {
+      command += ` -v ${vlan_id}`;
+      log.task.debug('Added VLAN ID to command', { vlan_id });
+    }
+
+    // Add properties if specified
+    if (properties && Object.keys(properties).length > 0) {
+      const propList = Object.entries(properties)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(',');
+      command += ` -p ${propList}`;
+      log.task.debug('Added properties to command', { properties: propList });
+    }
+
+    // Add VNIC name
+    if (name) {
+      command += ` ${name}`;
+      log.task.debug('Added VNIC name to command', { name });
+    } else {
+      log.task.warn('Missing required VNIC name parameter');
+    }
+
+    log.task.debug('Final VNIC creation command', { command });
+
+    // Validate required parameters before executing
+    if (!name || !link) {
+      log.task.error('Missing required parameters - cannot execute command', {
+        name_missing: !name,
+        link_missing: !link,
+      });
+      return {
+        success: false,
+        error: `Missing required parameters: ${!name ? 'name ' : ''}${!link ? 'link' : ''}`,
+      };
+    }
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.info('VNIC creation completed', { name, link });
+      return {
+        success: true,
+        message: `VNIC ${name} created successfully over ${link}`,
+      };
+    }
+    log.task.error('VNIC creation failed', {
+      name,
+      error: result.error,
+    });
+    return {
+      success: false,
+      error: `Failed to create VNIC ${name}: ${result.error}`,
+    };
+  } catch (error) {
+    log.task.error('VNIC creation task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `VNIC creation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1546,111 +1571,114 @@ const executeCreateVNICTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeDeleteVNICTask = async (metadataJson) => {
-    log.task.debug('VNIC deletion task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { vnic, temporary } = metadata;
+const executeDeleteVNICTask = async metadataJson => {
+  log.task.debug('VNIC deletion task starting');
 
-        log.task.debug('VNIC deletion task parameters', {
-            vnic,
-            temporary
-        });
-
-        let command = `pfexec dladm delete-vnic`;
-        if (temporary) command += ` -t`;
-        command += ` ${vnic}`;
-
-        log.task.debug('Executing VNIC deletion command', { command });
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            log.task.debug('VNIC deleted from system, cleaning up database');
-            
-            // Clean up all monitoring database entries for this VNIC
-            const hostname = os.hostname();
-            let cleanupResults = {
-                network_interfaces: 0,
-                network_stats: 0,
-                network_usage: 0
-            };
-
-            try {
-                // Clean up NetworkInterfaces table (monitoring data)
-                const interfacesDeleted = await NetworkInterfaces.destroy({
-                    where: {
-                        host: hostname,
-                        link: vnic,
-                        class: 'vnic'
-                    }
-                });
-                cleanupResults.network_interfaces = interfacesDeleted;
-                log.task.debug('Cleaned up network interface entries', {
-                    deleted_count: interfacesDeleted,
-                    vnic
-                });
-
-                // Clean up NetworkUsage table (usage accounting)
-                const usageDeleted = await NetworkUsage.destroy({
-                    where: {
-                        host: hostname,
-                        link: vnic
-                    }
-                });
-                cleanupResults.network_usage = usageDeleted;
-                log.task.debug('Cleaned up network usage entries', {
-                    deleted_count: usageDeleted,
-                    vnic
-                });
-
-                const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_usage;
-                log.task.info('Database cleanup completed for VNIC', {
-                    total_cleaned: totalCleaned,
-                    vnic
-                });
-
-                return { 
-                    success: true, 
-                    message: `VNIC ${vnic} deleted successfully (system + ${totalCleaned} database entries cleaned)`,
-                    cleanup_summary: cleanupResults
-                };
-
-            } catch (cleanupError) {
-                log.task.warn('VNIC deleted but database cleanup failed', {
-                    vnic,
-                    error: cleanupError.message
-                });
-                return { 
-                    success: true, 
-                    message: `VNIC ${vnic} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
-                    cleanup_error: cleanupError.message
-                };
-            }
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            log.task.error('VNIC deletion command failed', {
-                vnic,
-                error: result.error
-            });
-            return { 
-                success: false, 
-                error: `Failed to delete VNIC ${vnic}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { vnic, temporary } = metadata;
 
-    } catch (error) {
-        log.task.error('VNIC deletion task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `VNIC deletion task failed: ${error.message}` };
+    log.task.debug('VNIC deletion task parameters', {
+      vnic,
+      temporary,
+    });
+
+    let command = `pfexec dladm delete-vnic`;
+    if (temporary) {
+      command += ` -t`;
     }
+    command += ` ${vnic}`;
+
+    log.task.debug('Executing VNIC deletion command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.debug('VNIC deleted from system, cleaning up database');
+
+      // Clean up all monitoring database entries for this VNIC
+      const hostname = os.hostname();
+      const cleanupResults = {
+        network_interfaces: 0,
+        network_stats: 0,
+        network_usage: 0,
+      };
+
+      try {
+        // Clean up NetworkInterfaces table (monitoring data)
+        const interfacesDeleted = await NetworkInterfaces.destroy({
+          where: {
+            host: hostname,
+            link: vnic,
+            class: 'vnic',
+          },
+        });
+        cleanupResults.network_interfaces = interfacesDeleted;
+        log.task.debug('Cleaned up network interface entries', {
+          deleted_count: interfacesDeleted,
+          vnic,
+        });
+
+        // Clean up NetworkUsage table (usage accounting)
+        const usageDeleted = await NetworkUsage.destroy({
+          where: {
+            host: hostname,
+            link: vnic,
+          },
+        });
+        cleanupResults.network_usage = usageDeleted;
+        log.task.debug('Cleaned up network usage entries', {
+          deleted_count: usageDeleted,
+          vnic,
+        });
+
+        const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_usage;
+        log.task.info('Database cleanup completed for VNIC', {
+          total_cleaned: totalCleaned,
+          vnic,
+        });
+
+        return {
+          success: true,
+          message: `VNIC ${vnic} deleted successfully (system + ${totalCleaned} database entries cleaned)`,
+          cleanup_summary: cleanupResults,
+        };
+      } catch (cleanupError) {
+        log.task.warn('VNIC deleted but database cleanup failed', {
+          vnic,
+          error: cleanupError.message,
+        });
+        return {
+          success: true,
+          message: `VNIC ${vnic} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
+          cleanup_error: cleanupError.message,
+        };
+      }
+    } else {
+      log.task.error('VNIC deletion command failed', {
+        vnic,
+        error: result.error,
+      });
+      return {
+        success: false,
+        error: `Failed to delete VNIC ${vnic}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('VNIC deletion task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `VNIC deletion task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1658,48 +1686,51 @@ const executeDeleteVNICTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeSetVNICPropertiesTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { vnic, properties, temporary } = metadata;
-
-        let command = `pfexec dladm set-linkprop`;
-        if (temporary) command += ` -t`;
-        
-        // Build properties list
-        const propList = Object.entries(properties)
-            .map(([key, value]) => `${key}=${value}`)
-            .join(',');
-        
-        command += ` -p ${propList} ${vnic}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            // Clean up all monitoring database entries for this VLAN
-            const hostname = os.hostname();
-            await NetworkInterfaces.destroy({ where: { host: hostname, link: vlan, class: 'vlan' } });
-            await NetworkUsage.destroy({ where: { host: hostname, link: vlan } });
-
-            return { 
-                success: true, 
-                message: `VLAN ${vlan} deleted successfully` 
-            };
+const executeSetVNICPropertiesTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to set VNIC ${vnic} properties: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { vnic, properties, temporary } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `VNIC properties task failed: ${error.message}` };
+    let command = `pfexec dladm set-linkprop`;
+    if (temporary) {
+      command += ` -t`;
     }
+
+    // Build properties list
+    const propList = Object.entries(properties)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(',');
+
+    command += ` -p ${propList} ${vnic}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      // Clean up all monitoring database entries for this VLAN
+      const hostname = os.hostname();
+      await NetworkInterfaces.destroy({ where: { host: hostname, link: vlan, class: 'vlan' } });
+      await NetworkUsage.destroy({ where: { host: hostname, link: vlan } });
+
+      return {
+        success: true,
+        message: `VLAN ${vlan} deleted successfully`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to set VNIC ${vnic} properties: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `VNIC properties task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1707,66 +1738,67 @@ const executeSetVNICPropertiesTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeCreateAggregateTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { name, links, policy, lacp_mode, lacp_timer, unicast_address, temporary } = metadata;
-
-        let command = `pfexec dladm create-aggr`;
-        
-        // Add temporary flag
-        if (temporary) {
-            command += ` -t`;
-        }
-
-        // Add policy
-        if (policy && policy !== 'L4') {
-            command += ` -P ${policy}`;
-        }
-
-        // Add LACP configuration
-        if (lacp_mode && lacp_mode !== 'off') {
-            command += ` -L ${lacp_mode}`;
-        }
-        if (lacp_timer && lacp_timer !== 'short') {
-            command += ` -T ${lacp_timer}`;
-        }
-
-        // Add unicast address if specified
-        if (unicast_address) {
-            command += ` -u ${unicast_address}`;
-        }
-
-        // Add links
-        for (const link of links) {
-            command += ` -l ${link}`;
-        }
-
-        // Add aggregate name
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Aggregate ${name} created successfully with links: ${links.join(', ')}` 
-            };
+const executeCreateAggregateTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to create aggregate ${name}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name, links, policy, lacp_mode, lacp_timer, unicast_address, temporary } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Aggregate creation task failed: ${error.message}` };
+    let command = `pfexec dladm create-aggr`;
+
+    // Add temporary flag
+    if (temporary) {
+      command += ` -t`;
     }
+
+    // Add policy
+    if (policy && policy !== 'L4') {
+      command += ` -P ${policy}`;
+    }
+
+    // Add LACP configuration
+    if (lacp_mode && lacp_mode !== 'off') {
+      command += ` -L ${lacp_mode}`;
+    }
+    if (lacp_timer && lacp_timer !== 'short') {
+      command += ` -T ${lacp_timer}`;
+    }
+
+    // Add unicast address if specified
+    if (unicast_address) {
+      command += ` -u ${unicast_address}`;
+    }
+
+    // Add links
+    for (const link of links) {
+      command += ` -l ${link}`;
+    }
+
+    // Add aggregate name
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Aggregate ${name} created successfully with links: ${links.join(', ')}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to create aggregate ${name}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Aggregate creation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1774,110 +1806,113 @@ const executeCreateAggregateTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeDeleteAggregateTask = async (metadataJson) => {
-    log.task.debug('Aggregate deletion task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { aggregate, temporary } = metadata;
+const executeDeleteAggregateTask = async metadataJson => {
+  log.task.debug('Aggregate deletion task starting');
 
-        log.task.debug('Aggregate deletion task parameters', {
-            aggregate,
-            temporary
-        });
-
-        let command = `pfexec dladm delete-aggr`;
-        if (temporary) command += ` -t`;
-        command += ` ${aggregate}`;
-
-        log.task.debug('Executing aggregate deletion command', { command });
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            log.task.debug('Aggregate deleted from system, cleaning up database');
-            
-            // Clean up all monitoring database entries for this aggregate
-            const hostname = os.hostname();
-            let cleanupResults = {
-                network_interfaces: 0,
-                network_usage: 0
-            };
-
-            try {
-                // Clean up NetworkInterfaces table (monitoring data)
-                const interfacesDeleted = await NetworkInterfaces.destroy({
-                    where: {
-                        host: hostname,
-                        link: aggregate,
-                        class: 'aggr'
-                    }
-                });
-                cleanupResults.network_interfaces = interfacesDeleted;
-                log.task.debug('Cleaned up network interface entries', {
-                    deleted_count: interfacesDeleted,
-                    aggregate
-                });
-
-                // Clean up NetworkUsage table (usage accounting)
-                const usageDeleted = await NetworkUsage.destroy({
-                    where: {
-                        host: hostname,
-                        link: aggregate
-                    }
-                });
-                cleanupResults.network_usage = usageDeleted;
-                log.task.debug('Cleaned up network usage entries', {
-                    deleted_count: usageDeleted,
-                    aggregate
-                });
-
-                const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_usage;
-                log.task.info('Database cleanup completed for aggregate', {
-                    total_cleaned: totalCleaned,
-                    aggregate
-                });
-
-                return { 
-                    success: true, 
-                    message: `Aggregate ${aggregate} deleted successfully (system + ${totalCleaned} database entries cleaned)`,
-                    cleanup_summary: cleanupResults
-                };
-
-            } catch (cleanupError) {
-                log.task.warn('Aggregate deleted but database cleanup failed', {
-                    aggregate,
-                    error: cleanupError.message
-                });
-                return { 
-                    success: true, 
-                    message: `Aggregate ${aggregate} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
-                    cleanup_error: cleanupError.message
-                };
-            }
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            log.task.error('Aggregate deletion command failed', {
-                aggregate,
-                error: result.error
-            });
-            return { 
-                success: false, 
-                error: `Failed to delete aggregate ${aggregate}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { aggregate, temporary } = metadata;
 
-    } catch (error) {
-        log.task.error('Aggregate deletion task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `Aggregate deletion task failed: ${error.message}` };
+    log.task.debug('Aggregate deletion task parameters', {
+      aggregate,
+      temporary,
+    });
+
+    let command = `pfexec dladm delete-aggr`;
+    if (temporary) {
+      command += ` -t`;
     }
+    command += ` ${aggregate}`;
+
+    log.task.debug('Executing aggregate deletion command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.debug('Aggregate deleted from system, cleaning up database');
+
+      // Clean up all monitoring database entries for this aggregate
+      const hostname = os.hostname();
+      const cleanupResults = {
+        network_interfaces: 0,
+        network_usage: 0,
+      };
+
+      try {
+        // Clean up NetworkInterfaces table (monitoring data)
+        const interfacesDeleted = await NetworkInterfaces.destroy({
+          where: {
+            host: hostname,
+            link: aggregate,
+            class: 'aggr',
+          },
+        });
+        cleanupResults.network_interfaces = interfacesDeleted;
+        log.task.debug('Cleaned up network interface entries', {
+          deleted_count: interfacesDeleted,
+          aggregate,
+        });
+
+        // Clean up NetworkUsage table (usage accounting)
+        const usageDeleted = await NetworkUsage.destroy({
+          where: {
+            host: hostname,
+            link: aggregate,
+          },
+        });
+        cleanupResults.network_usage = usageDeleted;
+        log.task.debug('Cleaned up network usage entries', {
+          deleted_count: usageDeleted,
+          aggregate,
+        });
+
+        const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_usage;
+        log.task.info('Database cleanup completed for aggregate', {
+          total_cleaned: totalCleaned,
+          aggregate,
+        });
+
+        return {
+          success: true,
+          message: `Aggregate ${aggregate} deleted successfully (system + ${totalCleaned} database entries cleaned)`,
+          cleanup_summary: cleanupResults,
+        };
+      } catch (cleanupError) {
+        log.task.warn('Aggregate deleted but database cleanup failed', {
+          aggregate,
+          error: cleanupError.message,
+        });
+        return {
+          success: true,
+          message: `Aggregate ${aggregate} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
+          cleanup_error: cleanupError.message,
+        };
+      }
+    } else {
+      log.task.error('Aggregate deletion command failed', {
+        aggregate,
+        error: result.error,
+      });
+      return {
+        success: false,
+        error: `Failed to delete aggregate ${aggregate}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Aggregate deletion task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Aggregate deletion task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1885,43 +1920,47 @@ const executeDeleteAggregateTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeModifyAggregateLinksTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { aggregate, operation, links, temporary } = metadata;
-
-        let command = `pfexec dladm ${operation}-aggr`;
-        if (temporary) command += ` -t`;
-        
-        // Add links
-        for (const link of links) {
-            command += ` -l ${link}`;
-        }
-
-        // Add aggregate name
-        command += ` ${aggregate}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Successfully ${operation}ed links ${links.join(', ')} ${operation === 'add' ? 'to' : 'from'} aggregate ${aggregate}` 
-            };
+const executeModifyAggregateLinksTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to ${operation} links on aggregate ${aggregate}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { aggregate, operation, links, temporary } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Aggregate links modification task failed: ${error.message}` };
+    let command = `pfexec dladm ${operation}-aggr`;
+    if (temporary) {
+      command += ` -t`;
     }
+
+    // Add links
+    for (const link of links) {
+      command += ` -l ${link}`;
+    }
+
+    // Add aggregate name
+    command += ` ${aggregate}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Successfully ${operation}ed links ${links.join(', ')} ${operation === 'add' ? 'to' : 'from'} aggregate ${aggregate}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to ${operation} links on aggregate ${aggregate}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Aggregate links modification task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1929,36 +1968,40 @@ const executeModifyAggregateLinksTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeCreateEtherstubTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, temporary } = metadata;
-
-        let command = `pfexec dladm create-etherstub`;
-        if (temporary) command += ` -t`;
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Etherstub ${name} created successfully` 
-            };
+const executeCreateEtherstubTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to create etherstub ${name}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name, temporary } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Etherstub creation task failed: ${error.message}` };
+    let command = `pfexec dladm create-etherstub`;
+    if (temporary) {
+      command += ` -t`;
     }
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Etherstub ${name} created successfully`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to create etherstub ${name}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Etherstub creation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -1966,130 +2009,137 @@ const executeCreateEtherstubTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeDeleteEtherstubTask = async (metadataJson) => {
-    log.task.debug('Etherstub deletion task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { etherstub, temporary, force } = metadata;
+const executeDeleteEtherstubTask = async metadataJson => {
+  log.task.debug('Etherstub deletion task starting');
 
-        log.task.debug('Etherstub deletion task parameters', {
-            etherstub,
-            temporary,
-            force
-        });
-
-        // If force deletion, first remove any VNICs on the etherstub
-        if (force) {
-            log.task.debug('Force deletion enabled, checking for VNICs on etherstub');
-            const vnicResult = await executeCommand(`pfexec dladm show-vnic -l ${etherstub} -p -o link`);
-            if (vnicResult.success && vnicResult.output.trim()) {
-                const vnics = vnicResult.output.trim().split('\n');
-                log.task.debug('Found VNICs to remove', {
-                    count: vnics.length,
-                    vnics: vnics.join(', ')
-                });
-                for (const vnic of vnics) {
-                    log.task.debug('Removing VNIC from etherstub', { vnic });
-                    await executeCommand(`pfexec dladm delete-vnic ${temporary ? '-t' : ''} ${vnic}`);
-                }
-            } else {
-                log.task.debug('No VNICs found on etherstub');
-            }
-        }
-
-        let command = `pfexec dladm delete-etherstub`;
-        if (temporary) command += ` -t`;
-        command += ` ${etherstub}`;
-
-        log.task.debug('Executing etherstub deletion command', { command });
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            log.task.debug('Etherstub deleted from system, cleaning up database');
-            
-            // Clean up all monitoring database entries for this etherstub
-            const hostname = os.hostname();
-            let cleanupResults = {
-                network_interfaces: 0,
-                network_stats: 0,
-                network_usage: 0
-            };
-
-            try {
-                // Clean up NetworkInterfaces table (monitoring data)
-                const interfacesDeleted = await NetworkInterfaces.destroy({
-                    where: {
-                        host: hostname,
-                        link: etherstub,
-                        class: 'etherstub'
-                    }
-                });
-                cleanupResults.network_interfaces = interfacesDeleted;
-                log.task.debug('Cleaned up network interface entries', {
-                    deleted_count: interfacesDeleted,
-                    etherstub
-                });
-
-                // Clean up NetworkUsage table (usage accounting)
-                const usageDeleted = await NetworkUsage.destroy({
-                    where: {
-                        host: hostname,
-                        link: etherstub
-                    }
-                });
-                cleanupResults.network_usage = usageDeleted;
-                log.task.debug('Cleaned up network usage entries', {
-                    deleted_count: usageDeleted,
-                    etherstub
-                });
-
-                const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_stats + cleanupResults.network_usage;
-                log.task.info('Database cleanup completed for etherstub', {
-                    total_cleaned: totalCleaned,
-                    etherstub
-                });
-
-                return { 
-                    success: true, 
-                    message: `Etherstub ${etherstub} deleted successfully (system + ${totalCleaned} database entries cleaned)`,
-                    cleanup_summary: cleanupResults
-                };
-
-            } catch (cleanupError) {
-                log.task.warn('Etherstub deleted but database cleanup failed', {
-                    etherstub,
-                    error: cleanupError.message
-                });
-                return { 
-                    success: true, 
-                    message: `Etherstub ${etherstub} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
-                    cleanup_error: cleanupError.message
-                };
-            }
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            log.task.error('Etherstub deletion command failed', {
-                etherstub,
-                error: result.error
-            });
-            return { 
-                success: false, 
-                error: `Failed to delete etherstub ${etherstub}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { etherstub, temporary, force } = metadata;
 
-    } catch (error) {
-        log.task.error('Etherstub deletion task exception', {
-            error: error.message,
-            stack: error.stack
+    log.task.debug('Etherstub deletion task parameters', {
+      etherstub,
+      temporary,
+      force,
+    });
+
+    // If force deletion, first remove any VNICs on the etherstub
+    if (force) {
+      log.task.debug('Force deletion enabled, checking for VNICs on etherstub');
+      const vnicResult = await executeCommand(`pfexec dladm show-vnic -l ${etherstub} -p -o link`);
+      if (vnicResult.success && vnicResult.output.trim()) {
+        const vnics = vnicResult.output.trim().split('\n');
+        log.task.debug('Found VNICs to remove', {
+          count: vnics.length,
+          vnics: vnics.join(', '),
         });
-        return { success: false, error: `Etherstub deletion task failed: ${error.message}` };
+        for (const vnic of vnics) {
+          log.task.debug('Removing VNIC from etherstub', { vnic });
+          await executeCommand(`pfexec dladm delete-vnic ${temporary ? '-t' : ''} ${vnic}`);
+        }
+      } else {
+        log.task.debug('No VNICs found on etherstub');
+      }
     }
+
+    let command = `pfexec dladm delete-etherstub`;
+    if (temporary) {
+      command += ` -t`;
+    }
+    command += ` ${etherstub}`;
+
+    log.task.debug('Executing etherstub deletion command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.debug('Etherstub deleted from system, cleaning up database');
+
+      // Clean up all monitoring database entries for this etherstub
+      const hostname = os.hostname();
+      const cleanupResults = {
+        network_interfaces: 0,
+        network_stats: 0,
+        network_usage: 0,
+      };
+
+      try {
+        // Clean up NetworkInterfaces table (monitoring data)
+        const interfacesDeleted = await NetworkInterfaces.destroy({
+          where: {
+            host: hostname,
+            link: etherstub,
+            class: 'etherstub',
+          },
+        });
+        cleanupResults.network_interfaces = interfacesDeleted;
+        log.task.debug('Cleaned up network interface entries', {
+          deleted_count: interfacesDeleted,
+          etherstub,
+        });
+
+        // Clean up NetworkUsage table (usage accounting)
+        const usageDeleted = await NetworkUsage.destroy({
+          where: {
+            host: hostname,
+            link: etherstub,
+          },
+        });
+        cleanupResults.network_usage = usageDeleted;
+        log.task.debug('Cleaned up network usage entries', {
+          deleted_count: usageDeleted,
+          etherstub,
+        });
+
+        const totalCleaned =
+          cleanupResults.network_interfaces +
+          cleanupResults.network_stats +
+          cleanupResults.network_usage;
+        log.task.info('Database cleanup completed for etherstub', {
+          total_cleaned: totalCleaned,
+          etherstub,
+        });
+
+        return {
+          success: true,
+          message: `Etherstub ${etherstub} deleted successfully (system + ${totalCleaned} database entries cleaned)`,
+          cleanup_summary: cleanupResults,
+        };
+      } catch (cleanupError) {
+        log.task.warn('Etherstub deleted but database cleanup failed', {
+          etherstub,
+          error: cleanupError.message,
+        });
+        return {
+          success: true,
+          message: `Etherstub ${etherstub} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
+          cleanup_error: cleanupError.message,
+        };
+      }
+    } else {
+      log.task.error('Etherstub deletion command failed', {
+        etherstub,
+        error: result.error,
+      });
+      return {
+        success: false,
+        error: `Failed to delete etherstub ${etherstub}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Etherstub deletion task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Etherstub deletion task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2097,38 +2147,46 @@ const executeDeleteEtherstubTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeCreateVlanTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { vid, link, name, force, temporary } = metadata;
-
-        let command = `pfexec dladm create-vlan`;
-        if (force) command += ` -f`;
-        if (temporary) command += ` -t`;
-        command += ` -l ${link} -v ${vid}`;
-        if (name) command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `VLAN ${name || `${link}_${vid}`} created successfully (VID ${vid}) over ${link}` 
-            };
+const executeCreateVlanTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to create VLAN ${name || `${link}_${vid}`}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { vid, link, name, force, temporary } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `VLAN creation task failed: ${error.message}` };
+    let command = `pfexec dladm create-vlan`;
+    if (force) {
+      command += ` -f`;
     }
+    if (temporary) {
+      command += ` -t`;
+    }
+    command += ` -l ${link} -v ${vid}`;
+    if (name) {
+      command += ` ${name}`;
+    }
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `VLAN ${name || `${link}_${vid}`} created successfully (VID ${vid}) over ${link}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to create VLAN ${name || `${link}_${vid}`}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `VLAN creation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2136,40 +2194,44 @@ const executeCreateVlanTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeDeleteVlanTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { vlan, temporary } = metadata;
-
-        let command = `pfexec dladm delete-vlan`;
-        if (temporary) command += ` -t`;
-        command += ` ${vlan}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            // Clean up associated data
-            await NetworkInterfaces.destroy({ where: { link: vlan } });
-            await NetworkUsage.destroy({ where: { link: vlan } });
-
-            return { 
-                success: true, 
-                message: `VLAN ${vlan} deleted successfully` 
-            };
+const executeDeleteVlanTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to delete VLAN ${vlan}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { vlan, temporary } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `VLAN deletion task failed: ${error.message}` };
+    let command = `pfexec dladm delete-vlan`;
+    if (temporary) {
+      command += ` -t`;
     }
+    command += ` ${vlan}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      // Clean up associated data
+      await NetworkInterfaces.destroy({ where: { link: vlan } });
+      await NetworkUsage.destroy({ where: { link: vlan } });
+
+      return {
+        success: true,
+        message: `VLAN ${vlan} deleted successfully`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to delete VLAN ${vlan}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `VLAN deletion task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2177,70 +2239,81 @@ const executeDeleteVlanTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeCreateBridgeTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, protection, priority, max_age, hello_time, forward_delay, force_protocol, links } = metadata;
-
-        let command = `pfexec dladm create-bridge`;
-        
-        // Add protection
-        if (protection && protection !== 'stp') {
-            command += ` -P ${protection}`;
-        }
-
-        // Add priority
-        if (priority && priority !== 32768) {
-            command += ` -p ${priority}`;
-        }
-
-        // Add timing parameters
-        if (max_age && max_age !== 20) {
-            command += ` -m ${max_age}`;
-        }
-        if (hello_time && hello_time !== 2) {
-            command += ` -h ${hello_time}`;
-        }
-        if (forward_delay && forward_delay !== 15) {
-            command += ` -d ${forward_delay}`;
-        }
-
-        // Add force protocol
-        if (force_protocol && force_protocol !== 3) {
-            command += ` -f ${force_protocol}`;
-        }
-
-        // Add links
-        if (links && links.length > 0) {
-            for (const link of links) {
-                command += ` -l ${link}`;
-            }
-        }
-
-        // Add bridge name
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Bridge ${name} created successfully${links && links.length > 0 ? ` with links: ${links.join(', ')}` : ''}` 
-            };
+const executeCreateBridgeTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to create bridge ${name}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const {
+      name,
+      protection,
+      priority,
+      max_age,
+      hello_time,
+      forward_delay,
+      force_protocol,
+      links,
+    } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Bridge creation task failed: ${error.message}` };
+    let command = `pfexec dladm create-bridge`;
+
+    // Add protection
+    if (protection && protection !== 'stp') {
+      command += ` -P ${protection}`;
     }
+
+    // Add priority
+    if (priority && priority !== 32768) {
+      command += ` -p ${priority}`;
+    }
+
+    // Add timing parameters
+    if (max_age && max_age !== 20) {
+      command += ` -m ${max_age}`;
+    }
+    if (hello_time && hello_time !== 2) {
+      command += ` -h ${hello_time}`;
+    }
+    if (forward_delay && forward_delay !== 15) {
+      command += ` -d ${forward_delay}`;
+    }
+
+    // Add force protocol
+    if (force_protocol && force_protocol !== 3) {
+      command += ` -f ${force_protocol}`;
+    }
+
+    // Add links
+    if (links && links.length > 0) {
+      for (const link of links) {
+        command += ` -l ${link}`;
+      }
+    }
+
+    // Add bridge name
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Bridge ${name} created successfully${links && links.length > 0 ? ` with links: ${links.join(', ')}` : ''}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to create bridge ${name}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Bridge creation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2248,124 +2321,129 @@ const executeCreateBridgeTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeDeleteBridgeTask = async (metadataJson) => {
-    log.task.debug('Bridge deletion task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { bridge, force } = metadata;
+const executeDeleteBridgeTask = async metadataJson => {
+  log.task.debug('Bridge deletion task starting');
 
-        log.task.debug('Bridge deletion task parameters', {
-            bridge,
-            force
-        });
-
-        // If force deletion, first remove any attached links
-        if (force) {
-            log.task.debug('Force deletion enabled, checking for attached links');
-            const linksResult = await executeCommand(`pfexec dladm show-bridge ${bridge} -l -p -o link`);
-            if (linksResult.success && linksResult.output.trim()) {
-                const attachedLinks = linksResult.output.trim().split('\n');
-                log.task.debug('Found attached links to remove', {
-                    count: attachedLinks.length,
-                    links: attachedLinks.join(', ')
-                });
-                for (const link of attachedLinks) {
-                    log.task.debug('Removing link from bridge', { link, bridge });
-                    await executeCommand(`pfexec dladm remove-bridge -l ${link} ${bridge}`);
-                }
-            } else {
-                log.task.debug('No attached links found on bridge');
-            }
-        }
-
-        log.task.debug('Executing bridge deletion command');
-        const result = await executeCommand(`pfexec dladm delete-bridge ${bridge}`);
-        
-        if (result.success) {
-            log.task.debug('Bridge deleted from system, cleaning up database');
-            
-            // Clean up all monitoring database entries for this bridge
-            const hostname = os.hostname();
-            let cleanupResults = {
-                network_interfaces: 0,
-                network_stats: 0,
-                network_usage: 0
-            };
-
-            try {
-                // Clean up NetworkInterfaces table (monitoring data)
-                const interfacesDeleted = await NetworkInterfaces.destroy({
-                    where: {
-                        host: hostname,
-                        link: bridge,
-                        class: 'bridge'
-                    }
-                });
-                cleanupResults.network_interfaces = interfacesDeleted;
-                log.task.debug('Cleaned up network interface entries', {
-                    deleted_count: interfacesDeleted,
-                    bridge
-                });
-
-                // Clean up NetworkUsage table (usage accounting)
-                const usageDeleted = await NetworkUsage.destroy({
-                    where: {
-                        host: hostname,
-                        link: bridge
-                    }
-                });
-                cleanupResults.network_usage = usageDeleted;
-                log.task.debug('Cleaned up network usage entries', {
-                    deleted_count: usageDeleted,
-                    bridge
-                });
-
-                const totalCleaned = cleanupResults.network_interfaces + cleanupResults.network_stats + cleanupResults.network_usage;
-                log.task.info('Database cleanup completed for bridge', {
-                    total_cleaned: totalCleaned,
-                    bridge
-                });
-
-                return { 
-                    success: true, 
-                    message: `Bridge ${bridge} deleted successfully (system + ${totalCleaned} database entries cleaned)`,
-                    cleanup_summary: cleanupResults
-                };
-
-            } catch (cleanupError) {
-                log.task.warn('Bridge deleted but database cleanup failed', {
-                    bridge,
-                    error: cleanupError.message
-                });
-                return { 
-                    success: true, 
-                    message: `Bridge ${bridge} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
-                    cleanup_error: cleanupError.message
-                };
-            }
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            log.task.error('Bridge deletion command failed', {
-                bridge,
-                error: result.error
-            });
-            return { 
-                success: false, 
-                error: `Failed to delete bridge ${bridge}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { bridge, force } = metadata;
 
-    } catch (error) {
-        log.task.error('Bridge deletion task exception', {
-            error: error.message,
-            stack: error.stack
+    log.task.debug('Bridge deletion task parameters', {
+      bridge,
+      force,
+    });
+
+    // If force deletion, first remove any attached links
+    if (force) {
+      log.task.debug('Force deletion enabled, checking for attached links');
+      const linksResult = await executeCommand(`pfexec dladm show-bridge ${bridge} -l -p -o link`);
+      if (linksResult.success && linksResult.output.trim()) {
+        const attachedLinks = linksResult.output.trim().split('\n');
+        log.task.debug('Found attached links to remove', {
+          count: attachedLinks.length,
+          links: attachedLinks.join(', '),
         });
-        return { success: false, error: `Bridge deletion task failed: ${error.message}` };
+        for (const link of attachedLinks) {
+          log.task.debug('Removing link from bridge', { link, bridge });
+          await executeCommand(`pfexec dladm remove-bridge -l ${link} ${bridge}`);
+        }
+      } else {
+        log.task.debug('No attached links found on bridge');
+      }
     }
+
+    log.task.debug('Executing bridge deletion command');
+    const result = await executeCommand(`pfexec dladm delete-bridge ${bridge}`);
+
+    if (result.success) {
+      log.task.debug('Bridge deleted from system, cleaning up database');
+
+      // Clean up all monitoring database entries for this bridge
+      const hostname = os.hostname();
+      const cleanupResults = {
+        network_interfaces: 0,
+        network_stats: 0,
+        network_usage: 0,
+      };
+
+      try {
+        // Clean up NetworkInterfaces table (monitoring data)
+        const interfacesDeleted = await NetworkInterfaces.destroy({
+          where: {
+            host: hostname,
+            link: bridge,
+            class: 'bridge',
+          },
+        });
+        cleanupResults.network_interfaces = interfacesDeleted;
+        log.task.debug('Cleaned up network interface entries', {
+          deleted_count: interfacesDeleted,
+          bridge,
+        });
+
+        // Clean up NetworkUsage table (usage accounting)
+        const usageDeleted = await NetworkUsage.destroy({
+          where: {
+            host: hostname,
+            link: bridge,
+          },
+        });
+        cleanupResults.network_usage = usageDeleted;
+        log.task.debug('Cleaned up network usage entries', {
+          deleted_count: usageDeleted,
+          bridge,
+        });
+
+        const totalCleaned =
+          cleanupResults.network_interfaces +
+          cleanupResults.network_stats +
+          cleanupResults.network_usage;
+        log.task.info('Database cleanup completed for bridge', {
+          total_cleaned: totalCleaned,
+          bridge,
+        });
+
+        return {
+          success: true,
+          message: `Bridge ${bridge} deleted successfully (system + ${totalCleaned} database entries cleaned)`,
+          cleanup_summary: cleanupResults,
+        };
+      } catch (cleanupError) {
+        log.task.warn('Bridge deleted but database cleanup failed', {
+          bridge,
+          error: cleanupError.message,
+        });
+        return {
+          success: true,
+          message: `Bridge ${bridge} deleted successfully (warning: database cleanup failed - ${cleanupError.message})`,
+          cleanup_error: cleanupError.message,
+        };
+      }
+    } else {
+      log.task.error('Bridge deletion command failed', {
+        bridge,
+        error: result.error,
+      });
+      return {
+        success: false,
+        error: `Failed to delete bridge ${bridge}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Bridge deletion task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Bridge deletion task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2373,42 +2451,44 @@ const executeDeleteBridgeTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeModifyBridgeLinksTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { bridge, operation, links } = metadata;
-
-        let command = `pfexec dladm ${operation}-bridge`;
-        
-        // Add links
-        for (const link of links) {
-            command += ` -l ${link}`;
-        }
-
-        // Add bridge name
-        command += ` ${bridge}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Successfully ${operation}ed links ${links.join(', ')} ${operation === 'add' ? 'to' : 'from'} bridge ${bridge}` 
-            };
+const executeModifyBridgeLinksTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to ${operation} links on bridge ${bridge}: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { bridge, operation, links } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Bridge links modification task failed: ${error.message}` };
+    let command = `pfexec dladm ${operation}-bridge`;
+
+    // Add links
+    for (const link of links) {
+      command += ` -l ${link}`;
     }
+
+    // Add bridge name
+    command += ` ${bridge}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Successfully ${operation}ed links ${links.join(', ')} ${operation === 'add' ? 'to' : 'from'} bridge ${bridge}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to ${operation} links on bridge ${bridge}: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Bridge links modification task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2416,49 +2496,51 @@ const executeModifyBridgeLinksTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executePkgInstallTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { packages, accept_licenses, dry_run, be_name } = metadata;
-
-        let command = `pfexec pkg install`;
-        
-        if (dry_run) {
-            command += ` -n`;
-        }
-        
-        if (accept_licenses) {
-            command += ` --accept`;
-        }
-        
-        if (be_name) {
-            command += ` --be-name ${be_name}`;
-        }
-        
-        // Add packages
-        command += ` ${packages.join(' ')}`;
-
-        const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Successfully ${dry_run ? 'planned installation of' : 'installed'} ${packages.length} package(s): ${packages.join(', ')}` 
-            };
+const executePkgInstallTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to install packages: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { packages, accept_licenses, dry_run, be_name } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Package installation task failed: ${error.message}` };
+    let command = `pfexec pkg install`;
+
+    if (dry_run) {
+      command += ` -n`;
     }
+
+    if (accept_licenses) {
+      command += ` --accept`;
+    }
+
+    if (be_name) {
+      command += ` --be-name ${be_name}`;
+    }
+
+    // Add packages
+    command += ` ${packages.join(' ')}`;
+
+    const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Successfully ${dry_run ? 'planned installation of' : 'installed'} ${packages.length} package(s): ${packages.join(', ')}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to install packages: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Package installation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2466,45 +2548,47 @@ const executePkgInstallTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executePkgUninstallTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { packages, dry_run, be_name } = metadata;
-
-        let command = `pfexec pkg uninstall`;
-        
-        if (dry_run) {
-            command += ` -n`;
-        }
-        
-        if (be_name) {
-            command += ` --be-name ${be_name}`;
-        }
-        
-        // Add packages
-        command += ` ${packages.join(' ')}`;
-
-        const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Successfully ${dry_run ? 'planned uninstallation of' : 'uninstalled'} ${packages.length} package(s): ${packages.join(', ')}` 
-            };
+const executePkgUninstallTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to uninstall packages: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { packages, dry_run, be_name } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Package uninstallation task failed: ${error.message}` };
+    let command = `pfexec pkg uninstall`;
+
+    if (dry_run) {
+      command += ` -n`;
     }
+
+    if (be_name) {
+      command += ` --be-name ${be_name}`;
+    }
+
+    // Add packages
+    command += ` ${packages.join(' ')}`;
+
+    const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Successfully ${dry_run ? 'planned uninstallation of' : 'uninstalled'} ${packages.length} package(s): ${packages.join(', ')}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to uninstall packages: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Package uninstallation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2512,60 +2596,63 @@ const executePkgUninstallTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executePkgUpdateTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { packages, accept_licenses, be_name, backup_be, reject_packages } = metadata;
-
-        let command = `pfexec pkg update`;
-        
-        if (accept_licenses) {
-            command += ` --accept`;
-        }
-        
-        if (be_name) {
-            command += ` --be-name ${be_name}`;
-        }
-        
-        if (backup_be === false) {
-            command += ` --no-backup-be`;
-        }
-        
-        // Add reject packages
-        if (reject_packages && reject_packages.length > 0) {
-            for (const pkg of reject_packages) {
-                command += ` --reject ${pkg}`;
-            }
-        }
-        
-        // Add specific packages if provided, otherwise update all
-        if (packages && packages.length > 0) {
-            command += ` ${packages.join(' ')}`;
-        }
-
-        const result = await executeCommand(command, 30 * 60 * 1000); // 30 minute timeout
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: packages && packages.length > 0 
-                    ? `Successfully updated ${packages.length} specific package(s): ${packages.join(', ')}`
-                    : 'Successfully updated all available packages'
-            };
+const executePkgUpdateTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to update packages: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { packages, accept_licenses, be_name, backup_be, reject_packages } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Package update task failed: ${error.message}` };
+    let command = `pfexec pkg update`;
+
+    if (accept_licenses) {
+      command += ` --accept`;
     }
+
+    if (be_name) {
+      command += ` --be-name ${be_name}`;
+    }
+
+    if (backup_be === false) {
+      command += ` --no-backup-be`;
+    }
+
+    // Add reject packages
+    if (reject_packages && reject_packages.length > 0) {
+      for (const pkg of reject_packages) {
+        command += ` --reject ${pkg}`;
+      }
+    }
+
+    // Add specific packages if provided, otherwise update all
+    if (packages && packages.length > 0) {
+      command += ` ${packages.join(' ')}`;
+    }
+
+    const result = await executeCommand(command, 30 * 60 * 1000); // 30 minute timeout
+
+    if (result.success) {
+      return {
+        success: true,
+        message:
+          packages && packages.length > 0
+            ? `Successfully updated ${packages.length} specific package(s): ${packages.join(', ')}`
+            : 'Successfully updated all available packages',
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to update packages: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Package update task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2573,45 +2660,48 @@ const executePkgUpdateTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executePkgRefreshTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { full, publishers } = metadata;
-
-        let command = `pfexec pkg refresh`;
-        
-        if (full) {
-            command += ` --full`;
-        }
-        
-        // Add specific publishers if provided
-        if (publishers && publishers.length > 0) {
-            command += ` ${publishers.join(' ')}`;
-        }
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: publishers && publishers.length > 0 
-                    ? `Successfully refreshed metadata for ${publishers.length} publisher(s): ${publishers.join(', ')}`
-                    : 'Successfully refreshed metadata for all publishers'
-            };
+const executePkgRefreshTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to refresh metadata: ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { full, publishers } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Package refresh task failed: ${error.message}` };
+    let command = `pfexec pkg refresh`;
+
+    if (full) {
+      command += ` --full`;
     }
+
+    // Add specific publishers if provided
+    if (publishers && publishers.length > 0) {
+      command += ` ${publishers.join(' ')}`;
+    }
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message:
+          publishers && publishers.length > 0
+            ? `Successfully refreshed metadata for ${publishers.length} publisher(s): ${publishers.join(', ')}`
+            : 'Successfully refreshed metadata for all publishers',
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to refresh metadata: ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Package refresh task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2619,62 +2709,64 @@ const executePkgRefreshTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeBeadmCreateTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, description, source_be, snapshot, activate, zpool, properties } = metadata;
-
-        let command = `pfexec beadm create`;
-        
-        if (activate) {
-            command += ` -a`;
-        }
-        
-        if (description) {
-            command += ` -d "${description}"`;
-        }
-        
-        if (source_be) {
-            command += ` -e ${source_be}`;
-        } else if (snapshot) {
-            command += ` -e ${snapshot}`;
-        }
-        
-        if (zpool) {
-            command += ` -p ${zpool}`;
-        }
-        
-        // Add properties if specified
-        if (properties && Object.keys(properties).length > 0) {
-            for (const [key, value] of Object.entries(properties)) {
-                command += ` -o ${key}=${value}`;
-            }
-        }
-        
-        // Add BE name
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Boot environment '${name}' created successfully${activate ? ' and activated' : ''}` 
-            };
+const executeBeadmCreateTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to create boot environment '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name, description, source_be, snapshot, activate, zpool, properties } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Boot environment creation task failed: ${error.message}` };
+    let command = `pfexec beadm create`;
+
+    if (activate) {
+      command += ` -a`;
     }
+
+    if (description) {
+      command += ` -d "${description}"`;
+    }
+
+    if (source_be) {
+      command += ` -e ${source_be}`;
+    } else if (snapshot) {
+      command += ` -e ${snapshot}`;
+    }
+
+    if (zpool) {
+      command += ` -p ${zpool}`;
+    }
+
+    // Add properties if specified
+    if (properties && Object.keys(properties).length > 0) {
+      for (const [key, value] of Object.entries(properties)) {
+        command += ` -o ${key}=${value}`;
+      }
+    }
+
+    // Add BE name
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Boot environment '${name}' created successfully${activate ? ' and activated' : ''}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to create boot environment '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Boot environment creation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2682,45 +2774,47 @@ const executeBeadmCreateTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeBeadmDeleteTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, force, snapshots } = metadata;
-
-        let command = `pfexec beadm destroy`;
-        
-        if (force) {
-            command += ` -F`;
-        }
-        
-        if (snapshots) {
-            command += ` -s`;
-        }
-        
-        // Add BE name
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Boot environment '${name}' deleted successfully` 
-            };
+const executeBeadmDeleteTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to delete boot environment '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name, force, snapshots } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Boot environment deletion task failed: ${error.message}` };
+    let command = `pfexec beadm destroy`;
+
+    if (force) {
+      command += ` -F`;
     }
+
+    if (snapshots) {
+      command += ` -s`;
+    }
+
+    // Add BE name
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Boot environment '${name}' deleted successfully`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to delete boot environment '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Boot environment deletion task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2728,41 +2822,43 @@ const executeBeadmDeleteTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeBeadmActivateTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, temporary } = metadata;
-
-        let command = `pfexec beadm activate`;
-        
-        if (temporary) {
-            command += ` -t`;
-        }
-        
-        // Add BE name
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Boot environment '${name}' activated successfully${temporary ? ' (temporary)' : ''}` 
-            };
+const executeBeadmActivateTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to activate boot environment '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name, temporary } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Boot environment activation task failed: ${error.message}` };
+    let command = `pfexec beadm activate`;
+
+    if (temporary) {
+      command += ` -t`;
     }
+
+    // Add BE name
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Boot environment '${name}' activated successfully${temporary ? ' (temporary)' : ''}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to activate boot environment '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Boot environment activation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2770,41 +2866,43 @@ const executeBeadmActivateTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeBeadmMountTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, mountpoint, shared_mode } = metadata;
-
-        let command = `pfexec beadm mount`;
-        
-        if (shared_mode) {
-            command += ` -s ${shared_mode}`;
-        }
-        
-        // Add BE name and mountpoint
-        command += ` ${name} ${mountpoint}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Boot environment '${name}' mounted successfully at '${mountpoint}'` 
-            };
+const executeBeadmMountTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to mount boot environment '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name, mountpoint, shared_mode } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Boot environment mount task failed: ${error.message}` };
+    let command = `pfexec beadm mount`;
+
+    if (shared_mode) {
+      command += ` -s ${shared_mode}`;
     }
+
+    // Add BE name and mountpoint
+    command += ` ${name} ${mountpoint}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Boot environment '${name}' mounted successfully at '${mountpoint}'`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to mount boot environment '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Boot environment mount task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2812,41 +2910,43 @@ const executeBeadmMountTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeBeadmUnmountTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, force } = metadata;
-
-        let command = `pfexec beadm unmount`;
-        
-        if (force) {
-            command += ` -f`;
-        }
-        
-        // Add BE name
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Boot environment '${name}' unmounted successfully` 
-            };
+const executeBeadmUnmountTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to unmount boot environment '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name, force } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Boot environment unmount task failed: ${error.message}` };
+    let command = `pfexec beadm unmount`;
+
+    if (force) {
+      command += ` -f`;
     }
+
+    // Add BE name
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Boot environment '${name}' unmounted successfully`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to unmount boot environment '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Boot environment unmount task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2854,92 +2954,107 @@ const executeBeadmUnmountTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeRepositoryAddTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, origin, mirrors, ssl_cert, ssl_key, enabled, sticky, search_first, search_before, search_after, properties, proxy } = metadata;
-
-        let command = `pfexec pkg set-publisher`;
-        
-        // Add SSL credentials
-        if (ssl_cert) {
-            command += ` -c ${ssl_cert}`;
-        }
-        if (ssl_key) {
-            command += ` -k ${ssl_key}`;
-        }
-        
-        // Add origin
-        command += ` -g ${origin}`;
-        
-        // Add mirrors
-        if (mirrors && mirrors.length > 0) {
-            for (const mirror of mirrors) {
-                command += ` -m ${mirror}`;
-            }
-        }
-        
-        // Add search order options
-        if (search_first) {
-            command += ` --search-first`;
-        } else if (search_before) {
-            command += ` --search-before ${search_before}`;
-        } else if (search_after) {
-            command += ` --search-after ${search_after}`;
-        }
-        
-        // Add sticky/non-sticky
-        if (sticky === false) {
-            command += ` --non-sticky`;
-        }
-        
-        // Add properties
-        if (properties && Object.keys(properties).length > 0) {
-            for (const [key, value] of Object.entries(properties)) {
-                command += ` --set-property ${key}=${value}`;
-            }
-        }
-        
-        // Add proxy
-        if (proxy) {
-            command += ` --proxy ${proxy}`;
-        }
-        
-        // Add publisher name
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            // If enabled is false, disable the publisher
-            if (enabled === false) {
-                const disableResult = await executeCommand(`pfexec pkg set-publisher --disable ${name}`);
-                if (!disableResult.success) {
-                    log.task.warn('Publisher added but failed to disable', {
-                        name,
-                        error: disableResult.error
-                    });
-                }
-            }
-            
-            return { 
-                success: true, 
-                message: `Repository '${name}' added successfully${enabled === false ? ' (disabled)' : ''}` 
-            };
+const executeRepositoryAddTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to add repository '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const {
+      name,
+      origin,
+      mirrors,
+      ssl_cert,
+      ssl_key,
+      enabled,
+      sticky,
+      search_first,
+      search_before,
+      search_after,
+      properties,
+      proxy,
+    } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Repository addition task failed: ${error.message}` };
+    let command = `pfexec pkg set-publisher`;
+
+    // Add SSL credentials
+    if (ssl_cert) {
+      command += ` -c ${ssl_cert}`;
     }
+    if (ssl_key) {
+      command += ` -k ${ssl_key}`;
+    }
+
+    // Add origin
+    command += ` -g ${origin}`;
+
+    // Add mirrors
+    if (mirrors && mirrors.length > 0) {
+      for (const mirror of mirrors) {
+        command += ` -m ${mirror}`;
+      }
+    }
+
+    // Add search order options
+    if (search_first) {
+      command += ` --search-first`;
+    } else if (search_before) {
+      command += ` --search-before ${search_before}`;
+    } else if (search_after) {
+      command += ` --search-after ${search_after}`;
+    }
+
+    // Add sticky/non-sticky
+    if (sticky === false) {
+      command += ` --non-sticky`;
+    }
+
+    // Add properties
+    if (properties && Object.keys(properties).length > 0) {
+      for (const [key, value] of Object.entries(properties)) {
+        command += ` --set-property ${key}=${value}`;
+      }
+    }
+
+    // Add proxy
+    if (proxy) {
+      command += ` --proxy ${proxy}`;
+    }
+
+    // Add publisher name
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      // If enabled is false, disable the publisher
+      if (enabled === false) {
+        const disableResult = await executeCommand(`pfexec pkg set-publisher --disable ${name}`);
+        if (!disableResult.success) {
+          log.task.warn('Publisher added but failed to disable', {
+            name,
+            error: disableResult.error,
+          });
+        }
+      }
+
+      return {
+        success: true,
+        message: `Repository '${name}' added successfully${enabled === false ? ' (disabled)' : ''}`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to add repository '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Repository addition task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2947,34 +3062,36 @@ const executeRepositoryAddTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeRepositoryRemoveTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name } = metadata;
-
-        const command = `pfexec pkg unset-publisher ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Repository '${name}' removed successfully` 
-            };
+const executeRepositoryRemoveTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to remove repository '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Repository removal task failed: ${error.message}` };
+    const command = `pfexec pkg unset-publisher ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Repository '${name}' removed successfully`,
+      };
     }
+    return {
+      success: false,
+      error: `Failed to remove repository '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Repository removal task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -2982,121 +3099,141 @@ const executeRepositoryRemoveTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeRepositoryModifyTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name, origins_to_add, origins_to_remove, mirrors_to_add, mirrors_to_remove, ssl_cert, ssl_key, enabled, sticky, search_first, search_before, search_after, properties_to_set, properties_to_unset, proxy, reset_uuid, refresh } = metadata;
-
-        let command = `pfexec pkg set-publisher`;
-        
-        // Add SSL credentials
-        if (ssl_cert) {
-            command += ` -c ${ssl_cert}`;
-        }
-        if (ssl_key) {
-            command += ` -k ${ssl_key}`;
-        }
-        
-        // Add origins
-        if (origins_to_add && origins_to_add.length > 0) {
-            for (const origin of origins_to_add) {
-                command += ` -g ${origin}`;
-            }
-        }
-        if (origins_to_remove && origins_to_remove.length > 0) {
-            for (const origin of origins_to_remove) {
-                command += ` -G ${origin}`;
-            }
-        }
-        
-        // Add mirrors
-        if (mirrors_to_add && mirrors_to_add.length > 0) {
-            for (const mirror of mirrors_to_add) {
-                command += ` -m ${mirror}`;
-            }
-        }
-        if (mirrors_to_remove && mirrors_to_remove.length > 0) {
-            for (const mirror of mirrors_to_remove) {
-                command += ` -M ${mirror}`;
-            }
-        }
-        
-        // Add enable/disable
-        if (enabled === true) {
-            command += ` --enable`;
-        } else if (enabled === false) {
-            command += ` --disable`;
-        }
-        
-        // Add sticky/non-sticky
-        if (sticky === true) {
-            command += ` --sticky`;
-        } else if (sticky === false) {
-            command += ` --non-sticky`;
-        }
-        
-        // Add search order options
-        if (search_first) {
-            command += ` --search-first`;
-        } else if (search_before) {
-            command += ` --search-before ${search_before}`;
-        } else if (search_after) {
-            command += ` --search-after ${search_after}`;
-        }
-        
-        // Add properties to set
-        if (properties_to_set && Object.keys(properties_to_set).length > 0) {
-            for (const [key, value] of Object.entries(properties_to_set)) {
-                command += ` --set-property ${key}=${value}`;
-            }
-        }
-        
-        // Add properties to unset
-        if (properties_to_unset && properties_to_unset.length > 0) {
-            for (const prop of properties_to_unset) {
-                command += ` --unset-property ${prop}`;
-            }
-        }
-        
-        // Add proxy
-        if (proxy) {
-            command += ` --proxy ${proxy}`;
-        }
-        
-        // Add reset UUID
-        if (reset_uuid) {
-            command += ` --reset-uuid`;
-        }
-        
-        // Add refresh
-        if (refresh) {
-            command += ` --refresh`;
-        }
-        
-        // Add publisher name
-        command += ` ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Repository '${name}' modified successfully` 
-            };
+const executeRepositoryModifyTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to modify repository '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const {
+      name,
+      origins_to_add,
+      origins_to_remove,
+      mirrors_to_add,
+      mirrors_to_remove,
+      ssl_cert,
+      ssl_key,
+      enabled,
+      sticky,
+      search_first,
+      search_before,
+      search_after,
+      properties_to_set,
+      properties_to_unset,
+      proxy,
+      reset_uuid,
+      refresh,
+    } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Repository modification task failed: ${error.message}` };
+    let command = `pfexec pkg set-publisher`;
+
+    // Add SSL credentials
+    if (ssl_cert) {
+      command += ` -c ${ssl_cert}`;
     }
+    if (ssl_key) {
+      command += ` -k ${ssl_key}`;
+    }
+
+    // Add origins
+    if (origins_to_add && origins_to_add.length > 0) {
+      for (const origin of origins_to_add) {
+        command += ` -g ${origin}`;
+      }
+    }
+    if (origins_to_remove && origins_to_remove.length > 0) {
+      for (const origin of origins_to_remove) {
+        command += ` -G ${origin}`;
+      }
+    }
+
+    // Add mirrors
+    if (mirrors_to_add && mirrors_to_add.length > 0) {
+      for (const mirror of mirrors_to_add) {
+        command += ` -m ${mirror}`;
+      }
+    }
+    if (mirrors_to_remove && mirrors_to_remove.length > 0) {
+      for (const mirror of mirrors_to_remove) {
+        command += ` -M ${mirror}`;
+      }
+    }
+
+    // Add enable/disable
+    if (enabled === true) {
+      command += ` --enable`;
+    } else if (enabled === false) {
+      command += ` --disable`;
+    }
+
+    // Add sticky/non-sticky
+    if (sticky === true) {
+      command += ` --sticky`;
+    } else if (sticky === false) {
+      command += ` --non-sticky`;
+    }
+
+    // Add search order options
+    if (search_first) {
+      command += ` --search-first`;
+    } else if (search_before) {
+      command += ` --search-before ${search_before}`;
+    } else if (search_after) {
+      command += ` --search-after ${search_after}`;
+    }
+
+    // Add properties to set
+    if (properties_to_set && Object.keys(properties_to_set).length > 0) {
+      for (const [key, value] of Object.entries(properties_to_set)) {
+        command += ` --set-property ${key}=${value}`;
+      }
+    }
+
+    // Add properties to unset
+    if (properties_to_unset && properties_to_unset.length > 0) {
+      for (const prop of properties_to_unset) {
+        command += ` --unset-property ${prop}`;
+      }
+    }
+
+    // Add proxy
+    if (proxy) {
+      command += ` --proxy ${proxy}`;
+    }
+
+    // Add reset UUID
+    if (reset_uuid) {
+      command += ` --reset-uuid`;
+    }
+
+    // Add refresh
+    if (refresh) {
+      command += ` --refresh`;
+    }
+
+    // Add publisher name
+    command += ` ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Repository '${name}' modified successfully`,
+      };
+    }
+    return {
+      success: false,
+      error: `Failed to modify repository '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Repository modification task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3104,34 +3241,36 @@ const executeRepositoryModifyTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeRepositoryEnableTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name } = metadata;
-
-        const command = `pfexec pkg set-publisher --enable ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Repository '${name}' enabled successfully` 
-            };
+const executeRepositoryEnableTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to enable repository '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Repository enable task failed: ${error.message}` };
+    const command = `pfexec pkg set-publisher --enable ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Repository '${name}' enabled successfully`,
+      };
     }
+    return {
+      success: false,
+      error: `Failed to enable repository '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Repository enable task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3139,34 +3278,36 @@ const executeRepositoryEnableTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeRepositoryDisableTask = async (metadataJson) => {
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });        const { name } = metadata;
-
-        const command = `pfexec pkg set-publisher --disable ${name}`;
-
-        const result = await executeCommand(command);
-        
-        if (result.success) {
-            return { 
-                success: true, 
-                message: `Repository '${name}' disabled successfully` 
-            };
+const executeRepositoryDisableTask = async metadataJson => {
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { 
-                success: false, 
-                error: `Failed to disable repository '${name}': ${result.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { name } = metadata;
 
-    } catch (error) {
-        return { success: false, error: `Repository disable task failed: ${error.message}` };
+    const command = `pfexec pkg set-publisher --disable ${name}`;
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Repository '${name}' disabled successfully`,
+      };
     }
+    return {
+      success: false,
+      error: `Failed to disable repository '${name}': ${result.error}`,
+    };
+  } catch (error) {
+    return { success: false, error: `Repository disable task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3174,89 +3315,95 @@ const executeRepositoryDisableTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
-    log.task.debug('Time sync config update task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { service, config_content, backup_existing, restart_service } = metadata;
+const executeUpdateTimeSyncConfigTask = async metadataJson => {
+  log.task.debug('Time sync config update task starting');
 
-        log.task.debug('Time sync config update parameters', {
-            service,
-            backup_existing,
-            restart_service,
-            config_content_length: config_content ? config_content.length : 0
-        });
-
-        // Determine config file path based on service
-        let configFile;
-        if (service === 'ntp') {
-            configFile = '/etc/inet/ntp.conf';
-        } else if (service === 'chrony') {
-            configFile = '/etc/inet/chrony.conf';
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { success: false, error: `Unknown time sync service: ${service}` };
+          resolve(result);
         }
+      });
+    });
+    const { service, config_content, backup_existing, restart_service } = metadata;
 
-        log.task.debug('Target config file', { configFile });
+    log.task.debug('Time sync config update parameters', {
+      service,
+      backup_existing,
+      restart_service,
+      config_content_length: config_content ? config_content.length : 0,
+    });
 
-        // Create backup if existing config exists and backup is requested
-        if (backup_existing) {
-            const backupResult = await executeCommand(`test -f ${configFile} && pfexec cp ${configFile} ${configFile}.backup.$(date +%Y%m%d_%H%M%S) || echo "No existing config to backup"`);
-            if (backupResult.success) {
-                log.task.debug('Config backup created (if file existed)');
-            } else {
-                log.task.warn('Failed to create backup', {
-                    error: backupResult.error
-                });
-            }
-        }
-
-        // Write new config content
-        const writeResult = await executeCommand(`echo '${config_content.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`);
-        
-        if (!writeResult.success) {
-            return { 
-                success: false, 
-                error: `Failed to write config file ${configFile}: ${writeResult.error}` 
-            };
-        }
-
-        log.task.info('Config file written successfully', { configFile });
-
-        // Restart service if requested
-        if (restart_service) {
-            log.task.debug('Restarting service', { service });
-            const restartResult = await executeCommand(`pfexec svcadm restart network/${service}`);
-            
-            if (!restartResult.success) {
-                return { 
-                    success: true, // Config was written successfully
-                    message: `Time sync configuration updated successfully, but service restart failed: ${restartResult.error}`,
-                    warning: `Service ${service} restart failed - may need manual restart`
-                };
-            }
-            log.task.info('Service restarted successfully', { service });
-        }
-
-        return { 
-            success: true, 
-            message: `Time sync configuration updated successfully for ${service}${restart_service ? ' (service restarted)' : ''}`,
-            config_file: configFile
-        };
-
-    } catch (error) {
-        log.task.error('Time sync config update task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `Time sync config update task failed: ${error.message}` };
+    // Determine config file path based on service
+    let configFile;
+    if (service === 'ntp') {
+      configFile = '/etc/inet/ntp.conf';
+    } else if (service === 'chrony') {
+      configFile = '/etc/inet/chrony.conf';
+    } else {
+      return { success: false, error: `Unknown time sync service: ${service}` };
     }
+
+    log.task.debug('Target config file', { configFile });
+
+    // Create backup if existing config exists and backup is requested
+    if (backup_existing) {
+      const backupResult = await executeCommand(
+        `test -f ${configFile} && pfexec cp ${configFile} ${configFile}.backup.$(date +%Y%m%d_%H%M%S) || echo "No existing config to backup"`
+      );
+      if (backupResult.success) {
+        log.task.debug('Config backup created (if file existed)');
+      } else {
+        log.task.warn('Failed to create backup', {
+          error: backupResult.error,
+        });
+      }
+    }
+
+    // Write new config content
+    const writeResult = await executeCommand(
+      `echo '${config_content.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`
+    );
+
+    if (!writeResult.success) {
+      return {
+        success: false,
+        error: `Failed to write config file ${configFile}: ${writeResult.error}`,
+      };
+    }
+
+    log.task.info('Config file written successfully', { configFile });
+
+    // Restart service if requested
+    if (restart_service) {
+      log.task.debug('Restarting service', { service });
+      const restartResult = await executeCommand(`pfexec svcadm restart network/${service}`);
+
+      if (!restartResult.success) {
+        return {
+          success: true, // Config was written successfully
+          message: `Time sync configuration updated successfully, but service restart failed: ${restartResult.error}`,
+          warning: `Service ${service} restart failed - may need manual restart`,
+        };
+      }
+      log.task.info('Service restarted successfully', { service });
+    }
+
+    return {
+      success: true,
+      message: `Time sync configuration updated successfully for ${service}${restart_service ? ' (service restarted)' : ''}`,
+      config_file: configFile,
+    };
+  } catch (error) {
+    log.task.error('Time sync config update task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Time sync config update task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3264,84 +3411,85 @@ const executeUpdateTimeSyncConfigTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeForceTimeSyncTask = async (metadataJson) => {
-    log.task.debug('Force time sync task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { service, server, timeout } = metadata;
+const executeForceTimeSyncTask = async metadataJson => {
+  log.task.debug('Force time sync task starting');
 
-        log.task.debug('Force time sync parameters', {
-            service,
-            server: server || 'auto-detect',
-            timeout
-        });
-
-        let syncResult;
-
-        if (service === 'ntp') {
-            // For NTP, use ntpdig for immediate sync
-            let command = `pfexec ntpdig`;
-            if (timeout) command += ` -t ${timeout}`;
-            if (server) {
-                command += ` ${server}`;
-            } else {
-                command += ` pool.ntp.org`; // Default fallback server
-            }
-
-            log.task.debug('Executing NTP sync command', { command });
-            syncResult = await executeCommand(command, (timeout || 30) * 1000);
-            
-        } else if (service === 'chrony') {
-            // For Chrony, use chronyc to force sync
-            log.task.debug('Executing Chrony makestep command');
-            syncResult = await executeCommand(`pfexec chronyc makestep`, (timeout || 30) * 1000);
-            
-            if (!syncResult.success) {
-                // Fallback to burst command
-                log.task.debug('Makestep failed, trying burst command');
-                syncResult = await executeCommand(`pfexec chronyc burst 5/10`, (timeout || 30) * 1000);
-            }
-            
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            return { success: false, error: `Cannot force sync - unknown service: ${service}` };
+          resolve(result);
         }
+      });
+    });
+    const { service, server, timeout } = metadata;
 
-        if (syncResult.success) {
-            log.task.info('Time sync command completed successfully');
-            
-            // Get current system time for confirmation
-            const timeResult = await executeCommand('date');
-            const currentTime = timeResult.success ? timeResult.output : 'unknown';
-            
-            return { 
-                success: true, 
-                message: `Time synchronization completed successfully using ${service}${server ? ` (server: ${server})` : ''}`,
-                current_time: currentTime,
-                sync_output: syncResult.output
-            };
-        } else {
-            log.task.error('Time sync command failed', {
-                error: syncResult.error
-            });
-            return { 
-                success: false, 
-                error: `Time synchronization failed: ${syncResult.error}` 
-            };
-        }
+    log.task.debug('Force time sync parameters', {
+      service,
+      server: server || 'auto-detect',
+      timeout,
+    });
 
-    } catch (error) {
-        log.task.error('Force time sync task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `Force time sync task failed: ${error.message}` };
+    let syncResult;
+
+    if (service === 'ntp') {
+      // For NTP, use ntpdig for immediate sync
+      let command = `pfexec ntpdig`;
+      if (timeout) {
+        command += ` -t ${timeout}`;
+      }
+      if (server) {
+        command += ` ${server}`;
+      } else {
+        command += ` pool.ntp.org`; // Default fallback server
+      }
+
+      log.task.debug('Executing NTP sync command', { command });
+      syncResult = await executeCommand(command, (timeout || 30) * 1000);
+    } else if (service === 'chrony') {
+      // For Chrony, use chronyc to force sync
+      log.task.debug('Executing Chrony makestep command');
+      syncResult = await executeCommand(`pfexec chronyc makestep`, (timeout || 30) * 1000);
+
+      if (!syncResult.success) {
+        // Fallback to burst command
+        log.task.debug('Makestep failed, trying burst command');
+        syncResult = await executeCommand(`pfexec chronyc burst 5/10`, (timeout || 30) * 1000);
+      }
+    } else {
+      return { success: false, error: `Cannot force sync - unknown service: ${service}` };
     }
+
+    if (syncResult.success) {
+      log.task.info('Time sync command completed successfully');
+
+      // Get current system time for confirmation
+      const timeResult = await executeCommand('date');
+      const currentTime = timeResult.success ? timeResult.output : 'unknown';
+
+      return {
+        success: true,
+        message: `Time synchronization completed successfully using ${service}${server ? ` (server: ${server})` : ''}`,
+        current_time: currentTime,
+        sync_output: syncResult.output,
+      };
+    }
+    log.task.error('Time sync command failed', {
+      error: syncResult.error,
+    });
+    return {
+      success: false,
+      error: `Time synchronization failed: ${syncResult.error}`,
+    };
+  } catch (error) {
+    log.task.error('Force time sync task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Force time sync task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3349,107 +3497,113 @@ const executeForceTimeSyncTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeSetTimezoneTask = async (metadataJson) => {
-    log.task.debug('Set timezone task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { timezone, backup_existing } = metadata;
+const executeSetTimezoneTask = async metadataJson => {
+  log.task.debug('Set timezone task starting');
 
-        log.task.debug('Set timezone parameters', {
-            timezone,
-            backup_existing
-        });
-
-        const configFile = '/etc/default/init';
-
-        // Validate timezone exists
-        const zonePath = `/usr/share/lib/zoneinfo/${timezone}`;
-        const validateResult = await executeCommand(`test -f ${zonePath}`);
-        if (!validateResult.success) {
-            return { 
-                success: false, 
-                error: `Invalid timezone: ${timezone} - timezone file not found at ${zonePath}` 
-            };
-        }
-
-        log.task.debug('Timezone validated successfully');
-
-        // Create backup if requested
-        if (backup_existing) {
-            const backupResult = await executeCommand(`pfexec cp ${configFile} ${configFile}.backup.$(date +%Y%m%d_%H%M%S)`);
-            if (backupResult.success) {
-                log.task.debug('Config backup created');
-            } else {
-                log.task.warn('Failed to create backup', {
-                    error: backupResult.error
-                });
-            }
-        }
-
-        // Read current config
-        const readResult = await executeCommand(`cat ${configFile}`);
-        if (!readResult.success) {
-            return { 
-                success: false, 
-                error: `Failed to read config file ${configFile}: ${readResult.error}` 
-            };
-        }
-
-        // Update timezone in config
-        let configContent = readResult.output;
-        const tzPattern = /^TZ=.*$/m;
-        
-        if (tzPattern.test(configContent)) {
-            // Replace existing TZ line
-            configContent = configContent.replace(tzPattern, `TZ=${timezone}`);
-            log.task.debug('Updated existing TZ line');
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            // Add TZ line
-            configContent += `\nTZ=${timezone}\n`;
-            log.task.debug('Added new TZ line');
+          resolve(result);
         }
+      });
+    });
+    const { timezone, backup_existing } = metadata;
 
-        // Write updated config
-        const writeResult = await executeCommand(`echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`);
-        
-        if (!writeResult.success) {
-            return { 
-                success: false, 
-                error: `Failed to write config file ${configFile}: ${writeResult.error}` 
-            };
-        }
+    log.task.debug('Set timezone parameters', {
+      timezone,
+      backup_existing,
+    });
 
-        log.task.info('Timezone config written successfully', { configFile });
+    const configFile = '/etc/default/init';
 
-        // Set reboot required flag
-        await setRebootRequired('timezone_change', 'TaskQueue');
-
-        // Verify the change
-        const verifyResult = await executeCommand(`grep "^TZ=" ${configFile}`);
-        const verifiedTz = verifyResult.success ? verifyResult.output : 'unknown';
-
-        return { 
-            success: true, 
-            message: `Timezone set to ${timezone} successfully (reboot required for full effect)`,
-            config_file: configFile,
-            verified_setting: verifiedTz,
-            requires_reboot: true,
-            reboot_reason: 'Timezone change in /etc/default/init requires system reboot to take effect'
-        };
-
-    } catch (error) {
-        log.task.error('Set timezone task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `Set timezone task failed: ${error.message}` };
+    // Validate timezone exists
+    const zonePath = `/usr/share/lib/zoneinfo/${timezone}`;
+    const validateResult = await executeCommand(`test -f ${zonePath}`);
+    if (!validateResult.success) {
+      return {
+        success: false,
+        error: `Invalid timezone: ${timezone} - timezone file not found at ${zonePath}`,
+      };
     }
+
+    log.task.debug('Timezone validated successfully');
+
+    // Create backup if requested
+    if (backup_existing) {
+      const backupResult = await executeCommand(
+        `pfexec cp ${configFile} ${configFile}.backup.$(date +%Y%m%d_%H%M%S)`
+      );
+      if (backupResult.success) {
+        log.task.debug('Config backup created');
+      } else {
+        log.task.warn('Failed to create backup', {
+          error: backupResult.error,
+        });
+      }
+    }
+
+    // Read current config
+    const readResult = await executeCommand(`cat ${configFile}`);
+    if (!readResult.success) {
+      return {
+        success: false,
+        error: `Failed to read config file ${configFile}: ${readResult.error}`,
+      };
+    }
+
+    // Update timezone in config
+    let configContent = readResult.output;
+    const tzPattern = /^TZ=.*$/m;
+
+    if (tzPattern.test(configContent)) {
+      // Replace existing TZ line
+      configContent = configContent.replace(tzPattern, `TZ=${timezone}`);
+      log.task.debug('Updated existing TZ line');
+    } else {
+      // Add TZ line
+      configContent += `\nTZ=${timezone}\n`;
+      log.task.debug('Added new TZ line');
+    }
+
+    // Write updated config
+    const writeResult = await executeCommand(
+      `echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`
+    );
+
+    if (!writeResult.success) {
+      return {
+        success: false,
+        error: `Failed to write config file ${configFile}: ${writeResult.error}`,
+      };
+    }
+
+    log.task.info('Timezone config written successfully', { configFile });
+
+    // Set reboot required flag
+    await setRebootRequired('timezone_change', 'TaskQueue');
+
+    // Verify the change
+    const verifyResult = await executeCommand(`grep "^TZ=" ${configFile}`);
+    const verifiedTz = verifyResult.success ? verifyResult.output : 'unknown';
+
+    return {
+      success: true,
+      message: `Timezone set to ${timezone} successfully (reboot required for full effect)`,
+      config_file: configFile,
+      verified_setting: verifiedTz,
+      requires_reboot: true,
+      reboot_reason: 'Timezone change in /etc/default/init requires system reboot to take effect',
+    };
+  } catch (error) {
+    log.task.error('Set timezone task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Set timezone task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3457,294 +3611,315 @@ const executeSetTimezoneTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeSwitchTimeSyncSystemTask = async (metadataJson) => {
-    log.task.debug('Time sync system switch task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
+const executeSwitchTimeSyncSystemTask = async metadataJson => {
+  log.task.debug('Time sync system switch task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+    const { current_system, target_system, preserve_servers, install_if_needed, systems_info } =
+      metadata;
+
+    log.task.debug('Time sync system switch parameters', {
+      current_system,
+      target_system,
+      preserve_servers,
+      install_if_needed,
+    });
+
+    let migratedServers = ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
+
+    // Step 1: Extract servers from current config if requested
+    if (preserve_servers && current_system !== 'none') {
+      log.task.debug('Attempting to extract servers from current configuration');
+      const currentInfo = systems_info.available[current_system];
+      if (currentInfo && currentInfo.config_file) {
+        const readConfigResult = await executeCommand(
+          `cat ${currentInfo.config_file} 2>/dev/null || echo ""`
+        );
+        if (readConfigResult.success && readConfigResult.output.trim()) {
+          const extractedServers = extractServersFromConfig(
+            readConfigResult.output,
+            current_system
+          );
+          if (extractedServers.length > 0) {
+            migratedServers = extractedServers;
+            log.task.info('Extracted servers from current config', {
+              servers: migratedServers,
             });
-        });
-        const { current_system, target_system, preserve_servers, install_if_needed, systems_info } = metadata;
-
-        log.task.debug('Time sync system switch parameters', {
-            current_system,
-            target_system,
-            preserve_servers,
-            install_if_needed
-        });
-
-        let migratedServers = ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
-
-        // Step 1: Extract servers from current config if requested
-        if (preserve_servers && current_system !== 'none') {
-            log.task.debug('Attempting to extract servers from current configuration');
-            const currentInfo = systems_info.available[current_system];
-            if (currentInfo && currentInfo.config_file) {
-                const readConfigResult = await executeCommand(`cat ${currentInfo.config_file} 2>/dev/null || echo ""`);
-                if (readConfigResult.success && readConfigResult.output.trim()) {
-                    const extractedServers = extractServersFromConfig(readConfigResult.output, current_system);
-                    if (extractedServers.length > 0) {
-                        migratedServers = extractedServers;
-                        log.task.info('Extracted servers from current config', {
-                            servers: migratedServers
-                        });
-                    }
-                } else {
-                    log.task.warn('Could not read current config, using defaults');
-                }
-            }
+          }
+        } else {
+          log.task.warn('Could not read current config, using defaults');
         }
-
-        // Step 2: Disable current service if active
-        if (current_system !== 'none') {
-            log.task.debug('Disabling current service', { service: current_system });
-            const disableResult = await executeCommand(`pfexec svcadm disable network/${current_system}`);
-            if (!disableResult.success) {
-                log.task.warn('Failed to disable service', {
-                    service: current_system,
-                    error: disableResult.error
-                });
-            } else {
-                log.task.info('Current service disabled', { service: current_system });
-            }
-        }
-
-        // Step 3: Handle target system installation and configuration
-        if (target_system === 'none') {
-            log.task.debug('Target is "none" - time sync will be disabled');
-            return { 
-                success: true, 
-                message: `Switched from ${current_system} to none (time sync disabled)`,
-                current_system: 'none',
-                original_system: current_system
-            };
-        }
-
-        const targetInfo = systems_info.available[target_system];
-        if (!targetInfo) {
-            return { success: false, error: `Unknown target system: ${target_system}` };
-        }
-
-        // Step 4: Install target package if needed
-        if (!targetInfo.installed && install_if_needed) {
-            log.task.info('Installing package', {
-                system: target_system,
-                package: targetInfo.package_name
-            });
-            const installResult = await executeCommand(`pfexec pkg install ${targetInfo.package_name}`, 5 * 60 * 1000);
-            if (!installResult.success) {
-                // Rollback: re-enable original service
-                if (current_system !== 'none') {
-                    log.task.warn('Installation failed, rolling back', {
-                        target: target_system,
-                        rollback_to: current_system
-                    });
-                    await executeCommand(`pfexec svcadm enable network/${current_system}`);
-                }
-                return { 
-                    success: false, 
-                    error: `Failed to install ${targetInfo.package_name}: ${installResult.error}`,
-                    rollback_performed: current_system !== 'none'
-                };
-            }
-            log.task.info('Package installed successfully', {
-                package: targetInfo.package_name
-            });
-        }
-
-        // Step 5: Generate configuration for target system
-        log.task.debug('Generating configuration', { system: target_system });
-        let configContent;
-        try {
-            configContent = generateConfigForSystem(target_system, migratedServers);
-            log.task.debug('Configuration generated successfully');
-        } catch (configError) {
-            // Rollback: re-enable original service
-            if (current_system !== 'none') {
-                log.task.warn('Config generation failed, rolling back', {
-                    target: target_system,
-                    rollback_to: current_system,
-                    error: configError.message
-                });
-                await executeCommand(`pfexec svcadm enable network/${current_system}`);
-            }
-            return { 
-                success: false, 
-                error: `Failed to generate configuration: ${configError.message}`,
-                rollback_performed: current_system !== 'none'
-            };
-        }
-
-        // Step 6: Write target configuration
-        const configFile = targetInfo.config_file;
-        log.task.debug('Writing configuration', { configFile });
-        const writeResult = await executeCommand(`echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`);
-        
-        if (!writeResult.success) {
-            // Rollback: re-enable original service
-            if (current_system !== 'none') {
-                log.task.warn('Config write failed, rolling back', {
-                    target: target_system,
-                    rollback_to: current_system,
-                    error: writeResult.error
-                });
-                await executeCommand(`pfexec svcadm enable network/${current_system}`);
-            }
-            return { 
-                success: false, 
-                error: `Failed to write config file ${configFile}: ${writeResult.error}`,
-                rollback_performed: current_system !== 'none'
-            };
-        }
-        log.task.info('Configuration written successfully', { configFile });
-
-        // Step 7: Enable target service
-        log.task.debug('Enabling service', { service: target_system });
-        const enableResult = await executeCommand(`pfexec svcadm enable network/${target_system}`);
-        
-        if (!enableResult.success) {
-            // Rollback: re-enable original service
-            if (current_system !== 'none') {
-                log.task.warn('Service enable failed, rolling back', {
-                    target: target_system,
-                    rollback_to: current_system,
-                    error: enableResult.error
-                });
-                await executeCommand(`pfexec svcadm enable network/${current_system}`);
-            }
-            return { 
-                success: false, 
-                error: `Failed to enable ${target_system} service: ${enableResult.error}`,
-                rollback_performed: current_system !== 'none'
-            };
-        }
-
-        // Step 8: Verify service is running
-        log.task.debug('Verifying service status', { service: target_system });
-        let verifyAttempts = 0;
-        let serviceOnline = false;
-        
-        while (verifyAttempts < 10 && !serviceOnline) {
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-            const statusResult = await executeCommand(`svcs network/${target_system}`);
-            if (statusResult.success && statusResult.output.includes('online')) {
-                serviceOnline = true;
-                log.task.info('Service is online', { service: target_system });
-            } else {
-                verifyAttempts++;
-                log.task.debug('Waiting for service to come online', {
-                    service: target_system,
-                    attempt: verifyAttempts,
-                    max_attempts: 10
-                });
-            }
-        }
-
-        if (!serviceOnline) {
-            log.task.warn('Service may not be fully online yet', {
-                service: target_system
-            });
-        }
-
-        // Step 9: Verify time sync is working (basic check)
-        log.task.debug('Performing basic sync verification');
-        let syncWorking = false;
-        if (target_system === 'ntp') {
-            const ntpqResult = await executeCommand(`ntpq -p`, 10000);
-            syncWorking = ntpqResult.success && ntpqResult.output.includes('remote');
-        } else if (target_system === 'chrony') {
-            const chronycResult = await executeCommand(`chronyc sources`, 10000);
-            syncWorking = chronycResult.success && chronycResult.output.includes('Name/IP address');
-        }
-
-        const finalMessage = `Successfully switched from ${current_system} to ${target_system}`;
-        const result = {
-            success: true,
-            message: finalMessage,
-            current_system: target_system,
-            original_system: current_system,
-            servers_migrated: preserve_servers,
-            migrated_servers: migratedServers,
-            config_file: configFile,
-            service_online: serviceOnline,
-            sync_verification: syncWorking ? 'working' : 'unknown'
-        };
-
-        if (preserve_servers) {
-            result.message += ` (${migratedServers.length} servers migrated)`;
-        }
-        
-        if (!serviceOnline) {
-            result.message += ' (service may need additional time to fully start)';
-        }
-
-        log.task.info('Time sync system switch completed', {
-            from: current_system,
-            to: target_system,
-            servers_migrated: preserve_servers,
-            service_online: serviceOnline,
-            sync_working: syncWorking
-        });
-        return result;
-
-    } catch (error) {
-        log.task.error('Time sync system switch task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `Time sync system switch failed: ${error.message}` };
+      }
     }
+
+    // Step 2: Disable current service if active
+    if (current_system !== 'none') {
+      log.task.debug('Disabling current service', { service: current_system });
+      const disableResult = await executeCommand(`pfexec svcadm disable network/${current_system}`);
+      if (!disableResult.success) {
+        log.task.warn('Failed to disable service', {
+          service: current_system,
+          error: disableResult.error,
+        });
+      } else {
+        log.task.info('Current service disabled', { service: current_system });
+      }
+    }
+
+    // Step 3: Handle target system installation and configuration
+    if (target_system === 'none') {
+      log.task.debug('Target is "none" - time sync will be disabled');
+      return {
+        success: true,
+        message: `Switched from ${current_system} to none (time sync disabled)`,
+        current_system: 'none',
+        original_system: current_system,
+      };
+    }
+
+    const targetInfo = systems_info.available[target_system];
+    if (!targetInfo) {
+      return { success: false, error: `Unknown target system: ${target_system}` };
+    }
+
+    // Step 4: Install target package if needed
+    if (!targetInfo.installed && install_if_needed) {
+      log.task.info('Installing package', {
+        system: target_system,
+        package: targetInfo.package_name,
+      });
+      const installResult = await executeCommand(
+        `pfexec pkg install ${targetInfo.package_name}`,
+        5 * 60 * 1000
+      );
+      if (!installResult.success) {
+        // Rollback: re-enable original service
+        if (current_system !== 'none') {
+          log.task.warn('Installation failed, rolling back', {
+            target: target_system,
+            rollback_to: current_system,
+          });
+          await executeCommand(`pfexec svcadm enable network/${current_system}`);
+        }
+        return {
+          success: false,
+          error: `Failed to install ${targetInfo.package_name}: ${installResult.error}`,
+          rollback_performed: current_system !== 'none',
+        };
+      }
+      log.task.info('Package installed successfully', {
+        package: targetInfo.package_name,
+      });
+    }
+
+    // Step 5: Generate configuration for target system
+    log.task.debug('Generating configuration', { system: target_system });
+    let configContent;
+    try {
+      configContent = generateConfigForSystem(target_system, migratedServers);
+      log.task.debug('Configuration generated successfully');
+    } catch (configError) {
+      // Rollback: re-enable original service
+      if (current_system !== 'none') {
+        log.task.warn('Config generation failed, rolling back', {
+          target: target_system,
+          rollback_to: current_system,
+          error: configError.message,
+        });
+        await executeCommand(`pfexec svcadm enable network/${current_system}`);
+      }
+      return {
+        success: false,
+        error: `Failed to generate configuration: ${configError.message}`,
+        rollback_performed: current_system !== 'none',
+      };
+    }
+
+    // Step 6: Write target configuration
+    const configFile = targetInfo.config_file;
+    log.task.debug('Writing configuration', { configFile });
+    const writeResult = await executeCommand(
+      `echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configFile}`
+    );
+
+    if (!writeResult.success) {
+      // Rollback: re-enable original service
+      if (current_system !== 'none') {
+        log.task.warn('Config write failed, rolling back', {
+          target: target_system,
+          rollback_to: current_system,
+          error: writeResult.error,
+        });
+        await executeCommand(`pfexec svcadm enable network/${current_system}`);
+      }
+      return {
+        success: false,
+        error: `Failed to write config file ${configFile}: ${writeResult.error}`,
+        rollback_performed: current_system !== 'none',
+      };
+    }
+    log.task.info('Configuration written successfully', { configFile });
+
+    // Step 7: Enable target service
+    log.task.debug('Enabling service', { service: target_system });
+    const enableResult = await executeCommand(`pfexec svcadm enable network/${target_system}`);
+
+    if (!enableResult.success) {
+      // Rollback: re-enable original service
+      if (current_system !== 'none') {
+        log.task.warn('Service enable failed, rolling back', {
+          target: target_system,
+          rollback_to: current_system,
+          error: enableResult.error,
+        });
+        await executeCommand(`pfexec svcadm enable network/${current_system}`);
+      }
+      return {
+        success: false,
+        error: `Failed to enable ${target_system} service: ${enableResult.error}`,
+        rollback_performed: current_system !== 'none',
+      };
+    }
+
+    // Step 8: Verify service is running
+    log.task.debug('Verifying service status', { service: target_system });
+    let verifyAttempts = 0;
+    let serviceOnline = false;
+
+    while (verifyAttempts < 10 && !serviceOnline) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+      const statusResult = await executeCommand(`svcs network/${target_system}`);
+      if (statusResult.success && statusResult.output.includes('online')) {
+        serviceOnline = true;
+        log.task.info('Service is online', { service: target_system });
+      } else {
+        verifyAttempts++;
+        log.task.debug('Waiting for service to come online', {
+          service: target_system,
+          attempt: verifyAttempts,
+          max_attempts: 10,
+        });
+      }
+    }
+
+    if (!serviceOnline) {
+      log.task.warn('Service may not be fully online yet', {
+        service: target_system,
+      });
+    }
+
+    // Step 9: Verify time sync is working (basic check)
+    log.task.debug('Performing basic sync verification');
+    let syncWorking = false;
+    if (target_system === 'ntp') {
+      const ntpqResult = await executeCommand(`ntpq -p`, 10000);
+      syncWorking = ntpqResult.success && ntpqResult.output.includes('remote');
+    } else if (target_system === 'chrony') {
+      const chronycResult = await executeCommand(`chronyc sources`, 10000);
+      syncWorking = chronycResult.success && chronycResult.output.includes('Name/IP address');
+    }
+
+    const finalMessage = `Successfully switched from ${current_system} to ${target_system}`;
+    const result = {
+      success: true,
+      message: finalMessage,
+      current_system: target_system,
+      original_system: current_system,
+      servers_migrated: preserve_servers,
+      migrated_servers: migratedServers,
+      config_file: configFile,
+      service_online: serviceOnline,
+      sync_verification: syncWorking ? 'working' : 'unknown',
+    };
+
+    if (preserve_servers) {
+      result.message += ` (${migratedServers.length} servers migrated)`;
+    }
+
+    if (!serviceOnline) {
+      result.message += ' (service may need additional time to fully start)';
+    }
+
+    log.task.info('Time sync system switch completed', {
+      from: current_system,
+      to: target_system,
+      servers_migrated: preserve_servers,
+      service_online: serviceOnline,
+      sync_working: syncWorking,
+    });
+    return result;
+  } catch (error) {
+    log.task.error('Time sync system switch task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Time sync system switch failed: ${error.message}` };
+  }
 };
 
 // Helper function to extract servers from config (for migration)
 const extractServersFromConfig = (configContent, systemType) => {
-    const servers = [];
-    const lines = configContent.split('\n');
+  const servers = [];
+  const lines = configContent.split('\n');
 
-    for (const line of lines) {
-        const trimmed = line.trim();
-        
-        // Skip commented lines
-        if (trimmed.startsWith('#') || trimmed.startsWith('!') || trimmed.startsWith('%') || trimmed.startsWith(';')) {
-            continue;
-        }
-        
-        // Handle both 'server' and 'pool' directives
-        if ((trimmed.startsWith('server ') || trimmed.startsWith('pool ')) && 
-            !trimmed.includes('127.127.1.0') && !trimmed.includes('127.0.0.1')) {
-            const parts = trimmed.split(/\s+/);
-            if (parts.length >= 2) {
-                servers.push(parts[1]);
-            }
-        }
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip commented lines
+    if (
+      trimmed.startsWith('#') ||
+      trimmed.startsWith('!') ||
+      trimmed.startsWith('%') ||
+      trimmed.startsWith(';')
+    ) {
+      continue;
     }
 
-    // Return extracted servers or appropriate defaults based on system type
-    if (servers.length > 0) {
-        return servers;
+    // Handle both 'server' and 'pool' directives
+    if (
+      (trimmed.startsWith('server ') || trimmed.startsWith('pool ')) &&
+      !trimmed.includes('127.127.1.0') &&
+      !trimmed.includes('127.0.0.1')
+    ) {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 2) {
+        servers.push(parts[1]);
+      }
     }
-    
-    // System-specific defaults
-    switch (systemType) {
-        case 'chrony':
-            return ['0.omnios.pool.ntp.org'];
-        case 'ntp':
-        case 'ntpsec':
-        default:
-            return ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
-    }
+  }
+
+  // Return extracted servers or appropriate defaults based on system type
+  if (servers.length > 0) {
+    return servers;
+  }
+
+  // System-specific defaults
+  switch (systemType) {
+    case 'chrony':
+      return ['0.omnios.pool.ntp.org'];
+    case 'ntp':
+    case 'ntpsec':
+    default:
+      return ['0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org'];
+  }
 };
 
 // Helper function to generate config for target system
 const generateConfigForSystem = (targetSystem, servers) => {
-    let baseConfig = '';
-    
-    switch (targetSystem) {
-        case 'ntp':
-            baseConfig = `# Generated by Zoneweaver API - System Switch
+  let baseConfig = '';
+
+  switch (targetSystem) {
+    case 'ntp':
+      baseConfig = `# Generated by Zoneweaver API - System Switch
 # NTP configuration for OmniOS
 
 driftfile /var/ntp/ntp.drift
@@ -3761,9 +3936,9 @@ ${servers.map(server => `server ${server} iburst`).join('\n')}
 # Allow updates from configured servers
 ${servers.map(server => `restrict ${server} nomodify noquery notrap`).join('\n')}
 `;
-            break;
-        case 'chrony':
-            baseConfig = `# Generated by Zoneweaver API - System Switch
+      break;
+    case 'chrony':
+      baseConfig = `# Generated by Zoneweaver API - System Switch
 # Chrony configuration for OmniOS
 
 # Time servers
@@ -3782,9 +3957,9 @@ rtcsync
 logdir /var/log/chrony
 log measurements statistics tracking
 `;
-            break;
-        case 'ntpsec':
-            baseConfig = `# Generated by Zoneweaver API - System Switch
+      break;
+    case 'ntpsec':
+      baseConfig = `# Generated by Zoneweaver API - System Switch
 # NTPsec configuration for OmniOS
 
 driftfile /var/lib/ntp/ntp.drift
@@ -3801,12 +3976,12 @@ ${servers.map(server => `server ${server} iburst`).join('\n')}
 # Allow updates from configured servers
 ${servers.map(server => `restrict ${server} nomodify noquery notrap`).join('\n')}
 `;
-            break;
-        default:
-            throw new Error(`Unknown target system: ${targetSystem}`);
-    }
-    
-    return baseConfig;
+      break;
+    default:
+      throw new Error(`Unknown target system: ${targetSystem}`);
+  }
+
+  return baseConfig;
 };
 
 /**
@@ -3814,64 +3989,65 @@ ${servers.map(server => `restrict ${server} nomodify noquery notrap`).join('\n')
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeProcessTraceTask = async (metadataJson) => {
-    log.task.debug('Process trace task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { pid, duration = 30 } = metadata;
+const executeProcessTraceTask = async metadataJson => {
+  log.task.debug('Process trace task starting');
 
-        log.task.debug('Process trace task parameters', {
-            pid,
-            duration
-        });
-
-        // Use truss (OmniOS equivalent of strace) to trace the process
-        const command = `pfexec truss -p ${pid}`;
-        log.task.debug('Executing trace command', { command });
-        
-        // Start tracing for the specified duration
-        const traceResult = await executeCommand(command, duration * 1000);
-        
-        if (traceResult.success || traceResult.output) {
-            // truss may exit with non-zero when the process ends, but still provide useful output
-            const outputLength = traceResult.output ? traceResult.output.length : 0;
-            log.task.info('Process trace completed', {
-                pid,
-                duration,
-                output_length: outputLength
-            });
-            
-            return { 
-                success: true, 
-                message: `Process trace completed for PID ${pid} over ${duration} seconds (${outputLength} characters captured)`,
-                trace_output: traceResult.output?.substring(0, 10000) || '', // Limit output size
-                duration_seconds: duration,
-                pid: parseInt(pid)
-            };
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
         } else {
-            log.task.error('Process trace command failed', {
-                pid,
-                error: traceResult.error
-            });
-            return { 
-                success: false, 
-                error: `Failed to trace process ${pid}: ${traceResult.error}` 
-            };
+          resolve(result);
         }
+      });
+    });
+    const { pid, duration = 30 } = metadata;
 
-    } catch (error) {
-        log.task.error('Process trace task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `Process trace task failed: ${error.message}` };
+    log.task.debug('Process trace task parameters', {
+      pid,
+      duration,
+    });
+
+    // Use truss (OmniOS equivalent of strace) to trace the process
+    const command = `pfexec truss -p ${pid}`;
+    log.task.debug('Executing trace command', { command });
+
+    // Start tracing for the specified duration
+    const traceResult = await executeCommand(command, duration * 1000);
+
+    if (traceResult.success || traceResult.output) {
+      // truss may exit with non-zero when the process ends, but still provide useful output
+      const outputLength = traceResult.output ? traceResult.output.length : 0;
+      log.task.info('Process trace completed', {
+        pid,
+        duration,
+        output_length: outputLength,
+      });
+
+      return {
+        success: true,
+        message: `Process trace completed for PID ${pid} over ${duration} seconds (${outputLength} characters captured)`,
+        trace_output: traceResult.output?.substring(0, 10000) || '', // Limit output size
+        duration_seconds: duration,
+        pid: parseInt(pid),
+      };
     }
+    log.task.error('Process trace command failed', {
+      pid,
+      error: traceResult.error,
+    });
+    return {
+      success: false,
+      error: `Failed to trace process ${pid}: ${traceResult.error}`,
+    };
+  } catch (error) {
+    log.task.error('Process trace task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Process trace task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3879,43 +4055,45 @@ const executeProcessTraceTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeFileMoveTask = async (metadataJson) => {
-    log.filesystem.debug('File move task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { source, destination } = metadata;
+const executeFileMoveTask = async metadataJson => {
+  log.filesystem.debug('File move task starting');
 
-        log.filesystem.debug('File move task parameters', {
-            source,
-            destination
-        });
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+    const { source, destination } = metadata;
 
-        const { moveItem } = await import('../lib/FileSystemManager.js');
-        await moveItem(source, destination);
+    log.filesystem.debug('File move task parameters', {
+      source,
+      destination,
+    });
 
-        log.filesystem.info('File move completed', {
-            source,
-            destination
-        });
+    const { moveItem } = await import('../lib/FileSystemManager.js');
+    await moveItem(source, destination);
 
-        return { 
-            success: true, 
-            message: `Successfully moved '${source}' to '${destination}'` 
-        };
+    log.filesystem.info('File move completed', {
+      source,
+      destination,
+    });
 
-    } catch (error) {
-        log.filesystem.error('File move task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `File move task failed: ${error.message}` };
-    }
+    return {
+      success: true,
+      message: `Successfully moved '${source}' to '${destination}'`,
+    };
+  } catch (error) {
+    log.filesystem.error('File move task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `File move task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3923,43 +4101,45 @@ const executeFileMoveTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeFileCopyTask = async (metadataJson) => {
-    log.filesystem.debug('File copy task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { source, destination } = metadata;
+const executeFileCopyTask = async metadataJson => {
+  log.filesystem.debug('File copy task starting');
 
-        log.filesystem.debug('File copy task parameters', {
-            source,
-            destination
-        });
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+    const { source, destination } = metadata;
 
-        const { copyItem } = await import('../lib/FileSystemManager.js');
-        await copyItem(source, destination);
+    log.filesystem.debug('File copy task parameters', {
+      source,
+      destination,
+    });
 
-        log.filesystem.info('File copy completed', {
-            source,
-            destination
-        });
+    const { copyItem } = await import('../lib/FileSystemManager.js');
+    await copyItem(source, destination);
 
-        return { 
-            success: true, 
-            message: `Successfully copied '${source}' to '${destination}'` 
-        };
+    log.filesystem.info('File copy completed', {
+      source,
+      destination,
+    });
 
-    } catch (error) {
-        log.filesystem.error('File copy task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `File copy task failed: ${error.message}` };
-    }
+    return {
+      success: true,
+      message: `Successfully copied '${source}' to '${destination}'`,
+    };
+  } catch (error) {
+    log.filesystem.error('File copy task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `File copy task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -3967,45 +4147,47 @@ const executeFileCopyTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeFileArchiveCreateTask = async (metadataJson) => {
-    log.filesystem.debug('File archive create task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { sources, archive_path, format } = metadata;
+const executeFileArchiveCreateTask = async metadataJson => {
+  log.filesystem.debug('File archive create task starting');
 
-        log.filesystem.debug('Archive creation task parameters', {
-            sources,
-            archive_path,
-            format
-        });
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+    const { sources, archive_path, format } = metadata;
 
-        const { createArchive } = await import('../lib/FileSystemManager.js');
-        await createArchive(sources, archive_path, format);
+    log.filesystem.debug('Archive creation task parameters', {
+      sources,
+      archive_path,
+      format,
+    });
 
-        log.filesystem.info('Archive created successfully', {
-            archive_path,
-            format,
-            source_count: sources.length
-        });
+    const { createArchive } = await import('../lib/FileSystemManager.js');
+    await createArchive(sources, archive_path, format);
 
-        return { 
-            success: true, 
-            message: `Successfully created ${format} archive '${archive_path}' with ${sources.length} items` 
-        };
+    log.filesystem.info('Archive created successfully', {
+      archive_path,
+      format,
+      source_count: sources.length,
+    });
 
-    } catch (error) {
-        log.filesystem.error('Archive creation task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `Archive creation task failed: ${error.message}` };
-    }
+    return {
+      success: true,
+      message: `Successfully created ${format} archive '${archive_path}' with ${sources.length} items`,
+    };
+  } catch (error) {
+    log.filesystem.error('Archive creation task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Archive creation task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -4013,43 +4195,45 @@ const executeFileArchiveCreateTask = async (metadataJson) => {
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeFileArchiveExtractTask = async (metadataJson) => {
-    log.filesystem.debug('File archive extract task starting');
-    
-    try {
-        const metadata = await new Promise((resolve, reject) => {
-            yj.parseAsync(metadataJson, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        const { archive_path, extract_path } = metadata;
+const executeFileArchiveExtractTask = async metadataJson => {
+  log.filesystem.debug('File archive extract task starting');
 
-        log.filesystem.debug('Archive extraction task parameters', {
-            archive_path,
-            extract_path
-        });
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+    const { archive_path, extract_path } = metadata;
 
-        const { extractArchive } = await import('../lib/FileSystemManager.js');
-        await extractArchive(archive_path, extract_path);
+    log.filesystem.debug('Archive extraction task parameters', {
+      archive_path,
+      extract_path,
+    });
 
-        log.filesystem.info('Archive extracted successfully', {
-            archive_path,
-            extract_path
-        });
+    const { extractArchive } = await import('../lib/FileSystemManager.js');
+    await extractArchive(archive_path, extract_path);
 
-        return { 
-            success: true, 
-            message: `Successfully extracted archive '${archive_path}' to '${extract_path}'` 
-        };
+    log.filesystem.info('Archive extracted successfully', {
+      archive_path,
+      extract_path,
+    });
 
-    } catch (error) {
-        log.filesystem.error('Archive extraction task exception', {
-            error: error.message,
-            stack: error.stack
-        });
-        return { success: false, error: `Archive extraction task failed: ${error.message}` };
-    }
+    return {
+      success: true,
+      message: `Successfully extracted archive '${archive_path}' to '${extract_path}'`,
+    };
+  } catch (error) {
+    log.filesystem.error('Archive extraction task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Archive extraction task failed: ${error.message}` };
+  }
 };
 
 /**
@@ -4057,36 +4241,37 @@ const executeFileArchiveExtractTask = async (metadataJson) => {
  * @description Removes completed, failed, and cancelled tasks older than the configured retention period
  */
 export const cleanupOldTasks = async () => {
-    const timer = createTimer('cleanup old tasks');
-    try {
-        const hostMonitoringConfig = config.getHostMonitoring();
-        const retentionConfig = hostMonitoringConfig.retention;
-        const now = new Date();
+  const timer = createTimer('cleanup old tasks');
+  try {
+    const hostMonitoringConfig = config.getHostMonitoring();
+    const retentionConfig = hostMonitoringConfig.retention;
+    const now = new Date();
 
-        // Clean up completed, failed, and cancelled tasks
-        const tasksRetentionDate = new Date(now.getTime() - (retentionConfig.tasks * 24 * 60 * 60 * 1000));
-        const deletedTasks = await Tasks.destroy({
-            where: {
-                status: { [Op.in]: ['completed', 'failed', 'cancelled'] },
-                created_at: { [Op.lt]: tasksRetentionDate }
-            }
-        });
+    // Clean up completed, failed, and cancelled tasks
+    const tasksRetentionDate = new Date(
+      now.getTime() - retentionConfig.tasks * 24 * 60 * 60 * 1000
+    );
+    const deletedTasks = await Tasks.destroy({
+      where: {
+        status: { [Op.in]: ['completed', 'failed', 'cancelled'] },
+        created_at: { [Op.lt]: tasksRetentionDate },
+      },
+    });
 
-        const duration = timer.end();
-        
-        if (deletedTasks > 0) {
-            log.database.info('Tasks cleanup completed', {
-                deleted_count: deletedTasks,
-                retention_days: retentionConfig.tasks,
-                duration_ms: duration
-            });
-        }
+    const duration = timer.end();
 
-    } catch (error) {
-        timer.end();
-        log.database.error('Failed to cleanup old tasks', {
-            error: error.message,
-            stack: error.stack
-        });
+    if (deletedTasks > 0) {
+      log.database.info('Tasks cleanup completed', {
+        deleted_count: deletedTasks,
+        retention_days: retentionConfig.tasks,
+        duration_ms: duration,
+      });
     }
+  } catch (error) {
+    timer.end();
+    log.database.error('Failed to cleanup old tasks', {
+      error: error.message,
+      stack: error.stack,
+    });
+  }
 };

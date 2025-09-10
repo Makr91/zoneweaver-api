@@ -13,7 +13,8 @@ import yj from 'yieldable-json';
 import { log } from '../lib/Logger.js';
 
 // Get config path from environment variable (set by SMF) or fallback to local config
-const getConfigPath = () => process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+const getConfigPath = () =>
+  process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
 const configPath = getConfigPath();
 const backupDir = path.join(path.dirname(configPath), 'backups');
 
@@ -104,42 +105,48 @@ const backupDir = path.join(path.dirname(configPath), 'backups');
  *         description: Failed to get settings
  */
 export const getSettings = async (req, res) => {
-    try {
-        // Return a sanitized version of the config, omitting sensitive details
-        const currentConfig = config.getAll();
+  try {
+    // Return a sanitized version of the config, omitting sensitive details
+    const currentConfig = config.getAll();
 
-        if (!currentConfig) {
-            return res.status(500).json({ error: 'Failed to get settings', details: 'Configuration not loaded' });
-        }
-
-        const sanitizedConfig = await new Promise((resolve, reject) => {
-            yj.stringifyAsync(currentConfig, (err, jsonString) => {
-                if (err) reject(err);
-                else {
-                    yj.parseAsync(jsonString, (err, result) => {
-                        if (err) reject(err);
-                        else resolve(result);
-                    });
-                }
-            });
-        });
-
-        // Remove sensitive fields that should not be exposed to the frontend
-        if (sanitizedConfig.database) {
-            delete sanitizedConfig.database.password;
-        }
-        if (sanitizedConfig.api_keys) {
-            // We might want to show some API key settings, but not all
-        }
-
-        res.json(sanitizedConfig);
-    } catch (error) {
-        log.api.error('Error getting settings', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ error: 'Failed to get settings', details: error.message });
+    if (!currentConfig) {
+      return res
+        .status(500)
+        .json({ error: 'Failed to get settings', details: 'Configuration not loaded' });
     }
+
+    const sanitizedConfig = await new Promise((resolve, reject) => {
+      yj.stringifyAsync(currentConfig, (err, jsonString) => {
+        if (err) {
+          reject(err);
+        } else {
+          yj.parseAsync(jsonString, (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          });
+        }
+      });
+    });
+
+    // Remove sensitive fields that should not be exposed to the frontend
+    if (sanitizedConfig.database) {
+      delete sanitizedConfig.database.password;
+    }
+    if (sanitizedConfig.api_keys) {
+      // We might want to show some API key settings, but not all
+    }
+
+    res.json(sanitizedConfig);
+  } catch (error) {
+    log.api.error('Error getting settings', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({ error: 'Failed to get settings', details: error.message });
+  }
 };
 
 /**
@@ -163,64 +170,66 @@ export const getSettings = async (req, res) => {
  *         description: Failed to update settings
  */
 export const updateSettings = async (req, res) => {
-    try {
-        const newSettings = req.body;
+  try {
+    const newSettings = req.body;
 
-        // 1. Create a backup of the current config file
-        await createBackup();
+    // 1. Create a backup of the current config file
+    await createBackup();
 
-        // 2. Read the current config file
-        const currentConfig = yaml.load(await fs.readFile(configPath, 'utf8'));
+    // 2. Read the current config file
+    const currentConfig = yaml.load(await fs.readFile(configPath, 'utf8'));
 
-        // 3. Merge new settings into the current config (deep merge)
-        const updatedConfig = { ...currentConfig, ...newSettings };
+    // 3. Merge new settings into the current config (deep merge)
+    const updatedConfig = { ...currentConfig, ...newSettings };
 
-        // 4. Validate the new configuration (basic validation for now)
-        if (!updatedConfig.server || !updatedConfig.server.http_port) {
-            throw new Error('Invalid configuration: server.http_port is required');
-        }
-
-        // 5. Write the updated config to a temporary file
-        const tempConfigPath = `${configPath}.tmp`;
-        await fs.writeFile(tempConfigPath, yaml.dump(updatedConfig), 'utf8');
-
-        // 6. Atomically replace the old config with the new one
-        await fs.rename(tempConfigPath, configPath);
-
-        // 7. Reload the configuration in the ConfigLoader
-        config.load();
-
-        res.json({ success: true, message: 'Settings updated successfully. Some changes may require a server restart.' });
-
-    } catch (error) {
-        log.api.error('Error updating settings', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ error: 'Failed to update settings', details: error.message });
+    // 4. Validate the new configuration (basic validation for now)
+    if (!updatedConfig.server || !updatedConfig.server.http_port) {
+      throw new Error('Invalid configuration: server.http_port is required');
     }
+
+    // 5. Write the updated config to a temporary file
+    const tempConfigPath = `${configPath}.tmp`;
+    await fs.writeFile(tempConfigPath, yaml.dump(updatedConfig), 'utf8');
+
+    // 6. Atomically replace the old config with the new one
+    await fs.rename(tempConfigPath, configPath);
+
+    // 7. Reload the configuration in the ConfigLoader
+    config.load();
+
+    res.json({
+      success: true,
+      message: 'Settings updated successfully. Some changes may require a server restart.',
+    });
+  } catch (error) {
+    log.api.error('Error updating settings', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({ error: 'Failed to update settings', details: error.message });
+  }
 };
 
 /**
  * Create a backup of the config.yaml file
  */
 const createBackup = async () => {
-    try {
-        await fs.mkdir(backupDir, { recursive: true });
-        const timestamp = Date.now();
-        const backupPath = path.join(backupDir, `config-${timestamp}.yaml`);
-        await fs.copyFile(configPath, backupPath);
-        log.app.info('Created config backup', {
-            backup_path: backupPath,
-            timestamp: timestamp
-        });
-    } catch (error) {
-        log.app.error('Failed to create config backup', {
-            error: error.message,
-            stack: error.stack,
-            backup_dir: backupDir
-        });
-    }
+  try {
+    await fs.mkdir(backupDir, { recursive: true });
+    const timestamp = Date.now();
+    const backupPath = path.join(backupDir, `config-${timestamp}.yaml`);
+    await fs.copyFile(configPath, backupPath);
+    log.app.info('Created config backup', {
+      backup_path: backupPath,
+      timestamp,
+    });
+  } catch (error) {
+    log.app.error('Failed to create config backup', {
+      error: error.message,
+      stack: error.stack,
+      backup_dir: backupDir,
+    });
+  }
 };
 
 /**
@@ -281,69 +290,69 @@ const createBackup = async () => {
  *         description: Failed to create backup
  */
 export const createConfigBackup = async (req, res) => {
-    try {
-        await fs.mkdir(backupDir, { recursive: true });
-        const timestamp = Date.now();
-        const filename = `config-${timestamp}.yaml`;
-        const backupPath = path.join(backupDir, filename);
-        
-        await fs.copyFile(configPath, backupPath);
-        log.app.info('Created config backup', {
-            backup_path: backupPath,
-            filename: filename,
-            timestamp: timestamp
-        });
-        
-        res.json({ 
-            success: true, 
-            message: 'Backup created successfully',
-            backup: {
-                filename: filename,
-                createdAt: new Date(timestamp).toISOString()
-            }
-        });
-    } catch (error) {
-        log.api.error('Error creating backup', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ error: 'Failed to create backup', details: error.message });
-    }
+  try {
+    await fs.mkdir(backupDir, { recursive: true });
+    const timestamp = Date.now();
+    const filename = `config-${timestamp}.yaml`;
+    const backupPath = path.join(backupDir, filename);
+
+    await fs.copyFile(configPath, backupPath);
+    log.app.info('Created config backup', {
+      backup_path: backupPath,
+      filename,
+      timestamp,
+    });
+
+    res.json({
+      success: true,
+      message: 'Backup created successfully',
+      backup: {
+        filename,
+        createdAt: new Date(timestamp).toISOString(),
+      },
+    });
+  } catch (error) {
+    log.api.error('Error creating backup', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({ error: 'Failed to create backup', details: error.message });
+  }
 };
 
 export const listBackups = async (req, res) => {
-    try {
-        await fs.mkdir(backupDir, { recursive: true });
-        const files = await fs.readdir(backupDir);
-        const backups = files
-            .filter(file => file.endsWith('.yaml'))
-            .map(file => {
-                // Extract timestamp from filename (config-1749723866123.yaml -> 1749723866123)
-                const timestampStr = file.replace('config-', '').replace('.yaml', '');
-                const timestamp = parseInt(timestampStr, 10);
-                
-                // Only include valid timestamps
-                if (isNaN(timestamp)) {
-                    return null;
-                }
-                
-                return {
-                    filename: file,
-                    createdAt: new Date(timestamp).toISOString()
-                };
-            })
-            .filter(backup => backup !== null)
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        
-        res.json(backups);
-    } catch (error) {
-        log.api.error('Error listing backups', {
-            error: error.message,
-            stack: error.stack,
-            backup_dir: backupDir
-        });
-        res.status(500).json({ error: 'Failed to list backups', details: error.message });
-    }
+  try {
+    await fs.mkdir(backupDir, { recursive: true });
+    const files = await fs.readdir(backupDir);
+    const backups = files
+      .filter(file => file.endsWith('.yaml'))
+      .map(file => {
+        // Extract timestamp from filename (config-1749723866123.yaml -> 1749723866123)
+        const timestampStr = file.replace('config-', '').replace('.yaml', '');
+        const timestamp = parseInt(timestampStr, 10);
+
+        // Only include valid timestamps
+        if (isNaN(timestamp)) {
+          return null;
+        }
+
+        return {
+          filename: file,
+          createdAt: new Date(timestamp).toISOString(),
+        };
+      })
+      .filter(backup => backup !== null)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(backups);
+  } catch (error) {
+    log.api.error('Error listing backups', {
+      error: error.message,
+      stack: error.stack,
+      backup_dir: backupDir,
+    });
+    res.status(500).json({ error: 'Failed to list backups', details: error.message });
+  }
 };
 
 /**
@@ -370,35 +379,34 @@ export const listBackups = async (req, res) => {
  *         description: Failed to delete backup
  */
 export const deleteBackup = async (req, res) => {
-    try {
-        const { filename } = req.params;
+  try {
+    const { filename } = req.params;
 
-        // Basic security check to prevent path traversal
-        if (filename.includes('..')) {
-            return res.status(400).json({ error: 'Invalid filename' });
-        }
-
-        const backupPath = path.join(backupDir, filename);
-
-        // Check if backup file exists
-        await fs.access(backupPath);
-
-        // Delete the file
-        await fs.unlink(backupPath);
-
-        res.json({ success: true, message: `Backup ${filename} deleted successfully.` });
-
-    } catch (error) {
-        if (error.code === 'ENOENT') {
-            return res.status(404).json({ error: 'Backup not found' });
-        }
-        log.api.error('Error deleting backup', {
-            error: error.message,
-            stack: error.stack,
-            filename: filename
-        });
-        res.status(500).json({ error: 'Failed to delete backup', details: error.message });
+    // Basic security check to prevent path traversal
+    if (filename.includes('..')) {
+      return res.status(400).json({ error: 'Invalid filename' });
     }
+
+    const backupPath = path.join(backupDir, filename);
+
+    // Check if backup file exists
+    await fs.access(backupPath);
+
+    // Delete the file
+    await fs.unlink(backupPath);
+
+    res.json({ success: true, message: `Backup ${filename} deleted successfully.` });
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return res.status(404).json({ error: 'Backup not found' });
+    }
+    log.api.error('Error deleting backup', {
+      error: error.message,
+      stack: error.stack,
+      filename,
+    });
+    res.status(500).json({ error: 'Failed to delete backup', details: error.message });
+  }
 };
 
 /**
@@ -423,32 +431,34 @@ export const deleteBackup = async (req, res) => {
  *         description: Failed to restore backup
  */
 export const restoreBackup = async (req, res) => {
-    try {
-        const { filename } = req.params;
-        const backupPath = path.join(backupDir, filename);
+  try {
+    const { filename } = req.params;
+    const backupPath = path.join(backupDir, filename);
 
-        // Check if backup file exists
-        await fs.access(backupPath);
+    // Check if backup file exists
+    await fs.access(backupPath);
 
-        // Create a backup of the current config before restoring
-        await createBackup();
+    // Create a backup of the current config before restoring
+    await createBackup();
 
-        // Restore the backup
-        await fs.copyFile(backupPath, configPath);
+    // Restore the backup
+    await fs.copyFile(backupPath, configPath);
 
-        // Reload the configuration
-        config.load();
+    // Reload the configuration
+    config.load();
 
-        res.json({ success: true, message: `Restored configuration from ${filename}. A server restart may be required.` });
-
-    } catch (error) {
-        log.api.error('Error restoring backup', {
-            error: error.message,
-            stack: error.stack,
-            filename: filename
-        });
-        res.status(500).json({ error: 'Failed to restore backup', details: error.message });
-    }
+    res.json({
+      success: true,
+      message: `Restored configuration from ${filename}. A server restart may be required.`,
+    });
+  } catch (error) {
+    log.api.error('Error restoring backup', {
+      error: error.message,
+      stack: error.stack,
+      filename,
+    });
+    res.status(500).json({ error: 'Failed to restore backup', details: error.message });
+  }
 };
 
 /**
@@ -475,53 +485,55 @@ export const restoreBackup = async (req, res) => {
  *         description: Failed to initiate server restart
  */
 export const restartServer = async (req, res) => {
-    try {
-        // Send success response immediately before initiating restart
-        res.json({ 
-            success: true, 
-            message: 'Server restart initiated. Please wait 30-60 seconds before reconnecting. The server will reload all configuration changes.'
-        });
-        
-        // Schedule restart in detached process after response is sent
-        // This ensures the HTTP response is delivered before the process is terminated
-        setTimeout(() => {
-            log.app.warn('Initiating server restart via SMF');
-            
-            // Import exec here to avoid loading it at module level
-            import('child_process').then(({ exec }) => {
-                // Use pfexec to restart the SMF service in a detached process
-                exec('pfexec svcadm restart system/virtualization/zoneweaver-api', 
-                    { 
-                        detached: true, 
-                        stdio: 'ignore'
-                    }, 
-                    (error, stdout, stderr) => {
-                        // This callback likely won't execute since the process will be killed
-                        // but we include it for completeness
-                        if (error) {
-                            log.app.error('Restart command error', {
-                                error: error.message
-                            });
-                        }
-                    }
-                );
-            }).catch(err => {
-                log.app.error('Failed to import child_process for restart', {
-                    error: err.message
+  try {
+    // Send success response immediately before initiating restart
+    res.json({
+      success: true,
+      message:
+        'Server restart initiated. Please wait 30-60 seconds before reconnecting. The server will reload all configuration changes.',
+    });
+
+    // Schedule restart in detached process after response is sent
+    // This ensures the HTTP response is delivered before the process is terminated
+    setTimeout(() => {
+      log.app.warn('Initiating server restart via SMF');
+
+      // Import exec here to avoid loading it at module level
+      import('child_process')
+        .then(({ exec }) => {
+          // Use pfexec to restart the SMF service in a detached process
+          exec(
+            'pfexec svcadm restart system/virtualization/zoneweaver-api',
+            {
+              detached: true,
+              stdio: 'ignore',
+            },
+            (error, stdout, stderr) => {
+              // This callback likely won't execute since the process will be killed
+              // but we include it for completeness
+              if (error) {
+                log.app.error('Restart command error', {
+                  error: error.message,
                 });
-            });
-            
-        }, 1000); // 1 second delay to ensure HTTP response is fully sent
-        
-    } catch (error) {
-        log.api.error('Error initiating server restart', {
-            error: error.message,
-            stack: error.stack
+              }
+            }
+          );
+        })
+        .catch(err => {
+          log.app.error('Failed to import child_process for restart', {
+            error: err.message,
+          });
         });
-        res.status(500).json({ 
-            success: false,
-            error: 'Failed to initiate server restart', 
-            details: error.message 
-        });
-    }
+    }, 1000); // 1 second delay to ensure HTTP response is fully sent
+  } catch (error) {
+    log.api.error('Error initiating server restart', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to initiate server restart',
+      details: error.message,
+    });
+  }
 };

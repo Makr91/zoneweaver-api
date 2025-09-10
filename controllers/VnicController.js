@@ -5,33 +5,33 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync } from "child_process";
-import Tasks, { TaskPriority } from "../models/TaskModel.js";
-import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
-import { Op } from "sequelize";
-import yj from "yieldable-json";
-import os from "os";
-import { log } from "../lib/Logger.js";
+import { execSync } from 'child_process';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
+import { Op } from 'sequelize';
+import yj from 'yieldable-json';
+import os from 'os';
+import { log } from '../lib/Logger.js';
 
 /**
  * Execute command safely with proper error handling
  * @param {string} command - Command to execute
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (command) => {
-    try {
-        const output = execSync(command, { 
-            encoding: 'utf8',
-            timeout: 30000 // 30 second timeout
-        });
-        return { success: true, output: output.trim() };
-    } catch (error) {
-        return { 
-            success: false, 
-            error: error.message,
-            output: error.stdout || ''
-        };
-    }
+const executeCommand = async command => {
+  try {
+    const output = execSync(command, {
+      encoding: 'utf8',
+      timeout: 30000, // 30 second timeout
+    });
+    return { success: true, output: output.trim() };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      output: error.stdout || '',
+    };
+  }
 };
 
 /**
@@ -93,52 +93,67 @@ const executeCommand = async (command) => {
  *         description: Failed to get VNICs
  */
 export const getVNICs = async (req, res) => {
-    try {
-        const { 
-            over, 
-            zone, 
-            state, 
-            limit = 100
-        } = req.query;
+  try {
+    const { over, zone, state, limit = 100 } = req.query;
 
-        // Always get data from database (monitoring data)
-        const hostname = os.hostname();
-        const whereClause = { 
-            host: hostname,
-            class: 'vnic'
-        };
-        
-        if (over) whereClause.over = over;
-        if (zone) whereClause.zone = zone;
-        if (state) whereClause.state = state;
+    // Always get data from database (monitoring data)
+    const hostname = os.hostname();
+    const whereClause = {
+      host: hostname,
+      class: 'vnic',
+    };
 
-        // Optimize: Remove expensive COUNT query, only include existing columns
-        const rows = await NetworkInterfaces.findAll({
-            where: whereClause,
-            attributes: [
-                'id', 'link', 'class', 'state', 'zone', 'over', 'speed', 'duplex', 'scan_timestamp',
-                'vid', 'macaddress', 'macaddrtype', 'mtu', 'flags'
-            ], // Only include columns that exist in database
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
-        });
-
-        res.json({
-            vnics: rows,
-            source: 'database',
-            returned: rows.length
-        });
-
-    } catch (error) {
-        log.api.error('Error getting VNICs', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get VNICs',
-            details: error.message 
-        });
+    if (over) {
+      whereClause.over = over;
     }
+    if (zone) {
+      whereClause.zone = zone;
+    }
+    if (state) {
+      whereClause.state = state;
+    }
+
+    // Optimize: Remove expensive COUNT query, only include existing columns
+    const rows = await NetworkInterfaces.findAll({
+      where: whereClause,
+      attributes: [
+        'id',
+        'link',
+        'class',
+        'state',
+        'zone',
+        'over',
+        'speed',
+        'duplex',
+        'scan_timestamp',
+        'vid',
+        'macaddress',
+        'macaddrtype',
+        'mtu',
+        'flags',
+      ], // Only include columns that exist in database
+      limit: parseInt(limit),
+      order: [
+        ['scan_timestamp', 'DESC'],
+        ['link', 'ASC'],
+      ],
+    });
+
+    res.json({
+      vnics: rows,
+      source: 'database',
+      returned: rows.length,
+    });
+  } catch (error) {
+    log.api.error('Error getting VNICs', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get VNICs',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -176,39 +191,38 @@ export const getVNICs = async (req, res) => {
  *         description: Failed to get VNIC details
  */
 export const getVNICDetails = async (req, res) => {
-    try {
-        const { vnic } = req.params;
+  try {
+    const { vnic } = req.params;
 
-        // Always get data from database
-        const hostname = os.hostname();
-        const vnicData = await NetworkInterfaces.findOne({
-            where: {
-                host: hostname,
-                link: vnic,
-                class: 'vnic'
-            },
-            order: [['scan_timestamp', 'DESC']]
-        });
+    // Always get data from database
+    const hostname = os.hostname();
+    const vnicData = await NetworkInterfaces.findOne({
+      where: {
+        host: hostname,
+        link: vnic,
+        class: 'vnic',
+      },
+      order: [['scan_timestamp', 'DESC']],
+    });
 
-        if (!vnicData) {
-            return res.status(404).json({ 
-                error: `VNIC ${vnic} not found` 
-            });
-        }
-
-        res.json(vnicData);
-
-    } catch (error) {
-        log.api.error('Error getting VNIC details', {
-            vnic: req.params.vnic,
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get VNIC details',
-            details: error.message 
-        });
+    if (!vnicData) {
+      return res.status(404).json({
+        error: `VNIC ${vnic} not found`,
+      });
     }
+
+    res.json(vnicData);
+  } catch (error) {
+    log.api.error('Error getting VNIC details', {
+      vnic: req.params.vnic,
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get VNIC details',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -292,121 +306,128 @@ export const getVNICDetails = async (req, res) => {
  *         description: Failed to create VNIC task
  */
 export const createVNIC = async (req, res) => {
-    try {
-        const { 
-            name, 
-            link, 
-            mac_address = 'auto', 
-            mac_prefix, 
-            slot, 
-            vlan_id, 
-            temporary = false, 
-            properties = {}, 
-            created_by = 'api' 
-        } = req.body;
+  try {
+    const {
+      name,
+      link,
+      mac_address = 'auto',
+      mac_prefix,
+      slot,
+      vlan_id,
+      temporary = false,
+      properties = {},
+      created_by = 'api',
+    } = req.body;
 
-        // Validate required fields
-        if (!name || !link) {
-            return res.status(400).json({ 
-                error: 'name and link are required' 
-            });
-        }
-
-        // Validate VNIC name format
-        const vnicNameRegex = /^[a-zA-Z][a-zA-Z0-9_]*[0-9]+$/;
-        if (!vnicNameRegex.test(name)) {
-            return res.status(400).json({ 
-                error: 'VNIC name must start with letter, contain alphanumeric/underscore, and end with number' 
-            });
-        }
-
-        // Validate MAC address method
-        if (mac_address === 'factory' && slot === undefined) {
-            return res.status(400).json({ 
-                error: 'slot is required when mac_address is factory' 
-            });
-        }
-
-        if (mac_address === 'random' && mac_prefix && !/^([0-9a-fA-F]{2}:){2}[0-9a-fA-F]{2}$/.test(mac_prefix)) {
-            return res.status(400).json({ 
-                error: 'mac_prefix must be in format XX:XX:XX when specified' 
-            });
-        }
-
-        // Validate VLAN ID
-        if (vlan_id !== undefined && (vlan_id < 1 || vlan_id > 4094)) {
-            return res.status(400).json({ 
-                error: 'vlan_id must be between 1 and 4094' 
-            });
-        }
-
-        // Check if VNIC already exists
-        const existsResult = await executeCommand(`pfexec dladm show-vnic ${name}`);
-        if (existsResult.success) {
-            return res.status(400).json({ 
-                error: `VNIC ${name} already exists` 
-            });
-        }
-
-        // Prepare metadata object
-        const metadataObject = {
-            name: name,
-            link: link,
-            mac_address: mac_address,
-            mac_prefix: mac_prefix,
-            slot: slot,
-            vlan_id: vlan_id,
-            temporary: temporary,
-            properties: properties
-        };
-
-        log.api.debug('VNIC Controller - Creating task with metadata', {
-            metadata_object: metadataObject
-        });
-        
-        const metadataJson = await new Promise((resolve, reject) => {
-            yj.stringifyAsync(metadataObject, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
-        log.api.debug('Metadata stringified', {
-            metadata_length: metadataJson.length
-        });
-
-        // Create task for VNIC creation
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'create_vnic',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: metadataJson
-        });
-
-        log.api.info('VNIC Controller - Task created successfully', {
-            task_id: task.id,
-            task_metadata_type: typeof task.metadata
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `VNIC creation task created for ${name}`,
-            task_id: task.id,
-            vnic_name: name,
-            underlying_link: link
-        });
-
-    } catch (error) {
-        log.api.error('Error creating VNIC', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to create VNIC task',
-            details: error.message 
-        });
+    // Validate required fields
+    if (!name || !link) {
+      return res.status(400).json({
+        error: 'name and link are required',
+      });
     }
+
+    // Validate VNIC name format
+    const vnicNameRegex = /^[a-zA-Z][a-zA-Z0-9_]*[0-9]+$/;
+    if (!vnicNameRegex.test(name)) {
+      return res.status(400).json({
+        error:
+          'VNIC name must start with letter, contain alphanumeric/underscore, and end with number',
+      });
+    }
+
+    // Validate MAC address method
+    if (mac_address === 'factory' && slot === undefined) {
+      return res.status(400).json({
+        error: 'slot is required when mac_address is factory',
+      });
+    }
+
+    if (
+      mac_address === 'random' &&
+      mac_prefix &&
+      !/^([0-9a-fA-F]{2}:){2}[0-9a-fA-F]{2}$/.test(mac_prefix)
+    ) {
+      return res.status(400).json({
+        error: 'mac_prefix must be in format XX:XX:XX when specified',
+      });
+    }
+
+    // Validate VLAN ID
+    if (vlan_id !== undefined && (vlan_id < 1 || vlan_id > 4094)) {
+      return res.status(400).json({
+        error: 'vlan_id must be between 1 and 4094',
+      });
+    }
+
+    // Check if VNIC already exists
+    const existsResult = await executeCommand(`pfexec dladm show-vnic ${name}`);
+    if (existsResult.success) {
+      return res.status(400).json({
+        error: `VNIC ${name} already exists`,
+      });
+    }
+
+    // Prepare metadata object
+    const metadataObject = {
+      name,
+      link,
+      mac_address,
+      mac_prefix,
+      slot,
+      vlan_id,
+      temporary,
+      properties,
+    };
+
+    log.api.debug('VNIC Controller - Creating task with metadata', {
+      metadata_object: metadataObject,
+    });
+
+    const metadataJson = await new Promise((resolve, reject) => {
+      yj.stringifyAsync(metadataObject, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+    log.api.debug('Metadata stringified', {
+      metadata_length: metadataJson.length,
+    });
+
+    // Create task for VNIC creation
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'create_vnic',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: metadataJson,
+    });
+
+    log.api.info('VNIC Controller - Task created successfully', {
+      task_id: task.id,
+      task_metadata_type: typeof task.metadata,
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `VNIC creation task created for ${name}`,
+      task_id: task.id,
+      vnic_name: name,
+      underlying_link: link,
+    });
+  } catch (error) {
+    log.api.error('Error creating VNIC', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to create VNIC task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -459,87 +480,92 @@ export const createVNIC = async (req, res) => {
  *         description: Failed to create VNIC deletion task
  */
 export const deleteVNIC = async (req, res) => {
-    log.api.debug('VNIC deletion request starting', {
-        vnic: req.params.vnic,
-        query_params: req.query
+  log.api.debug('VNIC deletion request starting', {
+    vnic: req.params.vnic,
+    query_params: req.query,
+  });
+
+  try {
+    const { vnic } = req.params;
+    const { temporary = false, created_by = 'api' } = req.query;
+
+    log.api.debug('VNIC deletion - parsed parameters', {
+      vnic,
+      temporary,
+      created_by,
     });
-    
-    try {
-        const { vnic } = req.params;
-        const { temporary = false, created_by = 'api' } = req.query;
 
-        log.api.debug('VNIC deletion - parsed parameters', {
-            vnic,
-            temporary,
-            created_by
-        });
+    // Check if VNIC exists
+    log.api.debug('Checking if VNIC exists', { vnic });
+    const existsResult = await executeCommand(`pfexec dladm show-vnic ${vnic}`);
+    log.api.debug('VNIC existence check result', {
+      vnic,
+      exists: existsResult.success,
+    });
 
-        // Check if VNIC exists
-        log.api.debug('Checking if VNIC exists', { vnic });
-        const existsResult = await executeCommand(`pfexec dladm show-vnic ${vnic}`);
-        log.api.debug('VNIC existence check result', {
-            vnic,
-            exists: existsResult.success
-        });
-        
-        if (!existsResult.success) {
-            log.api.warn('VNIC not found', {
-                vnic,
-                error: existsResult.error
-            });
-            return res.status(404).json({ 
-                error: `VNIC ${vnic} not found`,
-                details: existsResult.error
-            });
-        }
-
-        log.api.debug('VNIC exists, creating deletion task', { vnic });
-
-        // Create task for VNIC deletion
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'delete_vnic',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    vnic: vnic,
-                    temporary: temporary === 'true' || temporary === true
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        log.api.info('VNIC deletion task created successfully', {
-            task_id: task.id,
-            vnic,
-            temporary: temporary === 'true' || temporary === true
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `VNIC deletion task created for ${vnic}`,
-            task_id: task.id,
-            vnic_name: vnic,
-            temporary: temporary === 'true' || temporary === true
-        });
-
-        log.api.debug('VNIC deletion response sent successfully', { vnic });
-
-    } catch (error) {
-        log.api.error('Error deleting VNIC', {
-            vnic: req.params.vnic,
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to create VNIC deletion task',
-            details: error.message 
-        });
+    if (!existsResult.success) {
+      log.api.warn('VNIC not found', {
+        vnic,
+        error: existsResult.error,
+      });
+      return res.status(404).json({
+        error: `VNIC ${vnic} not found`,
+        details: existsResult.error,
+      });
     }
+
+    log.api.debug('VNIC exists, creating deletion task', { vnic });
+
+    // Create task for VNIC deletion
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'delete_vnic',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            vnic,
+            temporary: temporary === 'true' || temporary === true,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    log.api.info('VNIC deletion task created successfully', {
+      task_id: task.id,
+      vnic,
+      temporary: temporary === 'true' || temporary === true,
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `VNIC deletion task created for ${vnic}`,
+      task_id: task.id,
+      vnic_name: vnic,
+      temporary: temporary === 'true' || temporary === true,
+    });
+
+    log.api.debug('VNIC deletion response sent successfully', { vnic });
+  } catch (error) {
+    log.api.error('Error deleting VNIC', {
+      vnic: req.params.vnic,
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to create VNIC deletion task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -598,50 +624,51 @@ export const deleteVNIC = async (req, res) => {
  *         description: Failed to get VNIC statistics
  */
 export const getVNICStats = async (req, res) => {
-    try {
-        const { vnic } = req.params;
-        const { interval = 1 } = req.query;
+  try {
+    const { vnic } = req.params;
+    const { interval = 1 } = req.query;
 
-        // Get live statistics from dladm
-        const result = await executeCommand(`pfexec dladm show-vnic ${vnic} -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors`);
-        
-        if (!result.success) {
-            return res.status(404).json({
-                error: `VNIC ${vnic} not found or failed to get statistics`,
-                details: result.error
-            });
-        }
+    // Get live statistics from dladm
+    const result = await executeCommand(
+      `pfexec dladm show-vnic ${vnic} -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors`
+    );
 
-        const [link, ipackets, rbytes, ierrors, opackets, obytes, oerrors] = result.output.split(':');
-        
-        const statistics = {
-            link,
-            ipackets: parseInt(ipackets) || 0,
-            rbytes: parseInt(rbytes) || 0,
-            ierrors: parseInt(ierrors) || 0,
-            opackets: parseInt(opackets) || 0,
-            obytes: parseInt(obytes) || 0,
-            oerrors: parseInt(oerrors) || 0
-        };
-
-        res.json({
-            vnic: vnic,
-            statistics: statistics,
-            timestamp: new Date().toISOString(),
-            interval: parseInt(interval)
-        });
-
-    } catch (error) {
-        log.api.error('Error getting VNIC statistics', {
-            vnic: req.params.vnic,
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get VNIC statistics',
-            details: error.message 
-        });
+    if (!result.success) {
+      return res.status(404).json({
+        error: `VNIC ${vnic} not found or failed to get statistics`,
+        details: result.error,
+      });
     }
+
+    const [link, ipackets, rbytes, ierrors, opackets, obytes, oerrors] = result.output.split(':');
+
+    const statistics = {
+      link,
+      ipackets: parseInt(ipackets) || 0,
+      rbytes: parseInt(rbytes) || 0,
+      ierrors: parseInt(ierrors) || 0,
+      opackets: parseInt(opackets) || 0,
+      obytes: parseInt(obytes) || 0,
+      oerrors: parseInt(oerrors) || 0,
+    };
+
+    res.json({
+      vnic,
+      statistics,
+      timestamp: new Date().toISOString(),
+      interval: parseInt(interval),
+    });
+  } catch (error) {
+    log.api.error('Error getting VNIC statistics', {
+      vnic: req.params.vnic,
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get VNIC statistics',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -694,54 +721,54 @@ export const getVNICStats = async (req, res) => {
  *         description: Failed to get VNIC properties
  */
 export const getVNICProperties = async (req, res) => {
-    try {
-        const { vnic } = req.params;
-        const { property } = req.query;
+  try {
+    const { vnic } = req.params;
+    const { property } = req.query;
 
-        // Build command with optional property filter
-        let command = `pfexec dladm show-linkprop ${vnic} -p -o property,value,default,possible`;
-        if (property) {
-            command += ` -p ${property}`;
-        }
-
-        const result = await executeCommand(command);
-        
-        if (!result.success) {
-            return res.status(404).json({
-                error: `VNIC ${vnic} not found or failed to get properties`,
-                details: result.error
-            });
-        }
-
-        const properties = result.output.split('\n')
-            .filter(line => line.trim())
-            .map(line => {
-                const [prop, value, defaultVal, possible] = line.split(':');
-                return {
-                    property: prop,
-                    value: value,
-                    default: defaultVal,
-                    possible: possible
-                };
-            });
-
-        res.json({
-            vnic: vnic,
-            properties: properties,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error getting VNIC properties', {
-            vnic: req.params.vnic,
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get VNIC properties',
-            details: error.message 
-        });
+    // Build command with optional property filter
+    let command = `pfexec dladm show-linkprop ${vnic} -p -o property,value,default,possible`;
+    if (property) {
+      command += ` -p ${property}`;
     }
+
+    const result = await executeCommand(command);
+
+    if (!result.success) {
+      return res.status(404).json({
+        error: `VNIC ${vnic} not found or failed to get properties`,
+        details: result.error,
+      });
+    }
+
+    const properties = result.output
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => {
+        const [prop, value, defaultVal, possible] = line.split(':');
+        return {
+          property: prop,
+          value,
+          default: defaultVal,
+          possible,
+        };
+      });
+
+    res.json({
+      vnic,
+      properties,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error getting VNIC properties', {
+      vnic: req.params.vnic,
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get VNIC properties',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -792,62 +819,67 @@ export const getVNICProperties = async (req, res) => {
  *         description: Failed to create property update task
  */
 export const setVNICProperties = async (req, res) => {
-    try {
-        const { vnic } = req.params;
-        const { properties, temporary = false, created_by = 'api' } = req.body;
+  try {
+    const { vnic } = req.params;
+    const { properties, temporary = false, created_by = 'api' } = req.body;
 
-        if (!properties || typeof properties !== 'object' || Object.keys(properties).length === 0) {
-            return res.status(400).json({ 
-                error: 'properties object is required and must contain at least one property' 
-            });
-        }
-
-        // Check if VNIC exists
-        const existsResult = await executeCommand(`pfexec dladm show-vnic ${vnic}`);
-        if (!existsResult.success) {
-            return res.status(404).json({ 
-                error: `VNIC ${vnic} not found`,
-                details: existsResult.error
-            });
-        }
-
-        // Create task for VNIC property update
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'set_vnic_properties',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    vnic: vnic,
-                    properties: properties,
-                    temporary: temporary
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `VNIC property update task created for ${vnic}`,
-            task_id: task.id,
-            vnic_name: vnic,
-            properties: properties,
-            temporary: temporary
-        });
-
-    } catch (error) {
-        log.api.error('Error setting VNIC properties', {
-            vnic: req.params.vnic,
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to create VNIC property update task',
-            details: error.message 
-        });
+    if (!properties || typeof properties !== 'object' || Object.keys(properties).length === 0) {
+      return res.status(400).json({
+        error: 'properties object is required and must contain at least one property',
+      });
     }
+
+    // Check if VNIC exists
+    const existsResult = await executeCommand(`pfexec dladm show-vnic ${vnic}`);
+    if (!existsResult.success) {
+      return res.status(404).json({
+        error: `VNIC ${vnic} not found`,
+        details: existsResult.error,
+      });
+    }
+
+    // Create task for VNIC property update
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'set_vnic_properties',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            vnic,
+            properties,
+            temporary,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `VNIC property update task created for ${vnic}`,
+      task_id: task.id,
+      vnic_name: vnic,
+      properties,
+      temporary,
+    });
+  } catch (error) {
+    log.api.error('Error setting VNIC properties', {
+      vnic: req.params.vnic,
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to create VNIC property update task',
+      details: error.message,
+    });
+  }
 };

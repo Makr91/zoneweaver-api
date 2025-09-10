@@ -25,29 +25,29 @@ const activePtyProcesses = new Map();
  * @param {string} sessionId - The UUID of the terminal session.
  * @returns {Promise<boolean>} True if session is healthy, false otherwise.
  */
-const isSessionHealthy = async (sessionId) => {
-    try {
-        const ptyProcess = activePtyProcesses.get(sessionId);
-        if (!ptyProcess) {
-            return false;
-        }
-        
-        // Check if process ID still exists
-        try {
-            process.kill(ptyProcess.pid, 0); // Signal 0 checks if process exists without killing
-            return true;
-        } catch (error) {
-            // Process doesn't exist
-            activePtyProcesses.delete(sessionId);
-            return false;
-        }
-    } catch (error) {
-        log.websocket.error('Error checking terminal session health', {
-            error: error.message,
-            session_id: sessionId
-        });
-        return false;
+const isSessionHealthy = async sessionId => {
+  try {
+    const ptyProcess = activePtyProcesses.get(sessionId);
+    if (!ptyProcess) {
+      return false;
     }
+
+    // Check if process ID still exists
+    try {
+      process.kill(ptyProcess.pid, 0); // Signal 0 checks if process exists without killing
+      return true;
+    } catch (error) {
+      // Process doesn't exist
+      activePtyProcesses.delete(sessionId);
+      return false;
+    }
+  } catch (error) {
+    log.websocket.error('Error checking terminal session health', {
+      error: error.message,
+      session_id: sessionId,
+    });
+    return false;
+  }
 };
 
 /**
@@ -57,23 +57,23 @@ const isSessionHealthy = async (sessionId) => {
  * @returns {Promise<import('../models/TerminalSessionModel.js').default>} The session record
  */
 const createSessionRecord = async (zoneName = null, terminalCookie) => {
-    const timer = createTimer('terminal_session_create');
-    
-    const session = await TerminalSessions.create({
-        terminal_cookie: terminalCookie,
-        pid: 0, // Temporary PID, will be updated when PTY spawns
-        zone_name: zoneName,
-        status: 'connecting' // Session is being created
-    });
-    
-    const duration = timer.end();
-    log.websocket.debug('Terminal session record created', {
-        terminal_cookie: terminalCookie,
-        zone_name: zoneName,
-        duration_ms: duration
-    });
-    
-    return session;
+  const timer = createTimer('terminal_session_create');
+
+  const session = await TerminalSessions.create({
+    terminal_cookie: terminalCookie,
+    pid: 0, // Temporary PID, will be updated when PTY spawns
+    zone_name: zoneName,
+    status: 'connecting', // Session is being created
+  });
+
+  const duration = timer.end();
+  log.websocket.debug('Terminal session record created', {
+    terminal_cookie: terminalCookie,
+    zone_name: zoneName,
+    duration_ms: duration,
+  });
+
+  return session;
 };
 
 /**
@@ -81,57 +81,56 @@ const createSessionRecord = async (zoneName = null, terminalCookie) => {
  * @param {import('../models/TerminalSessionModel.js').default} session - The session record to update
  * @returns {Promise<void>}
  */
-const spawnPtyProcessAsync = async (session) => {
-    const timer = createTimer('pty_spawn');
-    
-    try {
-        // Use simpler configuration matching the working reference
-        const ptyProcess = pty.spawn(shell, [], {
-            name: 'xterm-color',
-            cols: 80,
-            rows: 30,
-            env: process.env
-        });
+const spawnPtyProcessAsync = async session => {
+  const timer = createTimer('pty_spawn');
 
-        // Update session record with actual PID and active status
-        await session.update({
-            pid: ptyProcess.pid,
-            status: 'active'
-        });
+  try {
+    // Use simpler configuration matching the working reference
+    const ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      env: process.env,
+    });
 
-        activePtyProcesses.set(session.id, ptyProcess);
+    // Update session record with actual PID and active status
+    await session.update({
+      pid: ptyProcess.pid,
+      status: 'active',
+    });
 
-        const duration = timer.end();
-        log.websocket.info('PTY process spawned successfully', {
-            session_id: session.id,
-            terminal_cookie: session.terminal_cookie,
-            pid: ptyProcess.pid,
-            duration_ms: duration
-        });
+    activePtyProcesses.set(session.id, ptyProcess);
 
-        // Use same event handler as working reference
-        ptyProcess.on('exit', (code, signal) => {
-            log.websocket.info('PTY process exited', {
-                session_id: session.id,
-                terminal_cookie: session.terminal_cookie,
-                exit_code: code,
-                signal: signal
-            });
-            activePtyProcesses.delete(session.id);
-            session.update({ status: 'closed' });
-        });
+    const duration = timer.end();
+    log.websocket.info('PTY process spawned successfully', {
+      session_id: session.id,
+      terminal_cookie: session.terminal_cookie,
+      pid: ptyProcess.pid,
+      duration_ms: duration,
+    });
 
-    } catch (error) {
-        const duration = timer.end();
-        log.websocket.error('Failed to spawn PTY process', {
-            session_id: session.id,
-            terminal_cookie: session.terminal_cookie,
-            error: error.message,
-            duration_ms: duration
-        });
-        // Mark session as failed
-        await session.update({ status: 'failed' });
-    }
+    // Use same event handler as working reference
+    ptyProcess.on('exit', (code, signal) => {
+      log.websocket.info('PTY process exited', {
+        session_id: session.id,
+        terminal_cookie: session.terminal_cookie,
+        exit_code: code,
+        signal,
+      });
+      activePtyProcesses.delete(session.id);
+      session.update({ status: 'closed' });
+    });
+  } catch (error) {
+    const duration = timer.end();
+    log.websocket.error('Failed to spawn PTY process', {
+      session_id: session.id,
+      terminal_cookie: session.terminal_cookie,
+      error: error.message,
+      duration_ms: duration,
+    });
+    // Mark session as failed
+    await session.update({ status: 'failed' });
+  }
 };
 
 /**
@@ -142,35 +141,35 @@ const spawnPtyProcessAsync = async (session) => {
  * @deprecated Use createSessionRecord + spawnPtyProcessAsync for better performance
  */
 const spawnPtyProcess = async (zoneName = null, terminalCookie) => {
-    const session = await createSessionRecord(zoneName, terminalCookie);
-    
-    // Spawn PTY synchronously for backward compatibility
-    const ptyProcess = pty.spawn(shell, [], {
-        name: 'xterm-color',
-        cols: 80,
-        rows: 30,
-        env: process.env
+  const session = await createSessionRecord(zoneName, terminalCookie);
+
+  // Spawn PTY synchronously for backward compatibility
+  const ptyProcess = pty.spawn(shell, [], {
+    name: 'xterm-color',
+    cols: 80,
+    rows: 30,
+    env: process.env,
+  });
+
+  await session.update({
+    pid: ptyProcess.pid,
+    status: 'active',
+  });
+
+  activePtyProcesses.set(session.id, ptyProcess);
+
+  ptyProcess.on('exit', (code, signal) => {
+    log.websocket.info('Legacy PTY process exited', {
+      session_id: session.id,
+      terminal_cookie: terminalCookie,
+      exit_code: code,
+      signal,
     });
+    activePtyProcesses.delete(session.id);
+    session.update({ status: 'closed' });
+  });
 
-    await session.update({
-        pid: ptyProcess.pid,
-        status: 'active'
-    });
-
-    activePtyProcesses.set(session.id, ptyProcess);
-
-    ptyProcess.on('exit', (code, signal) => {
-        log.websocket.info('Legacy PTY process exited', {
-            session_id: session.id,
-            terminal_cookie: terminalCookie,
-            exit_code: code,
-            signal: signal
-        });
-        activePtyProcesses.delete(session.id);
-        session.update({ status: 'closed' });
-    });
-
-    return { session, ptyProcess };
+  return { session, ptyProcess };
 };
 
 /**
@@ -178,48 +177,48 @@ const spawnPtyProcess = async (zoneName = null, terminalCookie) => {
  * @returns {Promise<number>} Number of sessions cleaned up.
  */
 const cleanupInactiveSessions = async () => {
-    const timeoutAgo = new Date(Date.now() - SESSION_TIMEOUT_MINUTES * 60 * 1000);
-    const timer = createTimer('terminal_session_cleanup');
-    
-    try {
-        const inactiveSessions = await TerminalSessions.findAll({
-            where: {
-                status: 'active',
-                last_activity: { [Op.lt]: timeoutAgo }
-            }
-        });
+  const timeoutAgo = new Date(Date.now() - SESSION_TIMEOUT_MINUTES * 60 * 1000);
+  const timer = createTimer('terminal_session_cleanup');
 
-        let cleanedCount = 0;
-        for (const session of inactiveSessions) {
-            const ptyProcess = activePtyProcesses.get(session.id);
-            if (ptyProcess) {
-                ptyProcess.kill();
-                activePtyProcesses.delete(session.id);
-            }
-            
-            await session.update({ status: 'closed' });
-            cleanedCount++;
-        }
+  try {
+    const inactiveSessions = await TerminalSessions.findAll({
+      where: {
+        status: 'active',
+        last_activity: { [Op.lt]: timeoutAgo },
+      },
+    });
 
-        const duration = timer.end();
+    let cleanedCount = 0;
+    for (const session of inactiveSessions) {
+      const ptyProcess = activePtyProcesses.get(session.id);
+      if (ptyProcess) {
+        ptyProcess.kill();
+        activePtyProcesses.delete(session.id);
+      }
 
-        if (cleanedCount > 0) {
-            log.websocket.info('Terminal cleanup completed', {
-                cleaned_sessions: cleanedCount,
-                timeout_minutes: SESSION_TIMEOUT_MINUTES,
-                duration_ms: duration
-            });
-        }
-
-        return cleanedCount;
-    } catch (error) {
-        timer.end();
-        log.websocket.error('Error during terminal session cleanup', {
-            error: error.message,
-            timeout_minutes: SESSION_TIMEOUT_MINUTES
-        });
-        return 0;
+      await session.update({ status: 'closed' });
+      cleanedCount++;
     }
+
+    const duration = timer.end();
+
+    if (cleanedCount > 0) {
+      log.websocket.info('Terminal cleanup completed', {
+        cleaned_sessions: cleanedCount,
+        timeout_minutes: SESSION_TIMEOUT_MINUTES,
+        duration_ms: duration,
+      });
+    }
+
+    return cleanedCount;
+  } catch (error) {
+    timer.end();
+    log.websocket.error('Error during terminal session cleanup', {
+      error: error.message,
+      timeout_minutes: SESSION_TIMEOUT_MINUTES,
+    });
+    return 0;
+  }
 };
 
 // Run cleanup every 10 minutes
@@ -288,123 +287,123 @@ setInterval(cleanupInactiveSessions, 10 * 60 * 1000);
  *         description: Failed to start terminal session.
  */
 export const startTerminalSession = async (req, res) => {
-    const timer = createTimer('terminal_session_start');
-    try {
-        const { zone_name, terminal_cookie } = req.body;
-        
-        if (!terminal_cookie) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'terminal_cookie is required' 
-            });
-        }
-        
-        // Check for existing healthy active session
-        const existingSession = await TerminalSessions.findOne({
-            where: { 
-                terminal_cookie, 
-                status: 'active' 
-            }
-        });
-        
-        if (existingSession) {
-            const isHealthy = await isSessionHealthy(existingSession.id);
-            
-            if (isHealthy) {
-                await existingSession.update({ 
-                    last_activity: new Date(),
-                    last_accessed: new Date()
-                });
-                const duration = timer.end();
-                
-                log.websocket.info('Terminal session reused', {
-                    terminal_cookie: terminal_cookie,
-                    session_id: existingSession.id,
-                    duration_ms: duration
-                });
-                
-                return res.json({
-                    success: true,
-                    data: {
-                        id: existingSession.terminal_cookie,
-                        websocket_url: `/term/${existingSession.id}`,
-                        reused: true,
-                        created_at: existingSession.created_at,
-                        buffer: existingSession.session_buffer || '',
-                        status: 'active'
-                    }
-                });
-            }
-        }
-        
-        // Clean up any existing unhealthy session
-        if (existingSession) {
-            const ptyProcess = activePtyProcesses.get(existingSession.id);
-            if (ptyProcess) {
-                ptyProcess.kill();
-                activePtyProcesses.delete(existingSession.id);
-            }
-            await existingSession.destroy();
-            log.websocket.debug('Cleaned up unhealthy terminal session', {
-                terminal_cookie: terminal_cookie,
-                session_id: existingSession.id
-            });
-        }
-        
-        // Create new session with async PTY spawning
-        let session;
-        
-        try {
-            session = await createSessionRecord(zone_name, terminal_cookie);
-        } catch (error) {
-            // Handle race condition if another request created the same cookie
-            if (error.name === 'SequelizeUniqueConstraintError') {
-                session = await TerminalSessions.findOne({ where: { terminal_cookie } });
-                if (!session) {
-                    throw new Error('Uniqueness error but session not found');
-                }
-                log.websocket.warn('Terminal session collision resolved', {
-                    terminal_cookie: terminal_cookie
-                });
-            } else {
-                throw error;
-            }
-        }
-        
-        // Start PTY asynchronously - DON'T AWAIT (key optimization!)
-        spawnPtyProcessAsync(session).catch(error => {
-            log.websocket.error('Async PTY spawn failed', {
-                session_id: session.id,
-                terminal_cookie: terminal_cookie,
-                error: error.message
-            });
-        });
-        
-        const duration = timer.end();
-        
-        res.json({
-            success: true,
-            data: {
-                id: session.terminal_cookie,
-                websocket_url: `/term/${session.id}`,
-                reused: false,
-                created_at: session.created_at,
-                buffer: '',
-                status: 'connecting'
-            }
-        });
-    } catch (error) {
-        const duration = timer.end();
-        log.websocket.error('Terminal session start failed', {
-            terminal_cookie: req.body.terminal_cookie,
-            error: error.message,
-            duration_ms: duration
-        });
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to start terminal session' 
-        });
+  const timer = createTimer('terminal_session_start');
+  try {
+    const { zone_name, terminal_cookie } = req.body;
+
+    if (!terminal_cookie) {
+      return res.status(400).json({
+        success: false,
+        error: 'terminal_cookie is required',
+      });
     }
+
+    // Check for existing healthy active session
+    const existingSession = await TerminalSessions.findOne({
+      where: {
+        terminal_cookie,
+        status: 'active',
+      },
+    });
+
+    if (existingSession) {
+      const isHealthy = await isSessionHealthy(existingSession.id);
+
+      if (isHealthy) {
+        await existingSession.update({
+          last_activity: new Date(),
+          last_accessed: new Date(),
+        });
+        const duration = timer.end();
+
+        log.websocket.info('Terminal session reused', {
+          terminal_cookie,
+          session_id: existingSession.id,
+          duration_ms: duration,
+        });
+
+        return res.json({
+          success: true,
+          data: {
+            id: existingSession.terminal_cookie,
+            websocket_url: `/term/${existingSession.id}`,
+            reused: true,
+            created_at: existingSession.created_at,
+            buffer: existingSession.session_buffer || '',
+            status: 'active',
+          },
+        });
+      }
+    }
+
+    // Clean up any existing unhealthy session
+    if (existingSession) {
+      const ptyProcess = activePtyProcesses.get(existingSession.id);
+      if (ptyProcess) {
+        ptyProcess.kill();
+        activePtyProcesses.delete(existingSession.id);
+      }
+      await existingSession.destroy();
+      log.websocket.debug('Cleaned up unhealthy terminal session', {
+        terminal_cookie,
+        session_id: existingSession.id,
+      });
+    }
+
+    // Create new session with async PTY spawning
+    let session;
+
+    try {
+      session = await createSessionRecord(zone_name, terminal_cookie);
+    } catch (error) {
+      // Handle race condition if another request created the same cookie
+      if (error.name === 'SequelizeUniqueConstraintError') {
+        session = await TerminalSessions.findOne({ where: { terminal_cookie } });
+        if (!session) {
+          throw new Error('Uniqueness error but session not found');
+        }
+        log.websocket.warn('Terminal session collision resolved', {
+          terminal_cookie,
+        });
+      } else {
+        throw error;
+      }
+    }
+
+    // Start PTY asynchronously - DON'T AWAIT (key optimization!)
+    spawnPtyProcessAsync(session).catch(error => {
+      log.websocket.error('Async PTY spawn failed', {
+        session_id: session.id,
+        terminal_cookie,
+        error: error.message,
+      });
+    });
+
+    const duration = timer.end();
+
+    res.json({
+      success: true,
+      data: {
+        id: session.terminal_cookie,
+        websocket_url: `/term/${session.id}`,
+        reused: false,
+        created_at: session.created_at,
+        buffer: '',
+        status: 'connecting',
+      },
+    });
+  } catch (error) {
+    const duration = timer.end();
+    log.websocket.error('Terminal session start failed', {
+      terminal_cookie: req.body.terminal_cookie,
+      error: error.message,
+      duration_ms: duration,
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to start terminal session',
+    });
+  }
 };
 
 /**
@@ -449,55 +448,55 @@ export const startTerminalSession = async (req, res) => {
  *         description: Failed to check session health.
  */
 export const checkSessionHealth = async (req, res) => {
-    try {
-        const { terminal_cookie } = req.params;
-        
-        const session = await TerminalSessions.findOne({
-            where: { 
-                terminal_cookie, 
-                status: ['active', 'connecting'] // Include both statuses
-            }
-        });
-        
-        if (!session) {
-            return res.json({ 
-                healthy: false, 
-                reason: 'Session not found' 
-            });
-        }
-        
-        // Handle different session statuses
-        if (session.status === 'connecting') {
-            const uptime = Math.floor((Date.now() - new Date(session.created_at)) / 1000);
-            return res.json({ 
-                healthy: true, 
-                status: 'connecting',
-                uptime,
-                last_activity: session.last_activity,
-                reason: 'PTY process still starting'
-            });
-        }
-        
-        const healthy = await isSessionHealthy(session.id);
-        const uptime = Math.floor((Date.now() - new Date(session.created_at)) / 1000);
-        
-        res.json({ 
-            healthy, 
-            status: session.status,
-            uptime,
-            last_activity: session.last_activity,
-            ...(healthy ? {} : { reason: 'Process not running' })
-        });
-    } catch (error) {
-        log.websocket.error('Error checking session health', {
-            error: error.message,
-            terminal_cookie: req.params.terminal_cookie
-        });
-        res.status(500).json({ 
-            healthy: false, 
-            error: 'Failed to check session health' 
-        });
+  try {
+    const { terminal_cookie } = req.params;
+
+    const session = await TerminalSessions.findOne({
+      where: {
+        terminal_cookie,
+        status: ['active', 'connecting'], // Include both statuses
+      },
+    });
+
+    if (!session) {
+      return res.json({
+        healthy: false,
+        reason: 'Session not found',
+      });
     }
+
+    // Handle different session statuses
+    if (session.status === 'connecting') {
+      const uptime = Math.floor((Date.now() - new Date(session.created_at)) / 1000);
+      return res.json({
+        healthy: true,
+        status: 'connecting',
+        uptime,
+        last_activity: session.last_activity,
+        reason: 'PTY process still starting',
+      });
+    }
+
+    const healthy = await isSessionHealthy(session.id);
+    const uptime = Math.floor((Date.now() - new Date(session.created_at)) / 1000);
+
+    res.json({
+      healthy,
+      status: session.status,
+      uptime,
+      last_activity: session.last_activity,
+      ...(healthy ? {} : { reason: 'Process not running' }),
+    });
+  } catch (error) {
+    log.websocket.error('Error checking session health', {
+      error: error.message,
+      terminal_cookie: req.params.terminal_cookie,
+    });
+    res.status(500).json({
+      healthy: false,
+      error: 'Failed to check session health',
+    });
+  }
 };
 
 /**
@@ -527,22 +526,22 @@ export const checkSessionHealth = async (req, res) => {
  *         description: Session not found.
  */
 export const getTerminalSessionInfo = async (req, res) => {
-    try {
-        const { sessionId } = req.params;
-        const session = await TerminalSessions.findByPk(sessionId);
+  try {
+    const { sessionId } = req.params;
+    const session = await TerminalSessions.findByPk(sessionId);
 
-        if (!session) {
-            return res.status(404).json({ error: 'Terminal session not found' });
-        }
-
-        res.json(session);
-    } catch (error) {
-        log.database.error('Error getting terminal session info', {
-            error: error.message,
-            session_id: req.params.sessionId
-        });
-        res.status(500).json({ error: 'Failed to get terminal session info' });
+    if (!session) {
+      return res.status(404).json({ error: 'Terminal session not found' });
     }
+
+    res.json(session);
+  } catch (error) {
+    log.database.error('Error getting terminal session info', {
+      error: error.message,
+      session_id: req.params.sessionId,
+    });
+    res.status(500).json({ error: 'Failed to get terminal session info' });
+  }
 };
 
 /**
@@ -568,28 +567,28 @@ export const getTerminalSessionInfo = async (req, res) => {
  *         description: Session not found.
  */
 export const stopTerminalSession = async (req, res) => {
-    try {
-        const { sessionId } = req.params;
-        const ptyProcess = activePtyProcesses.get(sessionId);
+  try {
+    const { sessionId } = req.params;
+    const ptyProcess = activePtyProcesses.get(sessionId);
 
-        if (ptyProcess) {
-            ptyProcess.kill();
-            activePtyProcesses.delete(sessionId);
-        }
-
-        const session = await TerminalSessions.findByPk(sessionId);
-        if (session) {
-            await session.update({ status: 'closed' });
-        }
-
-        res.json({ success: true, message: 'Terminal session stopped.' });
-    } catch (error) {
-        log.websocket.error('Error stopping terminal session', {
-            error: error.message,
-            session_id: req.params.sessionId
-        });
-        res.status(500).json({ error: 'Failed to stop terminal session' });
+    if (ptyProcess) {
+      ptyProcess.kill();
+      activePtyProcesses.delete(sessionId);
     }
+
+    const session = await TerminalSessions.findByPk(sessionId);
+    if (session) {
+      await session.update({ status: 'closed' });
+    }
+
+    res.json({ success: true, message: 'Terminal session stopped.' });
+  } catch (error) {
+    log.websocket.error('Error stopping terminal session', {
+      error: error.message,
+      session_id: req.params.sessionId,
+    });
+    res.status(500).json({ error: 'Failed to stop terminal session' });
+  }
 };
 
 /**
@@ -597,9 +596,7 @@ export const stopTerminalSession = async (req, res) => {
  * @param {string} sessionId - The UUID of the terminal session.
  * @returns {import('node-pty').IPty | undefined} The pty process or undefined if not found.
  */
-export const getPtyProcess = (sessionId) => {
-    return activePtyProcesses.get(sessionId);
-};
+export const getPtyProcess = sessionId => activePtyProcesses.get(sessionId);
 
 /**
  * @swagger
@@ -609,13 +606,13 @@ export const getPtyProcess = (sessionId) => {
  *     description: |
  *       This endpoint is used to upgrade a standard HTTP GET request to a WebSocket connection for an interactive terminal session.
  *       It is not a traditional REST endpoint and will not return a standard HTTP response. Instead, it will return a 101 Switching Protocols response if successful.
- *       
+ *
  *       **Connection Process:**
  *       1. Start a new terminal session by making a `POST` request to `/terminal/start`.
  *       2. Extract the `sessionId` from the response.
  *       3. Use the `sessionId` to construct the WebSocket URL (e.g., `wss://your-host/term/{sessionId}`).
  *       4. Establish a WebSocket connection to this URL.
- *       
+ *
  *       **Note:** Unlike the REST endpoints, authentication for the WebSocket upgrade is not handled via the standard `verifyApiKey` middleware. The session must be created via the authenticated `/terminal/start` endpoint first.
  *     tags: [Terminal]
  *     parameters:
@@ -653,15 +650,15 @@ export const getPtyProcess = (sessionId) => {
  *                 $ref: '#/components/schemas/TerminalSession'
  */
 export const listTerminalSessions = async (req, res) => {
-    try {
-        const sessions = await TerminalSessions.findAll({
-            order: [['created_at', 'DESC']]
-        });
-        res.json(sessions);
-    } catch (error) {
-        log.database.error('Error listing terminal sessions', {
-            error: error.message
-        });
-        res.status(500).json({ error: 'Failed to list terminal sessions' });
-    }
+  try {
+    const sessions = await TerminalSessions.findAll({
+      order: [['created_at', 'DESC']],
+    });
+    res.json(sessions);
+  } catch (error) {
+    log.database.error('Error listing terminal sessions', {
+      error: error.message,
+    });
+    res.status(500).json({ error: 'Failed to list terminal sessions' });
+  }
 };

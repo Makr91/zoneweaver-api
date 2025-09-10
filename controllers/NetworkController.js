@@ -5,36 +5,36 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync } from "child_process";
-import Tasks, { TaskPriority } from "../models/TaskModel.js";
-import IPAddresses from "../models/IPAddressModel.js";
-import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
-import { Op } from "sequelize";
-import yj from "yieldable-json";
-import { setRebootRequired } from "../lib/RebootManager.js";
-import os from "os";
-import fs from "fs";
-import { log } from "../lib/Logger.js";
+import { execSync } from 'child_process';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import IPAddresses from '../models/IPAddressModel.js';
+import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
+import { Op } from 'sequelize';
+import yj from 'yieldable-json';
+import { setRebootRequired } from '../lib/RebootManager.js';
+import os from 'os';
+import fs from 'fs';
+import { log } from '../lib/Logger.js';
 
 /**
  * Execute command safely with proper error handling
  * @param {string} command - Command to execute
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (command) => {
-    try {
-        const output = execSync(command, { 
-            encoding: 'utf8',
-            timeout: 30000 // 30 second timeout
-        });
-        return { success: true, output: output.trim() };
-    } catch (error) {
-        return { 
-            success: false, 
-            error: error.message,
-            output: error.stdout || ''
-        };
-    }
+const executeCommand = async command => {
+  try {
+    const output = execSync(command, {
+      encoding: 'utf8',
+      timeout: 30000, // 30 second timeout
+    });
+    return { success: true, output: output.trim() };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      output: error.stdout || '',
+    };
+  }
 };
 
 /**
@@ -73,45 +73,44 @@ const executeCommand = async (command) => {
  *         description: Failed to get hostname
  */
 export const getHostname = async (req, res) => {
+  try {
+    let nodenameMismatch = false;
+    let nodenameFile = null;
+    const systemHostname = os.hostname();
+
+    // Read /etc/nodename if it exists
     try {
-        let nodenameMismatch = false;
-        let nodenameFile = null;
-        let systemHostname = os.hostname();
-
-        // Read /etc/nodename if it exists
-        try {
-            if (fs.existsSync('/etc/nodename')) {
-                nodenameFile = fs.readFileSync('/etc/nodename', 'utf8').trim();
-            }
-        } catch (error) {
-            log.filesystem.warn('Could not read /etc/nodename', {
-                error: error.message
-            });
-        }
-
-        // Check for mismatch
-        if (nodenameFile && nodenameFile !== systemHostname) {
-            nodenameMismatch = true;
-        }
-
-        res.json({
-            hostname: systemHostname,
-            nodename_file: nodenameFile,
-            system_hostname: systemHostname,
-            matches: !nodenameMismatch,
-            warning: nodenameMismatch ? 'Hostname in /etc/nodename does not match system hostname' : null
-        });
-
+      if (fs.existsSync('/etc/nodename')) {
+        nodenameFile = fs.readFileSync('/etc/nodename', 'utf8').trim();
+      }
     } catch (error) {
-        log.api.error('Error getting hostname', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get hostname',
-            details: error.message 
-        });
+      log.filesystem.warn('Could not read /etc/nodename', {
+        error: error.message,
+      });
     }
+
+    // Check for mismatch
+    if (nodenameFile && nodenameFile !== systemHostname) {
+      nodenameMismatch = true;
+    }
+
+    res.json({
+      hostname: systemHostname,
+      nodename_file: nodenameFile,
+      system_hostname: systemHostname,
+      matches: !nodenameMismatch,
+      warning: nodenameMismatch ? 'Hostname in /etc/nodename does not match system hostname' : null,
+    });
+  } catch (error) {
+    log.api.error('Error getting hostname', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get hostname',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -180,66 +179,75 @@ export const getHostname = async (req, res) => {
  *         description: Failed to create hostname change task
  */
 export const setHostname = async (req, res) => {
-    try {
-        const { hostname, apply_immediately = false, created_by = 'api' } = req.body;
+  try {
+    const { hostname, apply_immediately = false, created_by = 'api' } = req.body;
 
-        if (!hostname || typeof hostname !== 'string') {
-            return res.status(400).json({ 
-                error: 'hostname is required and must be a string' 
-            });
-        }
-
-        // Validate hostname format (basic validation)
-        const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$/;
-        if (!hostnameRegex.test(hostname)) {
-            return res.status(400).json({ 
-                error: 'Invalid hostname format. Must be alphanumeric with hyphens, 1-63 characters' 
-            });
-        }
-
-        // Create task for hostname change
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'set_hostname',
-            priority: TaskPriority.HIGH,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    hostname: hostname,
-                    apply_immediately: apply_immediately
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        // Set reboot required flag for hostname changes
-        await setRebootRequired('hostname_change', 'NetworkController');
-
-        res.status(202).json({
-            success: true,
-            message: `Hostname change task created for: ${hostname}`,
-            task_id: task.id,
-            hostname: hostname,
-            apply_immediately: apply_immediately,
-            requires_reboot: true,
-            reboot_reason: apply_immediately ? 'Hostname applied immediately but reboot required for full persistence' : 'Hostname written to /etc/nodename - reboot required to take effect',
-            note: apply_immediately ? 'Hostname will be applied immediately but reboot required for persistence' : 'Hostname will be set in /etc/nodename only'
-        });
-
-    } catch (error) {
-        log.api.error('Error setting hostname', {
-            error: error.message,
-            stack: error.stack,
-            hostname: hostname
-        });
-        res.status(500).json({ 
-            error: 'Failed to create hostname change task',
-            details: error.message 
-        });
+    if (!hostname || typeof hostname !== 'string') {
+      return res.status(400).json({
+        error: 'hostname is required and must be a string',
+      });
     }
+
+    // Validate hostname format (basic validation)
+    const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$/;
+    if (!hostnameRegex.test(hostname)) {
+      return res.status(400).json({
+        error: 'Invalid hostname format. Must be alphanumeric with hyphens, 1-63 characters',
+      });
+    }
+
+    // Create task for hostname change
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'set_hostname',
+      priority: TaskPriority.HIGH,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            hostname,
+            apply_immediately,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    // Set reboot required flag for hostname changes
+    await setRebootRequired('hostname_change', 'NetworkController');
+
+    res.status(202).json({
+      success: true,
+      message: `Hostname change task created for: ${hostname}`,
+      task_id: task.id,
+      hostname,
+      apply_immediately,
+      requires_reboot: true,
+      reboot_reason: apply_immediately
+        ? 'Hostname applied immediately but reboot required for full persistence'
+        : 'Hostname written to /etc/nodename - reboot required to take effect',
+      note: apply_immediately
+        ? 'Hostname will be applied immediately but reboot required for persistence'
+        : 'Hostname will be set in /etc/nodename only',
+    });
+  } catch (error) {
+    log.api.error('Error setting hostname', {
+      error: error.message,
+      stack: error.stack,
+      hostname,
+    });
+    res.status(500).json({
+      error: 'Failed to create hostname change task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -307,93 +315,106 @@ export const setHostname = async (req, res) => {
  *         description: Failed to get IP addresses
  */
 export const getIPAddresses = async (req, res) => {
-    try {
-        const { 
-            interface: iface, 
-            ip_version, 
-            type, 
-            state, 
-            limit = 100, 
-            live = false 
-        } = req.query;
+  try {
+    const { interface: iface, ip_version, type, state, limit = 100, live = false } = req.query;
 
-        if (live === 'true' || live === true) {
-            // Get live data directly from ipadm
-            const result = await executeCommand('pfexec ipadm show-addr -p -o addrobj,type,state,addr');
-            
-            if (!result.success) {
-                return res.status(500).json({
-                    error: 'Failed to get live IP address data',
-                    details: result.error
-                });
-            }
+    if (live === 'true' || live === true) {
+      // Get live data directly from ipadm
+      const result = await executeCommand('pfexec ipadm show-addr -p -o addrobj,type,state,addr');
 
-            const addresses = result.output.split('\n')
-                .filter(line => line.trim())
-                .map(line => {
-                    const [addrobj, addrType, addrState, addr] = line.split(':');
-                    const [interfaceName] = addrobj.split('/');
-                    const ipVersion = addr.includes(':') ? 'v6' : 'v4';
-                    
-                    return {
-                        addrobj,
-                        interface: interfaceName,
-                        type: addrType,
-                        state: addrState,
-                        addr,
-                        ip_version: ipVersion,
-                        source: 'live'
-                    };
-                })
-                .filter(addr => {
-                    if (iface && !addr.interface.includes(iface)) return false;
-                    if (ip_version && addr.ip_version !== ip_version) return false;
-                    if (type && addr.type !== type) return false;
-                    if (state && addr.state !== state) return false;
-                    return true;
-                })
-                .slice(0, parseInt(limit));
-
-            return res.json({
-                addresses,
-                total: addresses.length,
-                source: 'live'
-            });
-        }
-
-        // Get data from database (monitoring data)
-        const hostname = os.hostname();
-        const whereClause = { host: hostname };
-        
-        if (iface) whereClause.interface = { [Op.like]: `%${iface}%` };
-        if (ip_version) whereClause.ip_version = ip_version;
-        if (type) whereClause.type = type;
-        if (state) whereClause.state = state;
-
-        const { count, rows } = await IPAddresses.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['ip_version', 'ASC'], ['interface', 'ASC']]
+      if (!result.success) {
+        return res.status(500).json({
+          error: 'Failed to get live IP address data',
+          details: result.error,
         });
+      }
 
-        res.json({
-            addresses: rows,
-            total: count,
-            source: 'database'
-        });
+      const addresses = result.output
+        .split('\n')
+        .filter(line => line.trim())
+        .map(line => {
+          const [addrobj, addrType, addrState, addr] = line.split(':');
+          const [interfaceName] = addrobj.split('/');
+          const ipVersion = addr.includes(':') ? 'v6' : 'v4';
 
-    } catch (error) {
-        log.api.error('Error getting IP addresses', {
-            error: error.message,
-            stack: error.stack,
-            live: live,
-            interface: iface
-        });
-        res.status(500).json({ 
-            error: 'Failed to get IP addresses',
-            details: error.message 
-        });
+          return {
+            addrobj,
+            interface: interfaceName,
+            type: addrType,
+            state: addrState,
+            addr,
+            ip_version: ipVersion,
+            source: 'live',
+          };
+        })
+        .filter(addr => {
+          if (iface && !addr.interface.includes(iface)) {
+            return false;
+          }
+          if (ip_version && addr.ip_version !== ip_version) {
+            return false;
+          }
+          if (type && addr.type !== type) {
+            return false;
+          }
+          if (state && addr.state !== state) {
+            return false;
+          }
+          return true;
+        })
+        .slice(0, parseInt(limit));
+
+      return res.json({
+        addresses,
+        total: addresses.length,
+        source: 'live',
+      });
     }
+
+    // Get data from database (monitoring data)
+    const hostname = os.hostname();
+    const whereClause = { host: hostname };
+
+    if (iface) {
+      whereClause.interface = { [Op.like]: `%${iface}%` };
+    }
+    if (ip_version) {
+      whereClause.ip_version = ip_version;
+    }
+    if (type) {
+      whereClause.type = type;
+    }
+    if (state) {
+      whereClause.state = state;
+    }
+
+    const { count, rows } = await IPAddresses.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      order: [
+        ['scan_timestamp', 'DESC'],
+        ['ip_version', 'ASC'],
+        ['interface', 'ASC'],
+      ],
+    });
+
+    res.json({
+      addresses: rows,
+      total: count,
+      source: 'database',
+    });
+  } catch (error) {
+    log.api.error('Error getting IP addresses', {
+      error: error.message,
+      stack: error.stack,
+      live,
+      interface: iface,
+    });
+    res.status(500).json({
+      error: 'Failed to get IP addresses',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -474,85 +495,90 @@ export const getIPAddresses = async (req, res) => {
  *         description: Failed to create IP address task
  */
 export const createIPAddress = async (req, res) => {
-    try {
-        const { 
-            interface: iface, 
-            type, 
-            addrobj, 
-            address, 
-            primary = false, 
-            wait = 30, 
-            temporary = false, 
-            down = false, 
-            created_by = 'api' 
-        } = req.body;
+  try {
+    const {
+      interface: iface,
+      type,
+      addrobj,
+      address,
+      primary = false,
+      wait = 30,
+      temporary = false,
+      down = false,
+      created_by = 'api',
+    } = req.body;
 
-        // Validate required fields
-        if (!iface || !type || !addrobj) {
-            return res.status(400).json({ 
-                error: 'interface, type, and addrobj are required' 
-            });
-        }
-
-        // Validate type-specific requirements
-        if (type === 'static' && !address) {
-            return res.status(400).json({ 
-                error: 'address is required for static type' 
-            });
-        }
-
-        if (!['static', 'dhcp', 'addrconf'].includes(type)) {
-            return res.status(400).json({ 
-                error: 'type must be one of: static, dhcp, addrconf' 
-            });
-        }
-
-        // Create task for IP address creation
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'create_ip_address',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    interface: iface,
-                    type: type,
-                    addrobj: addrobj,
-                    address: address,
-                    primary: primary,
-                    wait: wait,
-                    temporary: temporary,
-                    down: down
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `IP address creation task created for ${addrobj}`,
-            task_id: task.id,
-            addrobj: addrobj,
-            type: type,
-            interface: iface
-        });
-
-    } catch (error) {
-        log.api.error('Error creating IP address', {
-            error: error.message,
-            stack: error.stack,
-            interface: iface,
-            type: type,
-            addrobj: addrobj
-        });
-        res.status(500).json({ 
-            error: 'Failed to create IP address task',
-            details: error.message 
-        });
+    // Validate required fields
+    if (!iface || !type || !addrobj) {
+      return res.status(400).json({
+        error: 'interface, type, and addrobj are required',
+      });
     }
+
+    // Validate type-specific requirements
+    if (type === 'static' && !address) {
+      return res.status(400).json({
+        error: 'address is required for static type',
+      });
+    }
+
+    if (!['static', 'dhcp', 'addrconf'].includes(type)) {
+      return res.status(400).json({
+        error: 'type must be one of: static, dhcp, addrconf',
+      });
+    }
+
+    // Create task for IP address creation
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'create_ip_address',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            interface: iface,
+            type,
+            addrobj,
+            address,
+            primary,
+            wait,
+            temporary,
+            down,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `IP address creation task created for ${addrobj}`,
+      task_id: task.id,
+      addrobj,
+      type,
+      interface: iface,
+    });
+  } catch (error) {
+    log.api.error('Error creating IP address', {
+      error: error.message,
+      stack: error.stack,
+      interface: iface,
+      type,
+      addrobj,
+    });
+    res.status(500).json({
+      error: 'Failed to create IP address task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -605,65 +631,70 @@ export const createIPAddress = async (req, res) => {
  *         description: Failed to create IP address deletion task
  */
 export const deleteIPAddress = async (req, res) => {
-    try {
-        // With wildcard route (*), the addrobj is in req.params[0]
-        const addrobj = req.params[0];
-        const { release = false, created_by = 'api' } = req.query;
+  try {
+    // With wildcard route (*), the addrobj is in req.params[0]
+    const addrobj = req.params[0];
+    const { release = false, created_by = 'api' } = req.query;
 
-        // Check if address object exists in current system
-        const result = await executeCommand(`pfexec ipadm show-addr ${addrobj}`);
-        
-        if (!result.success) {
-            return res.status(404).json({ 
-                error: `Address object ${addrobj} not found`,
-                details: result.error
-            });
-        }
+    // Check if address object exists in current system
+    const result = await executeCommand(`pfexec ipadm show-addr ${addrobj}`);
 
-        // Create task for IP address deletion
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'delete_ip_address',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    addrobj: addrobj,
-                    release: release === 'true' || release === true
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
-
-        log.app.info('IP address deletion task created', {
-            task_id: task.id,
-            addrobj: addrobj,
-            release: release === 'true' || release === true,
-            created_by: created_by
-        });
-
-        res.status(202).json({
-            success: true,
-            message: `IP address deletion task created for ${addrobj}`,
-            task_id: task.id,
-            addrobj: addrobj,
-            release: release === 'true' || release === true
-        });
-
-    } catch (error) {
-        log.api.error('Error deleting IP address', {
-            error: error.message,
-            stack: error.stack,
-            addrobj: req.params[0]
-        });
-        res.status(500).json({ 
-            error: 'Failed to create IP address deletion task',
-            details: error.message 
-        });
+    if (!result.success) {
+      return res.status(404).json({
+        error: `Address object ${addrobj} not found`,
+        details: result.error,
+      });
     }
+
+    // Create task for IP address deletion
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'delete_ip_address',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            addrobj,
+            release: release === 'true' || release === true,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
+
+    log.app.info('IP address deletion task created', {
+      task_id: task.id,
+      addrobj,
+      release: release === 'true' || release === true,
+      created_by,
+    });
+
+    res.status(202).json({
+      success: true,
+      message: `IP address deletion task created for ${addrobj}`,
+      task_id: task.id,
+      addrobj,
+      release: release === 'true' || release === true,
+    });
+  } catch (error) {
+    log.api.error('Error deleting IP address', {
+      error: error.message,
+      stack: error.stack,
+      addrobj: req.params[0],
+    });
+    res.status(500).json({
+      error: 'Failed to create IP address deletion task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -691,46 +722,51 @@ export const deleteIPAddress = async (req, res) => {
  *         description: Failed to create enable task
  */
 export const enableIPAddress = async (req, res) => {
-    try {
-        // With wildcard route (*), the addrobj is in req.params[0]
-        const addrobj = req.params[0];
-        const { created_by = 'api' } = req.body || {};
+  try {
+    // With wildcard route (*), the addrobj is in req.params[0]
+    const addrobj = req.params[0];
+    const { created_by = 'api' } = req.body || {};
 
-        // Create task for enabling IP address
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'enable_ip_address',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    addrobj: addrobj
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
+    // Create task for enabling IP address
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'enable_ip_address',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            addrobj,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
 
-        res.status(202).json({
-            success: true,
-            message: `IP address enable task created for ${addrobj}`,
-            task_id: task.id,
-            addrobj: addrobj
-        });
-
-    } catch (error) {
-        log.api.error('Error enabling IP address', {
-            error: error.message,
-            stack: error.stack,
-            addrobj: req.params[0]
-        });
-        res.status(500).json({ 
-            error: 'Failed to create IP address enable task',
-            details: error.message 
-        });
-    }
+    res.status(202).json({
+      success: true,
+      message: `IP address enable task created for ${addrobj}`,
+      task_id: task.id,
+      addrobj,
+    });
+  } catch (error) {
+    log.api.error('Error enabling IP address', {
+      error: error.message,
+      stack: error.stack,
+      addrobj: req.params[0],
+    });
+    res.status(500).json({
+      error: 'Failed to create IP address enable task',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -756,44 +792,49 @@ export const enableIPAddress = async (req, res) => {
  *         description: Failed to create disable task
  */
 export const disableIPAddress = async (req, res) => {
-    try {
-        // With wildcard route (*), the addrobj is in req.params[0]
-        const addrobj = req.params[0];
-        const { created_by = 'api' } = req.body || {};
+  try {
+    // With wildcard route (*), the addrobj is in req.params[0]
+    const addrobj = req.params[0];
+    const { created_by = 'api' } = req.body || {};
 
-        // Create task for disabling IP address
-        const task = await Tasks.create({
-            zone_name: 'system',
-            operation: 'disable_ip_address',
-            priority: TaskPriority.NORMAL,
-            created_by: created_by,
-            status: 'pending',
-            metadata: await new Promise((resolve, reject) => {
-                yj.stringifyAsync({
-                    addrobj: addrobj
-                }, (err, result) => {
-                    if (err) reject(err);
-                    else resolve(result);
-                });
-            })
-        });
+    // Create task for disabling IP address
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'disable_ip_address',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            addrobj,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+      }),
+    });
 
-        res.status(202).json({
-            success: true,
-            message: `IP address disable task created for ${addrobj}`,
-            task_id: task.id,
-            addrobj: addrobj
-        });
-
-    } catch (error) {
-        log.api.error('Error disabling IP address', {
-            error: error.message,
-            stack: error.stack,
-            addrobj: req.params[0]
-        });
-        res.status(500).json({ 
-            error: 'Failed to create IP address disable task',
-            details: error.message 
-        });
-    }
+    res.status(202).json({
+      success: true,
+      message: `IP address disable task created for ${addrobj}`,
+      task_id: task.id,
+      addrobj,
+    });
+  } catch (error) {
+    log.api.error('Error disabling IP address', {
+      error: error.message,
+      stack: error.stack,
+      addrobj: req.params[0],
+    });
+    res.status(500).json({
+      error: 'Failed to create IP address disable task',
+      details: error.message,
+    });
+  }
 };

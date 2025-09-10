@@ -7,13 +7,13 @@
  */
 
 import {
-    getServices,
-    getServiceDetails,
-    enableService,
-    disableService,
-    restartService,
-    refreshService,
-    getProperties
+  getServices,
+  getServiceDetails,
+  enableService,
+  disableService,
+  restartService,
+  refreshService,
+  getProperties,
 } from '../lib/ServiceManager.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { log } from '../lib/Logger.js';
@@ -69,20 +69,20 @@ import { log } from '../lib/Logger.js';
  *         description: Failed to retrieve services
  */
 export const listServices = async (req, res) => {
-    try {
-        const { pattern, zone, all } = req.query;
-        const options = { pattern, zone, all };
-        const services = await getServices(options);
-        res.json(services);
-    } catch (error) {
-        log.api.error('Error listing services', {
-            error: error.message,
-            stack: error.stack,
-            pattern: pattern,
-            zone: zone
-        });
-        res.status(500).json({ error: 'Failed to retrieve services' });
-    }
+  try {
+    const { pattern, zone, all } = req.query;
+    const options = { pattern, zone, all };
+    const services = await getServices(options);
+    res.json(services);
+  } catch (error) {
+    log.api.error('Error listing services', {
+      error: error.message,
+      stack: error.stack,
+      pattern,
+      zone,
+    });
+    res.status(500).json({ error: 'Failed to retrieve services' });
+  }
 };
 
 /**
@@ -111,19 +111,19 @@ export const listServices = async (req, res) => {
  *         description: Failed to retrieve service details
  */
 export const getServiceDetailsController = async (req, res) => {
-    try {
-        const { fmri } = req.params;
-        const decodedFmri = decodeURIComponent(fmri);
-        const service = await getServiceDetails(decodedFmri);
-        res.json(service);
-    } catch (error) {
-        log.api.error('Error getting service details', {
-            error: error.message,
-            stack: error.stack,
-            fmri: decodedFmri
-        });
-        res.status(500).json({ error: 'Failed to retrieve service details' });
-    }
+  try {
+    const { fmri } = req.params;
+    const decodedFmri = decodeURIComponent(fmri);
+    const service = await getServiceDetails(decodedFmri);
+    res.json(service);
+  } catch (error) {
+    log.api.error('Error getting service details', {
+      error: error.message,
+      stack: error.stack,
+      fmri: decodedFmri,
+    });
+    res.status(500).json({ error: 'Failed to retrieve service details' });
+  }
 };
 
 /**
@@ -155,35 +155,35 @@ export const getServiceDetailsController = async (req, res) => {
  *         description: Failed to perform action
  */
 export const serviceAction = async (req, res) => {
-    try {
-        const { action, fmri, options } = req.body;
-        
-        // Decode FMRI for proper storage and execution
-        const decodedFmri = decodeURIComponent(fmri);
-        
-        const task = await Tasks.create({
-            zone_name: decodedFmri,
-            operation: `service_${action}`,
-            priority: TaskPriority.SERVICE,
-            created_by: req.entity.name,
-            status: 'pending'
-        });
+  try {
+    const { action, fmri, options } = req.body;
 
-        res.json({
-            success: true,
-            message: `Task created for action ${action} on service ${decodedFmri}`,
-            task_id: task.id
-        });
-    } catch (error) {
-        log.api.error('Error creating service action task', {
-            error: error.message,
-            stack: error.stack,
-            action: req.body.action,
-            fmri: decodedFmri,
-            created_by: req.entity?.name
-        });
-        res.status(500).json({ error: `Failed to create task for action ${req.body.action}` });
-    }
+    // Decode FMRI for proper storage and execution
+    const decodedFmri = decodeURIComponent(fmri);
+
+    const task = await Tasks.create({
+      zone_name: decodedFmri,
+      operation: `service_${action}`,
+      priority: TaskPriority.SERVICE,
+      created_by: req.entity.name,
+      status: 'pending',
+    });
+
+    res.json({
+      success: true,
+      message: `Task created for action ${action} on service ${decodedFmri}`,
+      task_id: task.id,
+    });
+  } catch (error) {
+    log.api.error('Error creating service action task', {
+      error: error.message,
+      stack: error.stack,
+      action: req.body.action,
+      fmri: decodedFmri,
+      created_by: req.entity?.name,
+    });
+    res.status(500).json({ error: `Failed to create task for action ${req.body.action}` });
+  }
 };
 
 /**
@@ -212,17 +212,17 @@ export const serviceAction = async (req, res) => {
  *         description: Failed to retrieve service properties
  */
 export const getPropertiesController = async (req, res) => {
-    try {
-        const { fmri } = req.params;
-        const decodedFmri = decodeURIComponent(fmri);
-        const properties = await getProperties(decodedFmri);
-        res.json(properties);
-    } catch (error) {
-        log.api.error('Error getting service properties', {
-            error: error.message,
-            stack: error.stack,
-            fmri: decodedFmri
-        });
-        res.status(500).json({ error: 'Failed to retrieve service properties' });
-    }
+  try {
+    const { fmri } = req.params;
+    const decodedFmri = decodeURIComponent(fmri);
+    const properties = await getProperties(decodedFmri);
+    res.json(properties);
+  } catch (error) {
+    log.api.error('Error getting service properties', {
+      error: error.message,
+      stack: error.stack,
+      fmri: decodedFmri,
+    });
+    res.status(500).json({ error: 'Failed to retrieve service properties' });
+  }
 };

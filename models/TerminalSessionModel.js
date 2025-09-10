@@ -1,5 +1,5 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const { DataTypes } = Sequelize;
@@ -39,55 +39,59 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Last time session was accessed
  */
-const TerminalSessions = db.define('terminal_sessions', {
+const TerminalSessions = db.define(
+  'terminal_sessions',
+  {
     id: {
-        type: DataTypes.UUID,
-        defaultValue: () => uuidv4(),
-        primaryKey: true,
-        comment: 'Unique session identifier'
+      type: DataTypes.UUID,
+      defaultValue: () => uuidv4(),
+      primaryKey: true,
+      comment: 'Unique session identifier',
     },
     terminal_cookie: {
-        type: DataTypes.STRING,
-        unique: true,
-        allowNull: false,
-        comment: 'Frontend-generated session identifier'
+      type: DataTypes.STRING,
+      unique: true,
+      allowNull: false,
+      comment: 'Frontend-generated session identifier',
     },
     pid: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        comment: 'Process ID of the node-pty process'
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      comment: 'Process ID of the node-pty process',
     },
     zone_name: {
-        type: DataTypes.STRING,
-        comment: 'Zone this terminal session is for'
+      type: DataTypes.STRING,
+      comment: 'Zone this terminal session is for',
     },
     status: {
-        type: DataTypes.STRING,
-        defaultValue: 'active',
-        comment: 'Session status (active, closed)'
+      type: DataTypes.STRING,
+      defaultValue: 'active',
+      comment: 'Session status (active, closed)',
     },
     session_buffer: {
-        type: DataTypes.TEXT,
-        comment: 'Last 1000 lines of terminal output for reconnection'
+      type: DataTypes.TEXT,
+      comment: 'Last 1000 lines of terminal output for reconnection',
     },
     created_at: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Timestamp when session was created'
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp when session was created',
     },
     last_accessed: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Timestamp when session was last accessed'
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp when session was last accessed',
     },
     last_activity: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Last time session had activity (input/output)'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Last time session had activity (input/output)',
+    },
+  },
+  {
     freezeTableName: true,
-    comment: 'Terminal sessions for browser-based terminal access'
-});
+    comment: 'Terminal sessions for browser-based terminal access',
+  }
+);
 
 export default TerminalSessions;

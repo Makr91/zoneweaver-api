@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -111,134 +111,139 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const PoolIOStats = db.define('pool_io_stats', {
+const PoolIOStats = db.define(
+  'pool_io_stats',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the pool is located'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the pool is located',
     },
     pool: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'ZFS pool name'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'ZFS pool name',
     },
     pool_type: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Pool RAID configuration (raidz1, raidz2, mirror, etc.)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Pool RAID configuration (raidz1, raidz2, mirror, etc.)',
     },
     alloc: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Allocated space with units (e.g., "234G")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Allocated space with units (e.g., "234G")',
     },
     free: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Free space with units (e.g., "314G")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Free space with units (e.g., "314G")',
     },
     read_ops: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Read operations count'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Read operations count',
     },
     write_ops: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Write operations count'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Write operations count',
     },
     read_bandwidth: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Read bandwidth with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Read bandwidth with units',
     },
     write_bandwidth: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Write bandwidth with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Write bandwidth with units',
     },
     read_bandwidth_bytes: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Read bandwidth in bytes per second'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Read bandwidth in bytes per second',
     },
     write_bandwidth_bytes: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Write bandwidth in bytes per second'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Write bandwidth in bytes per second',
     },
     total_wait_read: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Total wait time for read operations (e.g., "3ms")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Total wait time for read operations (e.g., "3ms")',
     },
     total_wait_write: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Total wait time for write operations (e.g., "4ms")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Total wait time for write operations (e.g., "4ms")',
     },
     disk_wait_read: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Disk wait time for read operations (e.g., "2ms")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Disk wait time for read operations (e.g., "2ms")',
     },
     disk_wait_write: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Disk wait time for write operations (e.g., "1ms")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Disk wait time for write operations (e.g., "1ms")',
     },
     syncq_wait_read: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Synchronous queue wait time for reads (e.g., "243us")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Synchronous queue wait time for reads (e.g., "243us")',
     },
     syncq_wait_write: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Synchronous queue wait time for writes (e.g., "5ms")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Synchronous queue wait time for writes (e.g., "5ms")',
     },
     asyncq_wait_read: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Asynchronous queue wait time for reads (e.g., "2ms")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Asynchronous queue wait time for reads (e.g., "2ms")',
     },
     asyncq_wait_write: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Asynchronous queue wait time for writes (e.g., "3ms")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Asynchronous queue wait time for writes (e.g., "3ms")',
     },
     scrub_wait: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Scrub operation wait time (e.g., "53ms")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Scrub operation wait time (e.g., "53ms")',
     },
     trim_wait: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Trim operation wait time (e.g., "-")'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Trim operation wait time (e.g., "-")',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
-    comment: 'ZFS pool I/O performance statistics with latency metrics (collected every 10 seconds)',
+    comment:
+      'ZFS pool I/O performance statistics with latency metrics (collected every 10 seconds)',
     indexes: [
-        {
-            fields: ['host', 'pool', 'scan_timestamp']
-        },
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['scan_timestamp']
-        },
-        {
-            fields: ['pool', 'scan_timestamp']
-        }
-    ]
-});
- 
+      {
+        fields: ['host', 'pool', 'scan_timestamp'],
+      },
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+      {
+        fields: ['pool', 'scan_timestamp'],
+      },
+    ],
+  }
+);
+
 export default PoolIOStats;

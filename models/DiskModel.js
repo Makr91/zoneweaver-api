@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -83,106 +83,110 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const Disks = db.define('disks', {
+const Disks = db.define(
+  'disks',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the disk is located'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the disk is located',
     },
     disk_index: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        comment: 'Disk index from format command output'
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      comment: 'Disk index from format command output',
     },
     device_name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Device name (e.g., c0t5F8DB4C101905B5Ad0)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Device name (e.g., c0t5F8DB4C101905B5Ad0)',
     },
     serial_number: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Disk serial number extracted from device name'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Disk serial number extracted from device name',
     },
     manufacturer: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Disk manufacturer (ATA, SEAGATE, etc.)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Disk manufacturer (ATA, SEAGATE, etc.)',
     },
     model: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Disk model number'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Disk model number',
     },
     firmware: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Firmware version'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Firmware version',
     },
     capacity: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Disk capacity with units (e.g., 111.79GB)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Disk capacity with units (e.g., 111.79GB)',
     },
     capacity_bytes: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Disk capacity in bytes (string for large numbers)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Disk capacity in bytes (string for large numbers)',
     },
     device_path: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Full device path (/scsi_vhci/disk@g...)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Full device path (/scsi_vhci/disk@g...)',
     },
     disk_type: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Type of disk (SSD, HDD, etc.)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Type of disk (SSD, HDD, etc.)',
     },
     interface_type: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Interface type (SATA, SAS, SCSI, etc.)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Interface type (SATA, SAS, SCSI, etc.)',
     },
     pool_assignment: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'ZFS pool this disk belongs to (if any)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'ZFS pool this disk belongs to (if any)',
     },
     is_available: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true,
-        comment: 'Whether disk is available for pool assignment'
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+      comment: 'Whether disk is available for pool assignment',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'Physical disk inventory and properties',
     indexes: [
-        {
-            unique: true,
-            fields: ['host', 'device_name']  // Remove scan_timestamp to allow updates
-        },
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['serial_number']
-        },
-        {
-            fields: ['pool_assignment']
-        },
-        {
-            fields: ['is_available']
-        },
-        {
-            fields: ['scan_timestamp']
-        }
-    ]
-});
- 
+      {
+        unique: true,
+        fields: ['host', 'device_name'], // Remove scan_timestamp to allow updates
+      },
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['serial_number'],
+      },
+      {
+        fields: ['pool_assignment'],
+      },
+      {
+        fields: ['is_available'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+    ],
+  }
+);
+
 export default Disks;

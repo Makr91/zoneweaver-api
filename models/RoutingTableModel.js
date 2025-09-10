@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -67,92 +67,96 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const Routes = db.define('routes', {
+const Routes = db.define(
+  'routes',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the route is configured'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the route is configured',
     },
     destination: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Destination network or host'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Destination network or host',
     },
     gateway: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Gateway IP address'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Gateway IP address',
     },
     flags: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Route flags (UG, UH, U, etc.)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Route flags (UG, UH, U, etc.)',
     },
     ref: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Reference count'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Reference count',
     },
     use: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Use count (string for large numbers)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Use count (string for large numbers)',
     },
     interface: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Network interface'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Network interface',
     },
     ip_version: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'IP version (v4 or v6)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'IP version (v4 or v6)',
     },
     destination_mask: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Destination with mask (for IPv6 routes)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Destination with mask (for IPv6 routes)',
     },
     is_default: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-        comment: 'Whether this is a default route'
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Whether this is a default route',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'Routing table entries from netstat -rn',
     indexes: [
-        {
-            unique: true,
-            fields: ['host', 'destination', 'gateway', 'interface', 'ip_version', 'scan_timestamp']
-        },
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['interface']
-        },
-        {
-            fields: ['ip_version']
-        },
-        {
-            fields: ['is_default']
-        },
-        {
-            fields: ['destination']
-        },
-        {
-            fields: ['gateway']
-        },
-        {
-            fields: ['scan_timestamp']
-        }
-    ]
-});
- 
+      {
+        unique: true,
+        fields: ['host', 'destination', 'gateway', 'interface', 'ip_version', 'scan_timestamp'],
+      },
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['interface'],
+      },
+      {
+        fields: ['ip_version'],
+      },
+      {
+        fields: ['is_default'],
+      },
+      {
+        fields: ['destination'],
+      },
+      {
+        fields: ['gateway'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+    ],
+  }
+);
+
 export default Routes;

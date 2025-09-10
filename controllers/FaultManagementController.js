@@ -5,16 +5,16 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { exec } from "child_process";
-import util from "util";
-import os from "os";
-import config from "../config/ConfigLoader.js";
-import { log } from "../lib/Logger.js";
+import { exec } from 'child_process';
+import util from 'util';
+import os from 'os';
+import config from '../config/ConfigLoader.js';
+import { log } from '../lib/Logger.js';
 
 const execProm = util.promisify(exec);
 
 // Fault cache to store results for configured interval - parameter-aware caching
-let faultCache = new Map();
+const faultCache = new Map();
 
 /**
  * @swagger
@@ -72,102 +72,107 @@ let faultCache = new Map();
  *         description: Failed to get system faults
  */
 export const getFaults = async (req, res) => {
-    try {
-        // Explicitly parse boolean parameters to avoid string "false" being truthy
-        const all = req.query.all === 'true' || req.query.all === true;
-        const summary = req.query.summary === 'true' || req.query.summary === true;
-        const limit = parseInt(req.query.limit) || 50;
-        const force_refresh = req.query.force_refresh === 'true' || req.query.force_refresh === true;
-        const faultConfig = config.getFaultManagement();
-        
-        if (!faultConfig?.enabled) {
-            return res.status(503).json({
-                error: 'Fault management is disabled in configuration'
-            });
-        }
+  try {
+    // Explicitly parse boolean parameters to avoid string "false" being truthy
+    const all = req.query.all === 'true' || req.query.all === true;
+    const summary = req.query.summary === 'true' || req.query.summary === true;
+    const limit = parseInt(req.query.limit) || 50;
+    const force_refresh = req.query.force_refresh === 'true' || req.query.force_refresh === true;
+    const faultConfig = config.getFaultManagement();
 
-        // Create cache key based on parameters to avoid conflicts
-        const cacheKey = `all=${all}&summary=${summary}&limit=${limit}`;
-        const now = Date.now();
-        
-        // Check cache validity for this specific parameter combination
-        let cachedEntry = faultCache.get(cacheKey);
-        const cacheAge = cachedEntry?.timestamp ? (now - cachedEntry.timestamp) / 1000 : Infinity;
-        const useCache = !force_refresh && cachedEntry?.data && cacheAge < faultConfig.cache_interval;
-
-        let faultData;
-        
-        if (useCache) {
-            faultData = cachedEntry.data;
-            log.monitoring.debug('Fault Management - Using cached data', { cache_key: cacheKey });
-        } else {
-            // Build fmadm command with options
-            let command = 'pfexec fmadm faulty';
-            if (all) command += ' -a';
-            if (summary) command += ' -s';
-            if (limit && limit < 50) command += ` -n ${limit}`;
-
-            log.monitoring.debug('Fault Management - Parameters', {
-                all,
-                summary,
-                limit,
-                command,
-                cache_key: cacheKey
-            });
-
-            const { stdout, stderr } = await execProm(command, { 
-                timeout: faultConfig.timeout * 1000 
-            });
-
-            if (stderr && stderr.trim()) {
-                log.monitoring.warn('fmadm faulty stderr', { stderr });
-            }
-
-            log.monitoring.debug('Fault Management - Raw output', {
-                output_length: stdout.length,
-                first_200_chars: stdout.substring(0, 200)
-            });
-
-            faultData = {
-                raw_output: stdout,
-                parsed_faults: parseFaultOutput(stdout),
-                command_used: command,
-                timestamp: new Date().toISOString()
-            };
-
-            log.monitoring.debug('Fault Management - Parsed faults', {
-                fault_count: faultData.parsed_faults.length
-            });
-
-            // Update cache for this parameter combination
-            faultCache.set(cacheKey, {
-                data: faultData,
-                timestamp: now
-            });
-        }
-
-        // Generate summary
-        const faultsSummary = generateFaultsSummary(faultData.parsed_faults);
-
-        res.json({
-            faults: faultData.parsed_faults,
-            summary: faultsSummary,
-            raw_output: faultData.raw_output,
-            cached: useCache,
-            last_updated: faultData.timestamp,
-            cache_age_seconds: useCache ? Math.floor(cacheAge) : 0
-        });
-
-    } catch (error) {
-        log.api.error('Error getting system faults', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get system faults',
-            details: error.message 
-        });
+    if (!faultConfig?.enabled) {
+      return res.status(503).json({
+        error: 'Fault management is disabled in configuration',
+      });
     }
+
+    // Create cache key based on parameters to avoid conflicts
+    const cacheKey = `all=${all}&summary=${summary}&limit=${limit}`;
+    const now = Date.now();
+
+    // Check cache validity for this specific parameter combination
+    const cachedEntry = faultCache.get(cacheKey);
+    const cacheAge = cachedEntry?.timestamp ? (now - cachedEntry.timestamp) / 1000 : Infinity;
+    const useCache = !force_refresh && cachedEntry?.data && cacheAge < faultConfig.cache_interval;
+
+    let faultData;
+
+    if (useCache) {
+      faultData = cachedEntry.data;
+      log.monitoring.debug('Fault Management - Using cached data', { cache_key: cacheKey });
+    } else {
+      // Build fmadm command with options
+      let command = 'pfexec fmadm faulty';
+      if (all) {
+        command += ' -a';
+      }
+      if (summary) {
+        command += ' -s';
+      }
+      if (limit && limit < 50) {
+        command += ` -n ${limit}`;
+      }
+
+      log.monitoring.debug('Fault Management - Parameters', {
+        all,
+        summary,
+        limit,
+        command,
+        cache_key: cacheKey,
+      });
+
+      const { stdout, stderr } = await execProm(command, {
+        timeout: faultConfig.timeout * 1000,
+      });
+
+      if (stderr && stderr.trim()) {
+        log.monitoring.warn('fmadm faulty stderr', { stderr });
+      }
+
+      log.monitoring.debug('Fault Management - Raw output', {
+        output_length: stdout.length,
+        first_200_chars: stdout.substring(0, 200),
+      });
+
+      faultData = {
+        raw_output: stdout,
+        parsed_faults: parseFaultOutput(stdout),
+        command_used: command,
+        timestamp: new Date().toISOString(),
+      };
+
+      log.monitoring.debug('Fault Management - Parsed faults', {
+        fault_count: faultData.parsed_faults.length,
+      });
+
+      // Update cache for this parameter combination
+      faultCache.set(cacheKey, {
+        data: faultData,
+        timestamp: now,
+      });
+    }
+
+    // Generate summary
+    const faultsSummary = generateFaultsSummary(faultData.parsed_faults);
+
+    res.json({
+      faults: faultData.parsed_faults,
+      summary: faultsSummary,
+      raw_output: faultData.raw_output,
+      cached: useCache,
+      last_updated: faultData.timestamp,
+      cache_age_seconds: useCache ? Math.floor(cacheAge) : 0,
+    });
+  } catch (error) {
+    log.api.error('Error getting system faults', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get system faults',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -193,54 +198,53 @@ export const getFaults = async (req, res) => {
  *         description: Failed to get fault details
  */
 export const getFaultDetails = async (req, res) => {
-    try {
-        const { uuid } = req.params;
-        const faultConfig = config.getFaultManagement();
-        
-        if (!faultConfig?.enabled) {
-            return res.status(503).json({
-                error: 'Fault management is disabled in configuration'
-            });
-        }
+  try {
+    const { uuid } = req.params;
+    const faultConfig = config.getFaultManagement();
 
-        const command = `pfexec fmadm faulty -v -u ${uuid}`;
-        const { stdout, stderr } = await execProm(command, { 
-            timeout: faultConfig.timeout * 1000 
-        });
-
-        if (stderr && stderr.trim()) {
-            log.monitoring.warn('fmadm faulty stderr for UUID', {
-                uuid,
-                stderr
-            });
-        }
-
-        if (!stdout.trim()) {
-            return res.status(404).json({
-                error: `Fault with UUID ${uuid} not found`
-            });
-        }
-
-        const parsedFault = parseFaultOutput(stdout)[0]; // Should only be one result
-
-        res.json({
-            fault: parsedFault,
-            raw_output: stdout,
-            uuid: uuid,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error getting fault details', {
-            uuid: req.params.uuid,
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get fault details',
-            details: error.message 
-        });
+    if (!faultConfig?.enabled) {
+      return res.status(503).json({
+        error: 'Fault management is disabled in configuration',
+      });
     }
+
+    const command = `pfexec fmadm faulty -v -u ${uuid}`;
+    const { stdout, stderr } = await execProm(command, {
+      timeout: faultConfig.timeout * 1000,
+    });
+
+    if (stderr && stderr.trim()) {
+      log.monitoring.warn('fmadm faulty stderr for UUID', {
+        uuid,
+        stderr,
+      });
+    }
+
+    if (!stdout.trim()) {
+      return res.status(404).json({
+        error: `Fault with UUID ${uuid} not found`,
+      });
+    }
+
+    const parsedFault = parseFaultOutput(stdout)[0]; // Should only be one result
+
+    res.json({
+      fault: parsedFault,
+      raw_output: stdout,
+      uuid,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error getting fault details', {
+      uuid: req.params.uuid,
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get fault details',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -257,42 +261,41 @@ export const getFaultDetails = async (req, res) => {
  *         description: Failed to get fault manager configuration
  */
 export const getFaultManagerConfig = async (req, res) => {
-    try {
-        const faultConfig = config.getFaultManagement();
-        
-        if (!faultConfig?.enabled) {
-            return res.status(503).json({
-                error: 'Fault management is disabled in configuration'
-            });
-        }
+  try {
+    const faultConfig = config.getFaultManagement();
 
-        const command = 'pfexec fmadm config';
-        const { stdout, stderr } = await execProm(command, { 
-            timeout: faultConfig.timeout * 1000 
-        });
-
-        if (stderr && stderr.trim()) {
-            log.monitoring.warn('fmadm config stderr', { stderr });
-        }
-
-        const parsedConfig = parseFaultManagerConfig(stdout);
-
-        res.json({
-            config: parsedConfig,
-            raw_output: stdout,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error getting fault manager configuration', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get fault manager configuration',
-            details: error.message 
-        });
+    if (!faultConfig?.enabled) {
+      return res.status(503).json({
+        error: 'Fault management is disabled in configuration',
+      });
     }
+
+    const command = 'pfexec fmadm config';
+    const { stdout, stderr } = await execProm(command, {
+      timeout: faultConfig.timeout * 1000,
+    });
+
+    if (stderr && stderr.trim()) {
+      log.monitoring.warn('fmadm config stderr', { stderr });
+    }
+
+    const parsedConfig = parseFaultManagerConfig(stdout);
+
+    res.json({
+      config: parsedConfig,
+      raw_output: stdout,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error getting fault manager configuration', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get fault manager configuration',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -324,54 +327,53 @@ export const getFaultManagerConfig = async (req, res) => {
  *         description: Failed to acquit fault
  */
 export const acquitFault = async (req, res) => {
-    try {
-        const { target, uuid } = req.body;
-        const faultConfig = config.getFaultManagement();
-        
-        if (!faultConfig?.enabled) {
-            return res.status(503).json({
-                error: 'Fault management is disabled in configuration'
-            });
-        }
+  try {
+    const { target, uuid } = req.body;
+    const faultConfig = config.getFaultManagement();
 
-        if (!target) {
-            return res.status(400).json({
-                error: 'Target (FMRI or UUID) is required'
-            });
-        }
-
-        let command = `pfexec fmadm acquit ${target}`;
-        if (uuid) {
-            command += ` ${uuid}`;
-        }
-
-        const { stdout, stderr } = await execProm(command, { 
-            timeout: faultConfig.timeout * 1000 
-        });
-
-        // Clear all cache entries after administrative action
-        faultCache.clear();
-
-        res.json({
-            success: true,
-            message: `Successfully acquitted ${target}`,
-            target: target,
-            uuid: uuid || null,
-            raw_output: stdout,
-            stderr: stderr || null,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error acquitting fault', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to acquit fault',
-            details: error.message 
-        });
+    if (!faultConfig?.enabled) {
+      return res.status(503).json({
+        error: 'Fault management is disabled in configuration',
+      });
     }
+
+    if (!target) {
+      return res.status(400).json({
+        error: 'Target (FMRI or UUID) is required',
+      });
+    }
+
+    let command = `pfexec fmadm acquit ${target}`;
+    if (uuid) {
+      command += ` ${uuid}`;
+    }
+
+    const { stdout, stderr } = await execProm(command, {
+      timeout: faultConfig.timeout * 1000,
+    });
+
+    // Clear all cache entries after administrative action
+    faultCache.clear();
+
+    res.json({
+      success: true,
+      message: `Successfully acquitted ${target}`,
+      target,
+      uuid: uuid || null,
+      raw_output: stdout,
+      stderr: stderr || null,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error acquitting fault', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to acquit fault',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -400,49 +402,48 @@ export const acquitFault = async (req, res) => {
  *         description: Failed to mark resource as repaired
  */
 export const markRepaired = async (req, res) => {
-    try {
-        const { fmri } = req.body;
-        const faultConfig = config.getFaultManagement();
-        
-        if (!faultConfig?.enabled) {
-            return res.status(503).json({
-                error: 'Fault management is disabled in configuration'
-            });
-        }
+  try {
+    const { fmri } = req.body;
+    const faultConfig = config.getFaultManagement();
 
-        if (!fmri) {
-            return res.status(400).json({
-                error: 'FMRI is required'
-            });
-        }
-
-        const command = `pfexec fmadm repaired ${fmri}`;
-        const { stdout, stderr } = await execProm(command, { 
-            timeout: faultConfig.timeout * 1000 
-        });
-
-        // Clear all cache entries after administrative action
-        faultCache.clear();
-
-        res.json({
-            success: true,
-            message: `Successfully marked ${fmri} as repaired`,
-            fmri: fmri,
-            raw_output: stdout,
-            stderr: stderr || null,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error marking resource as repaired', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to mark resource as repaired',
-            details: error.message 
-        });
+    if (!faultConfig?.enabled) {
+      return res.status(503).json({
+        error: 'Fault management is disabled in configuration',
+      });
     }
+
+    if (!fmri) {
+      return res.status(400).json({
+        error: 'FMRI is required',
+      });
+    }
+
+    const command = `pfexec fmadm repaired ${fmri}`;
+    const { stdout, stderr } = await execProm(command, {
+      timeout: faultConfig.timeout * 1000,
+    });
+
+    // Clear all cache entries after administrative action
+    faultCache.clear();
+
+    res.json({
+      success: true,
+      message: `Successfully marked ${fmri} as repaired`,
+      fmri,
+      raw_output: stdout,
+      stderr: stderr || null,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error marking resource as repaired', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to mark resource as repaired',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -471,49 +472,48 @@ export const markRepaired = async (req, res) => {
  *         description: Failed to mark resource as replaced
  */
 export const markReplaced = async (req, res) => {
-    try {
-        const { fmri } = req.body;
-        const faultConfig = config.getFaultManagement();
-        
-        if (!faultConfig?.enabled) {
-            return res.status(503).json({
-                error: 'Fault management is disabled in configuration'
-            });
-        }
+  try {
+    const { fmri } = req.body;
+    const faultConfig = config.getFaultManagement();
 
-        if (!fmri) {
-            return res.status(400).json({
-                error: 'FMRI is required'
-            });
-        }
-
-        const command = `pfexec fmadm replaced ${fmri}`;
-        const { stdout, stderr } = await execProm(command, { 
-            timeout: faultConfig.timeout * 1000 
-        });
-
-        // Clear all cache entries after administrative action
-        faultCache.clear();
-
-        res.json({
-            success: true,
-            message: `Successfully marked ${fmri} as replaced`,
-            fmri: fmri,
-            raw_output: stdout,
-            stderr: stderr || null,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error marking resource as replaced', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to mark resource as replaced',
-            details: error.message 
-        });
+    if (!faultConfig?.enabled) {
+      return res.status(503).json({
+        error: 'Fault management is disabled in configuration',
+      });
     }
+
+    if (!fmri) {
+      return res.status(400).json({
+        error: 'FMRI is required',
+      });
+    }
+
+    const command = `pfexec fmadm replaced ${fmri}`;
+    const { stdout, stderr } = await execProm(command, {
+      timeout: faultConfig.timeout * 1000,
+    });
+
+    // Clear all cache entries after administrative action
+    faultCache.clear();
+
+    res.json({
+      success: true,
+      message: `Successfully marked ${fmri} as replaced`,
+      fmri,
+      raw_output: stdout,
+      stderr: stderr || null,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error marking resource as replaced', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to mark resource as replaced',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -521,88 +521,87 @@ export const markReplaced = async (req, res) => {
  * @returns {Object} Fault status summary
  */
 export const getFaultStatusForHealth = async () => {
-    try {
-        const faultConfig = config.getFaultManagement();
-        
-        if (!faultConfig?.enabled) {
-            return {
-                hasFaults: false,
-                faultCount: 0,
-                severityLevels: [],
-                lastCheck: null,
-                error: 'Fault management disabled'
-            };
-        }
+  try {
+    const faultConfig = config.getFaultManagement();
 
-        // Use cache for health endpoint (default parameters: all=false)
-        const healthCacheKey = 'all=false&summary=false&limit=50';
-        const now = Date.now();
-        
-        let cachedEntry = faultCache.get(healthCacheKey);
-        const cacheAge = cachedEntry?.timestamp ? (now - cachedEntry.timestamp) / 1000 : Infinity;
-        const useCache = cachedEntry?.data && cacheAge < faultConfig.cache_interval;
+    if (!faultConfig?.enabled) {
+      return {
+        hasFaults: false,
+        faultCount: 0,
+        severityLevels: [],
+        lastCheck: null,
+        error: 'Fault management disabled',
+      };
+    }
 
-        let faultData;
-        
-        if (useCache) {
-            faultData = cachedEntry.data;
-        } else {
-            // Refresh cache for health endpoint
-            try {
-                const command = 'pfexec fmadm faulty';
-                const { stdout } = await execProm(command, { 
-                    timeout: faultConfig.timeout * 1000 
-                });
+    // Use cache for health endpoint (default parameters: all=false)
+    const healthCacheKey = 'all=false&summary=false&limit=50';
+    const now = Date.now();
 
-                faultData = {
-                    raw_output: stdout,
-                    parsed_faults: parseFaultOutput(stdout),
-                    timestamp: new Date().toISOString()
-                };
+    const cachedEntry = faultCache.get(healthCacheKey);
+    const cacheAge = cachedEntry?.timestamp ? (now - cachedEntry.timestamp) / 1000 : Infinity;
+    const useCache = cachedEntry?.data && cacheAge < faultConfig.cache_interval;
 
-                // Update cache
-                faultCache.set(healthCacheKey, {
-                    data: faultData,
-                    timestamp: now
-                });
-            } catch (error) {
-                log.monitoring.error('Error refreshing fault cache for health check', {
-                    error: error.message,
-                    stack: error.stack
-                });
-                return {
-                    hasFaults: false,
-                    faultCount: 0,
-                    severityLevels: [],
-                    lastCheck: cachedEntry?.data?.timestamp || null,
-                    error: error.message
-                };
-            }
-        }
+    let faultData;
 
-        const summary = generateFaultsSummary(faultData.parsed_faults);
-        
-        return {
-            hasFaults: summary.totalFaults > 0,
-            faultCount: summary.totalFaults,
-            severityLevels: summary.severityLevels,
-            lastCheck: faultData.timestamp,
-            faults: summary.totalFaults > 0 ? faultData.parsed_faults.slice(0, 5) : [] // Top 5 for health summary
+    if (useCache) {
+      faultData = cachedEntry.data;
+    } else {
+      // Refresh cache for health endpoint
+      try {
+        const command = 'pfexec fmadm faulty';
+        const { stdout } = await execProm(command, {
+          timeout: faultConfig.timeout * 1000,
+        });
+
+        faultData = {
+          raw_output: stdout,
+          parsed_faults: parseFaultOutput(stdout),
+          timestamp: new Date().toISOString(),
         };
 
-    } catch (error) {
-        log.monitoring.error('Error getting fault status for health check', {
-            error: error.message,
-            stack: error.stack
+        // Update cache
+        faultCache.set(healthCacheKey, {
+          data: faultData,
+          timestamp: now,
+        });
+      } catch (error) {
+        log.monitoring.error('Error refreshing fault cache for health check', {
+          error: error.message,
+          stack: error.stack,
         });
         return {
-            hasFaults: false,
-            faultCount: 0,
-            severityLevels: [],
-            lastCheck: null,
-            error: error.message
+          hasFaults: false,
+          faultCount: 0,
+          severityLevels: [],
+          lastCheck: cachedEntry?.data?.timestamp || null,
+          error: error.message,
         };
+      }
     }
+
+    const summary = generateFaultsSummary(faultData.parsed_faults);
+
+    return {
+      hasFaults: summary.totalFaults > 0,
+      faultCount: summary.totalFaults,
+      severityLevels: summary.severityLevels,
+      lastCheck: faultData.timestamp,
+      faults: summary.totalFaults > 0 ? faultData.parsed_faults.slice(0, 5) : [], // Top 5 for health summary
+    };
+  } catch (error) {
+    log.monitoring.error('Error getting fault status for health check', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return {
+      hasFaults: false,
+      faultCount: 0,
+      severityLevels: [],
+      lastCheck: null,
+      error: error.message,
+    };
+  }
 };
 
 /**
@@ -611,118 +610,125 @@ export const getFaultStatusForHealth = async () => {
  * @returns {Array} Parsed fault objects
  */
 function parseFaultOutput(output) {
-    const faults = [];
-    
-    if (!output || !output.trim()) {
-        return faults;
+  const faults = [];
+
+  if (!output || !output.trim()) {
+    return faults;
+  }
+
+  const lines = output.trim().split('\n');
+  let currentFault = null;
+  let collectingDetails = false;
+  let detailLines = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Skip dash separator lines
+    if (line.match(/^-{15,}/)) {
+      continue;
     }
 
-    const lines = output.trim().split('\n');
-    let currentFault = null;
-    let collectingDetails = false;
-    let detailLines = [];
-    
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        
-        // Skip dash separator lines
-        if (line.match(/^-{15,}/)) {
-            continue;
-        }
-        
-        // Skip table header lines
-        if (line.includes('TIME') && line.includes('EVENT-ID') && line.includes('MSG-ID') && line.includes('SEVERITY')) {
-            continue;
-        }
-        
-        // Skip empty lines BUT continue collecting details
-        if (!line.trim()) {
-            if (collectingDetails) {
-                detailLines.push(line); // Keep empty lines as part of details
-            }
-            continue;
-        }
-        
-        // Try to parse as fault line (contains UUID)
-        const possibleFault = parseFaultLine(line);
-        if (possibleFault) {
-            // Save previous fault if we were working on one
-            if (currentFault) {
-                if (collectingDetails && detailLines.length > 0) {
-                    const detailedInfo = parseDetailedFault(detailLines.join('\n'));
-                    if (detailedInfo) {
-                        currentFault.details = {
-                            host: detailedInfo.host,
-                            platform: detailedInfo.platform,
-                            faultClass: detailedInfo.faultClass,
-                            affects: detailedInfo.affects,
-                            problemIn: detailedInfo.problemIn,
-                            description: detailedInfo.description,
-                            response: detailedInfo.response,
-                            impact: detailedInfo.impact,
-                            action: detailedInfo.action
-                        };
-                    }
-                }
-                faults.push(currentFault);
-            }
-            
-            // Start new fault
-            currentFault = possibleFault;
-            collectingDetails = false;
-            detailLines = [];
-            continue;
-        }
-        
-        // Check if this is start of detailed section
-        if (line.includes('Host') && line.includes(':')) {
-            collectingDetails = true;
-            detailLines = [line];
-            continue;
-        }
-        
-        // If we're collecting details, add this line
-        if (collectingDetails) {
-            detailLines.push(line);
-        }
-        
-        // Also start collecting details for any line that looks like a fault field
-        if (!collectingDetails && line.match(/^[A-Z][^:]*\s*:/) && (
-            line.includes('Platform') || 
-            line.includes('Fault class') || 
-            line.includes('Affects') ||
-            line.includes('Description') ||
-            line.includes('Response') ||
-            line.includes('Impact') ||
-            line.includes('Action')
-        )) {
-            collectingDetails = true;
-            detailLines = [line];
-        }
+    // Skip table header lines
+    if (
+      line.includes('TIME') &&
+      line.includes('EVENT-ID') &&
+      line.includes('MSG-ID') &&
+      line.includes('SEVERITY')
+    ) {
+      continue;
     }
-    
-    // Don't forget the last fault
-    if (currentFault) {
+
+    // Skip empty lines BUT continue collecting details
+    if (!line.trim()) {
+      if (collectingDetails) {
+        detailLines.push(line); // Keep empty lines as part of details
+      }
+      continue;
+    }
+
+    // Try to parse as fault line (contains UUID)
+    const possibleFault = parseFaultLine(line);
+    if (possibleFault) {
+      // Save previous fault if we were working on one
+      if (currentFault) {
         if (collectingDetails && detailLines.length > 0) {
-            const detailedInfo = parseDetailedFault(detailLines.join('\n'));
-            if (detailedInfo) {
-                currentFault.details = {
-                    host: detailedInfo.host,
-                    platform: detailedInfo.platform,
-                    faultClass: detailedInfo.faultClass,
-                    affects: detailedInfo.affects,
-                    problemIn: detailedInfo.problemIn,
-                    description: detailedInfo.description,
-                    response: detailedInfo.response,
-                    impact: detailedInfo.impact,
-                    action: detailedInfo.action
-                };
-            }
+          const detailedInfo = parseDetailedFault(detailLines.join('\n'));
+          if (detailedInfo) {
+            currentFault.details = {
+              host: detailedInfo.host,
+              platform: detailedInfo.platform,
+              faultClass: detailedInfo.faultClass,
+              affects: detailedInfo.affects,
+              problemIn: detailedInfo.problemIn,
+              description: detailedInfo.description,
+              response: detailedInfo.response,
+              impact: detailedInfo.impact,
+              action: detailedInfo.action,
+            };
+          }
         }
         faults.push(currentFault);
+      }
+
+      // Start new fault
+      currentFault = possibleFault;
+      collectingDetails = false;
+      detailLines = [];
+      continue;
     }
 
-    return faults;
+    // Check if this is start of detailed section
+    if (line.includes('Host') && line.includes(':')) {
+      collectingDetails = true;
+      detailLines = [line];
+      continue;
+    }
+
+    // If we're collecting details, add this line
+    if (collectingDetails) {
+      detailLines.push(line);
+    }
+
+    // Also start collecting details for any line that looks like a fault field
+    if (
+      !collectingDetails &&
+      line.match(/^[A-Z][^:]*\s*:/) &&
+      (line.includes('Platform') ||
+        line.includes('Fault class') ||
+        line.includes('Affects') ||
+        line.includes('Description') ||
+        line.includes('Response') ||
+        line.includes('Impact') ||
+        line.includes('Action'))
+    ) {
+      collectingDetails = true;
+      detailLines = [line];
+    }
+  }
+
+  // Don't forget the last fault
+  if (currentFault) {
+    if (collectingDetails && detailLines.length > 0) {
+      const detailedInfo = parseDetailedFault(detailLines.join('\n'));
+      if (detailedInfo) {
+        currentFault.details = {
+          host: detailedInfo.host,
+          platform: detailedInfo.platform,
+          faultClass: detailedInfo.faultClass,
+          affects: detailedInfo.affects,
+          problemIn: detailedInfo.problemIn,
+          description: detailedInfo.description,
+          response: detailedInfo.response,
+          impact: detailedInfo.impact,
+          action: detailedInfo.action,
+        };
+      }
+    }
+    faults.push(currentFault);
+  }
+
+  return faults;
 }
 
 /**
@@ -731,36 +737,43 @@ function parseFaultOutput(output) {
  * @returns {Object|null} Parsed fault object or null
  */
 function parseFaultLine(line) {
-    const trimmed = line.trim();
-    
-    // Skip empty lines and lines that are clearly not fault data
-    if (!trimmed || trimmed.length < 20) return null;
-    
-    // Parse the format: "Jan 19 2025     c543b4ad-6cc7-40bc-891a-186100ef16a7  ZFS-8000-CS    Major"
-    // Use regex to match the UUID pattern
-    const uuidPattern = /([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/;
-    const match = trimmed.match(uuidPattern);
-    
-    if (!match) return null;
-    
-    const uuid = match[1];
-    const beforeUuid = trimmed.substring(0, match.index).trim();
-    const afterUuid = trimmed.substring(match.index + uuid.length).trim();
-    
-    // Split the part after UUID to get MSG-ID and SEVERITY
-    const afterParts = afterUuid.split(/\s+/);
-    if (afterParts.length < 2) return null;
-    
-    const msgId = afterParts[0];
-    const severity = afterParts[1];
+  const trimmed = line.trim();
 
-    return {
-        time: beforeUuid,
-        uuid: uuid,
-        msgId: msgId,
-        severity: normalizeSeverity(severity),
-        format: 'summary'
-    };
+  // Skip empty lines and lines that are clearly not fault data
+  if (!trimmed || trimmed.length < 20) {
+    return null;
+  }
+
+  // Parse the format: "Jan 19 2025     c543b4ad-6cc7-40bc-891a-186100ef16a7  ZFS-8000-CS    Major"
+  // Use regex to match the UUID pattern
+  const uuidPattern =
+    /([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/;
+  const match = trimmed.match(uuidPattern);
+
+  if (!match) {
+    return null;
+  }
+
+  const uuid = match[1];
+  const beforeUuid = trimmed.substring(0, match.index).trim();
+  const afterUuid = trimmed.substring(match.index + uuid.length).trim();
+
+  // Split the part after UUID to get MSG-ID and SEVERITY
+  const afterParts = afterUuid.split(/\s+/);
+  if (afterParts.length < 2) {
+    return null;
+  }
+
+  const msgId = afterParts[0];
+  const severity = afterParts[1];
+
+  return {
+    time: beforeUuid,
+    uuid,
+    msgId,
+    severity: normalizeSeverity(severity),
+    format: 'summary',
+  };
 }
 
 /**
@@ -769,146 +782,146 @@ function parseFaultLine(line) {
  * @returns {Object|null} Parsed fault object or null
  */
 function parseDetailedFault(section) {
-    log.monitoring.debug('Detail parsing - Section', {
-        section_length: section.length,
-        full_section: JSON.stringify(section)
+  log.monitoring.debug('Detail parsing - Section', {
+    section_length: section.length,
+    full_section: JSON.stringify(section),
+  });
+
+  const fault = { format: 'detailed' };
+  const lines = section.split('\n');
+
+  log.monitoring.debug('Detail parsing - Total lines', { line_count: lines.length });
+
+  let currentField = null;
+  let currentValue = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    log.monitoring.debug(`Detail parsing - Line ${i}`, {
+      line,
+      trimmed,
     });
-    
-    const fault = { format: 'detailed' };
-    const lines = section.split('\n');
-    
-    log.monitoring.debug('Detail parsing - Total lines', { line_count: lines.length });
-    
-    let currentField = null;
-    let currentValue = '';
 
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const trimmed = line.trim();
-
-        log.monitoring.debug(`Detail parsing - Line ${i}`, {
-            line,
-            trimmed
-        });
-
-        // Skip empty lines
-        if (!trimmed) {
-            log.monitoring.debug(`Line ${i}: Empty line - saving current field`, {
-                current_field: currentField
-            });
-            // Save current field before skipping
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-                log.monitoring.debug('Saved field', {
-                    field: currentField,
-                    value: currentValue.trim()
-                });
-                currentField = null;
-                currentValue = '';
-            }
-            continue;
-        }
-
-        // Check if this line starts a new field (contains colon not at the start of indented line)
-        if (line.match(/^[A-Z]/) && line.includes(':')) {
-            log.monitoring.debug(`Line ${i}: Detected field line`);
-            
-            // Save previous field
-            if (currentField && currentValue) {
-                fault[currentField] = currentValue.trim();
-                log.monitoring.debug('Saved previous field', {
-                    field: currentField,
-                    value: currentValue.trim()
-                });
-            }
-
-            // Parse new field
-            const colonIndex = line.indexOf(':');
-            const fieldName = line.substring(0, colonIndex).trim();
-            let fieldValue = line.substring(colonIndex + 1).trim();
-
-            log.monitoring.debug('Field parsing', {
-                field_name: fieldName,
-                field_value: fieldValue
-            });
-
-            // Handle special cases
-            if (fieldName === 'Host') {
-                currentField = 'host';
-                currentValue = fieldValue;
-                log.monitoring.debug('Set host field', { value: fieldValue });
-            } else if (fieldName === 'Platform') {
-                // Handle tab-separated fields on same line
-                currentField = 'platform';
-                currentValue = fieldValue.split('\t')[0].trim(); // Take only part before tab
-                log.monitoring.debug('Set platform field', { value: currentValue });
-            } else if (fieldName === 'Fault class') {
-                currentField = 'faultClass';
-                currentValue = fieldValue;
-                log.monitoring.debug('Set faultClass field', { value: fieldValue });
-            } else if (fieldName === 'Affects') {
-                currentField = 'affects';
-                currentValue = fieldValue;
-                log.monitoring.debug('Set affects field', { value: fieldValue });
-            } else if (fieldName === 'Problem in') {
-                currentField = 'problemIn';
-                currentValue = fieldValue;
-                log.monitoring.debug('Set problemIn field', { value: fieldValue });
-            } else if (fieldName === 'Description') {
-                currentField = 'description';
-                currentValue = fieldValue;
-                log.monitoring.debug('Set description field', { value: fieldValue });
-            } else if (fieldName === 'Response') {
-                currentField = 'response';
-                currentValue = fieldValue;
-                log.monitoring.debug('Set response field', { value: fieldValue });
-            } else if (fieldName === 'Impact') {
-                currentField = 'impact';
-                currentValue = fieldValue;
-                log.monitoring.debug('Set impact field', { value: fieldValue });
-            } else if (fieldName === 'Action') {
-                currentField = 'action';
-                currentValue = fieldValue;
-                log.monitoring.debug('Set action field', { value: fieldValue });
-            } else {
-                // Skip unknown fields like Product_sn, Chassis_id
-                log.monitoring.debug('Skipping unknown field', { field_name: fieldName });
-                currentField = null;
-                currentValue = '';
-            }
-        } else if (currentField && trimmed) {
-            log.monitoring.debug(`Line ${i}: Continuation line`, {
-                field: currentField
-            });
-            // This is a continuation line for the current field
-            if (currentValue) {
-                currentValue += ' ' + trimmed;
-            } else {
-                currentValue = trimmed;
-            }
-            log.monitoring.debug('Updated field value', {
-                field: currentField,
-                value: currentValue
-            });
-        } else {
-            log.monitoring.debug(`Line ${i}: Ignored line`);
-        }
-    }
-
-    // Save the last field
-    if (currentField && currentValue) {
+    // Skip empty lines
+    if (!trimmed) {
+      log.monitoring.debug(`Line ${i}: Empty line - saving current field`, {
+        current_field: currentField,
+      });
+      // Save current field before skipping
+      if (currentField && currentValue) {
         fault[currentField] = currentValue.trim();
-        log.monitoring.debug('Saved final field', {
-            field: currentField,
-            value: currentValue.trim()
+        log.monitoring.debug('Saved field', {
+          field: currentField,
+          value: currentValue.trim(),
         });
+        currentField = null;
+        currentValue = '';
+      }
+      continue;
     }
 
-    log.monitoring.debug('Detail parsing - Final fault object', {
-        fault: JSON.stringify(fault)
-    });
+    // Check if this line starts a new field (contains colon not at the start of indented line)
+    if (line.match(/^[A-Z]/) && line.includes(':')) {
+      log.monitoring.debug(`Line ${i}: Detected field line`);
 
-    return Object.keys(fault).length > 1 ? fault : null;
+      // Save previous field
+      if (currentField && currentValue) {
+        fault[currentField] = currentValue.trim();
+        log.monitoring.debug('Saved previous field', {
+          field: currentField,
+          value: currentValue.trim(),
+        });
+      }
+
+      // Parse new field
+      const colonIndex = line.indexOf(':');
+      const fieldName = line.substring(0, colonIndex).trim();
+      const fieldValue = line.substring(colonIndex + 1).trim();
+
+      log.monitoring.debug('Field parsing', {
+        field_name: fieldName,
+        field_value: fieldValue,
+      });
+
+      // Handle special cases
+      if (fieldName === 'Host') {
+        currentField = 'host';
+        currentValue = fieldValue;
+        log.monitoring.debug('Set host field', { value: fieldValue });
+      } else if (fieldName === 'Platform') {
+        // Handle tab-separated fields on same line
+        currentField = 'platform';
+        currentValue = fieldValue.split('\t')[0].trim(); // Take only part before tab
+        log.monitoring.debug('Set platform field', { value: currentValue });
+      } else if (fieldName === 'Fault class') {
+        currentField = 'faultClass';
+        currentValue = fieldValue;
+        log.monitoring.debug('Set faultClass field', { value: fieldValue });
+      } else if (fieldName === 'Affects') {
+        currentField = 'affects';
+        currentValue = fieldValue;
+        log.monitoring.debug('Set affects field', { value: fieldValue });
+      } else if (fieldName === 'Problem in') {
+        currentField = 'problemIn';
+        currentValue = fieldValue;
+        log.monitoring.debug('Set problemIn field', { value: fieldValue });
+      } else if (fieldName === 'Description') {
+        currentField = 'description';
+        currentValue = fieldValue;
+        log.monitoring.debug('Set description field', { value: fieldValue });
+      } else if (fieldName === 'Response') {
+        currentField = 'response';
+        currentValue = fieldValue;
+        log.monitoring.debug('Set response field', { value: fieldValue });
+      } else if (fieldName === 'Impact') {
+        currentField = 'impact';
+        currentValue = fieldValue;
+        log.monitoring.debug('Set impact field', { value: fieldValue });
+      } else if (fieldName === 'Action') {
+        currentField = 'action';
+        currentValue = fieldValue;
+        log.monitoring.debug('Set action field', { value: fieldValue });
+      } else {
+        // Skip unknown fields like Product_sn, Chassis_id
+        log.monitoring.debug('Skipping unknown field', { field_name: fieldName });
+        currentField = null;
+        currentValue = '';
+      }
+    } else if (currentField && trimmed) {
+      log.monitoring.debug(`Line ${i}: Continuation line`, {
+        field: currentField,
+      });
+      // This is a continuation line for the current field
+      if (currentValue) {
+        currentValue += ` ${trimmed}`;
+      } else {
+        currentValue = trimmed;
+      }
+      log.monitoring.debug('Updated field value', {
+        field: currentField,
+        value: currentValue,
+      });
+    } else {
+      log.monitoring.debug(`Line ${i}: Ignored line`);
+    }
+  }
+
+  // Save the last field
+  if (currentField && currentValue) {
+    fault[currentField] = currentValue.trim();
+    log.monitoring.debug('Saved final field', {
+      field: currentField,
+      value: currentValue.trim(),
+    });
+  }
+
+  log.monitoring.debug('Detail parsing - Final fault object', {
+    fault: JSON.stringify(fault),
+  });
+
+  return Object.keys(fault).length > 1 ? fault : null;
 }
 
 /**
@@ -917,24 +930,24 @@ function parseDetailedFault(section) {
  * @returns {Array} Parsed module configurations
  */
 function parseFaultManagerConfig(output) {
-    const modules = [];
-    const lines = output.trim().split('\n');
+  const modules = [];
+  const lines = output.trim().split('\n');
 
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('MODULE')) {
-            const parts = trimmed.split(/\s+/);
-            if (parts.length >= 3) {
-                modules.push({
-                    module: parts[0],
-                    version: parts[1],
-                    description: parts.slice(2).join(' ')
-                });
-            }
-        }
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('MODULE')) {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 3) {
+        modules.push({
+          module: parts[0],
+          version: parts[1],
+          description: parts.slice(2).join(' '),
+        });
+      }
     }
+  }
 
-    return modules;
+  return modules;
 }
 
 /**
@@ -943,10 +956,12 @@ function parseFaultManagerConfig(output) {
  * @returns {string} Normalized severity
  */
 function normalizeSeverity(severity) {
-    if (!severity) return severity;
-    
-    // Normalize case - capitalize first letter, lowercase rest
-    return severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase();
+  if (!severity) {
+    return severity;
+  }
+
+  // Normalize case - capitalize first letter, lowercase rest
+  return severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase();
 }
 
 /**
@@ -955,49 +970,49 @@ function normalizeSeverity(severity) {
  * @returns {Object} Summary statistics
  */
 function generateFaultsSummary(faults) {
-    const summary = {
-        totalFaults: faults.length,
-        severityLevels: [],
-        faultClasses: [],
-        affectedResources: []
-    };
+  const summary = {
+    totalFaults: faults.length,
+    severityLevels: [],
+    faultClasses: [],
+    affectedResources: [],
+  };
 
-    const severityCount = {};
-    const classCount = {};
+  const severityCount = {};
+  const classCount = {};
 
-    for (const fault of faults) {
-        // Count severities
-        if (fault.severity) {
-            severityCount[fault.severity] = (severityCount[fault.severity] || 0) + 1;
-        }
-
-        // Count fault classes from details if available, otherwise from fault object
-        const faultClass = fault.details?.faultClass || fault.faultClass;
-        if (faultClass) {
-            classCount[faultClass] = (classCount[faultClass] || 0) + 1;
-        }
-
-        // Track affected resources from details if available
-        const affects = fault.details?.affects || fault.affects;
-        if (affects && !summary.affectedResources.includes(affects)) {
-            summary.affectedResources.push(affects);
-        }
+  for (const fault of faults) {
+    // Count severities
+    if (fault.severity) {
+      severityCount[fault.severity] = (severityCount[fault.severity] || 0) + 1;
     }
 
-    summary.severityLevels = Object.keys(severityCount);
-    summary.faultClasses = Object.keys(classCount);
-    summary.severityBreakdown = severityCount;
-    summary.classBreakdown = classCount;
+    // Count fault classes from details if available, otherwise from fault object
+    const faultClass = fault.details?.faultClass || fault.faultClass;
+    if (faultClass) {
+      classCount[faultClass] = (classCount[faultClass] || 0) + 1;
+    }
 
-    return summary;
+    // Track affected resources from details if available
+    const affects = fault.details?.affects || fault.affects;
+    if (affects && !summary.affectedResources.includes(affects)) {
+      summary.affectedResources.push(affects);
+    }
+  }
+
+  summary.severityLevels = Object.keys(severityCount);
+  summary.faultClasses = Object.keys(classCount);
+  summary.severityBreakdown = severityCount;
+  summary.classBreakdown = classCount;
+
+  return summary;
 }
 
 export default {
-    getFaults,
-    getFaultDetails,
-    getFaultManagerConfig,
-    acquitFault,
-    markRepaired,
-    markReplaced,
-    getFaultStatusForHealth
+  getFaults,
+  getFaultDetails,
+  getFaultManagerConfig,
+  acquitFault,
+  markRepaired,
+  markReplaced,
+  getFaultStatusForHealth,
 };

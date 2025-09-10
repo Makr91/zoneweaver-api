@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -93,124 +93,128 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const CPUStats = db.define('cpu_stats', {
+const CPUStats = db.define(
+  'cpu_stats',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the data was collected'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the data was collected',
     },
     cpu_count: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Number of CPU cores/threads'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Number of CPU cores/threads',
     },
     cpu_utilization_pct: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'Overall CPU utilization percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'Overall CPU utilization percentage',
     },
     user_pct: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'User CPU time percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'User CPU time percentage',
     },
     system_pct: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'System CPU time percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'System CPU time percentage',
     },
     idle_pct: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'Idle CPU time percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'Idle CPU time percentage',
     },
     iowait_pct: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'I/O wait CPU time percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'I/O wait CPU time percentage',
     },
     load_avg_1min: {
-        type: DataTypes.DECIMAL(8, 2),
-        allowNull: true,
-        comment: '1-minute load average'
+      type: DataTypes.DECIMAL(8, 2),
+      allowNull: true,
+      comment: '1-minute load average',
     },
     load_avg_5min: {
-        type: DataTypes.DECIMAL(8, 2),
-        allowNull: true,
-        comment: '5-minute load average'
+      type: DataTypes.DECIMAL(8, 2),
+      allowNull: true,
+      comment: '5-minute load average',
     },
     load_avg_15min: {
-        type: DataTypes.DECIMAL(8, 2),
-        allowNull: true,
-        comment: '15-minute load average'
+      type: DataTypes.DECIMAL(8, 2),
+      allowNull: true,
+      comment: '15-minute load average',
     },
     processes_running: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Number of running processes'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Number of running processes',
     },
     processes_blocked: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Number of blocked processes'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Number of blocked processes',
     },
     context_switches: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Context switches since boot'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Context switches since boot',
     },
     interrupts: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Interrupts per second'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Interrupts per second',
     },
     system_calls: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'System calls per second'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'System calls per second',
     },
     page_faults: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Page faults per second'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Page faults per second',
     },
     page_ins: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Pages paged in per second'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Pages paged in per second',
     },
     page_outs: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Pages paged out per second'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Pages paged out per second',
     },
     per_core_data: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'JSON string containing per-core CPU utilization data'
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'JSON string containing per-core CPU utilization data',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'CPU performance statistics and load metrics',
     indexes: [
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['scan_timestamp']
-        },
-        {
-            fields: ['host']
-        },
-        {
-            fields: ['cpu_utilization_pct']
-        }
-    ]
-});
- 
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+      {
+        fields: ['host'],
+      },
+      {
+        fields: ['cpu_utilization_pct'],
+      },
+    ],
+  }
+);
+
 export default CPUStats;

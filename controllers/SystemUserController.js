@@ -19,27 +19,27 @@ const execAsync = promisify(exec);
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
 const executeCommand = async (command, timeout = 30000) => {
-    try {
-        const { stdout, stderr } = await execAsync(command, { 
-            timeout,
-            maxBuffer: 10 * 1024 * 1024 // 10MB buffer
-        });
-        
-        // Remove verbose stderr logging - most commands output to stderr even on success
-        
-        return { 
-            success: true, 
-            output: stdout.trim(),
-            stderr: stderr.trim() 
-        };
-    } catch (error) {
-        return { 
-            success: false, 
-            error: error.message,
-            output: error.stdout || '',
-            stderr: error.stderr || ''
-        };
-    }
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      timeout,
+      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+    });
+
+    // Remove verbose stderr logging - most commands output to stderr even on success
+
+    return {
+      success: true,
+      output: stdout.trim(),
+      stderr: stderr.trim(),
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      output: error.stdout || '',
+      stderr: error.stderr || '',
+    };
+  }
 };
 
 /**
@@ -95,57 +95,59 @@ const executeCommand = async (command, timeout = 30000) => {
  *         description: Failed to get user information
  */
 export const getCurrentUserInfo = async (req, res) => {
-    try {
-        // Get current user info
-        const currentUser = os.userInfo();
-        
-        // Get additional user details from system
-        const passwdResult = await executeCommand(`getent passwd ${currentUser.username}`);
-        let homeDirectory = currentUser.homedir;
-        let shell = currentUser.shell || '/bin/bash';
-        
-        if (passwdResult.success) {
-            const passwdFields = passwdResult.output.split(':');
-            if (passwdFields.length >= 7) {
-                homeDirectory = passwdFields[5] || homeDirectory;
-                shell = passwdFields[6] || shell;
-            }
-        }
-        
-        // Get user groups
-        const groupsResult = await executeCommand(`groups ${currentUser.username}`);
-        let groups = [];
-        
-        if (groupsResult.success) {
-            // Parse groups output: "username : group1 group2 group3"
-            const groupsLine = groupsResult.output;
-            const colonIndex = groupsLine.indexOf(':');
-            if (colonIndex !== -1) {
-                groups = groupsLine.substring(colonIndex + 1).trim().split(/\s+/);
-            }
-        }
+  try {
+    // Get current user info
+    const currentUser = os.userInfo();
 
-        res.json({
-            current_user: currentUser.username,
-            uid: currentUser.uid,
-            gid: currentUser.gid,
-            home_directory: homeDirectory,
-            shell: shell,
-            groups: groups,
-            hostname: os.hostname()
-        });
+    // Get additional user details from system
+    const passwdResult = await executeCommand(`getent passwd ${currentUser.username}`);
+    let homeDirectory = currentUser.homedir;
+    let shell = currentUser.shell || '/bin/bash';
 
-    } catch (error) {
-        log.api.error('Error getting current user info', {
-            error: error.message,
-            stack: error.stack,
-            username: os.userInfo().username
-        });
-        res.status(500).json({ 
-            error: 'Failed to get current user information',
-            details: error.message 
-        });
+    if (passwdResult.success) {
+      const passwdFields = passwdResult.output.split(':');
+      if (passwdFields.length >= 7) {
+        homeDirectory = passwdFields[5] || homeDirectory;
+        shell = passwdFields[6] || shell;
+      }
     }
+
+    // Get user groups
+    const groupsResult = await executeCommand(`groups ${currentUser.username}`);
+    let groups = [];
+
+    if (groupsResult.success) {
+      // Parse groups output: "username : group1 group2 group3"
+      const groupsLine = groupsResult.output;
+      const colonIndex = groupsLine.indexOf(':');
+      if (colonIndex !== -1) {
+        groups = groupsLine
+          .substring(colonIndex + 1)
+          .trim()
+          .split(/\s+/);
+      }
+    }
+
+    res.json({
+      current_user: currentUser.username,
+      uid: currentUser.uid,
+      gid: currentUser.gid,
+      home_directory: homeDirectory,
+      shell,
+      groups,
+      hostname: os.hostname(),
+    });
+  } catch (error) {
+    log.api.error('Error getting current user info', {
+      error: error.message,
+      stack: error.stack,
+      username: os.userInfo().username,
+    });
+    res.status(500).json({
+      error: 'Failed to get current user information',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -200,71 +202,74 @@ export const getCurrentUserInfo = async (req, res) => {
  *         description: Failed to get users
  */
 export const getSystemUsers = async (req, res) => {
-    try {
-        const { include_system = false, limit = 50 } = req.query;
-        
-        // Get all users from passwd database
-        const passwdResult = await executeCommand('getent passwd');
-        
-        if (!passwdResult.success) {
-            throw new Error(`Failed to get passwd database: ${passwdResult.error}`);
-        }
-        
-        const users = [];
-        const lines = passwdResult.output.split('\n');
-        
-        for (const line of lines) {
-            if (!line.trim()) continue;
-            
-            const fields = line.split(':');
-            if (fields.length < 7) continue;
-            
-            const user = {
-                username: fields[0],
-                uid: parseInt(fields[2]),
-                gid: parseInt(fields[3]),
-                comment: fields[4] || '',
-                home: fields[5] || '',
-                shell: fields[6] || ''
-            };
-            
-            // No filtering by default - return all users unless explicitly excluded
-            // Only skip if include_system is explicitly set to false AND it's a very low UID
-            if (include_system === 'false' && user.uid < 10) {
-                // Only filter out daemon, bin, sys (UIDs 1-9) if explicitly requested
-                continue;
-            }
-            
-            users.push(user);
-            
-            // Respect limit
-            if (users.length >= parseInt(limit)) {
-                break;
-            }
-        }
-        
-        // Sort by username
-        users.sort((a, b) => a.username.localeCompare(b.username));
+  try {
+    const { include_system = false, limit = 50 } = req.query;
 
-        res.json({
-            users: users,
-            total_users: users.length,
-            include_system: include_system === 'true' || include_system === true,
-            limit_applied: parseInt(limit)
-        });
+    // Get all users from passwd database
+    const passwdResult = await executeCommand('getent passwd');
 
-    } catch (error) {
-        log.api.error('Error getting system users', {
-            error: error.message,
-            stack: error.stack,
-            include_system: include_system,
-            limit: limit
-        });
-        res.status(500).json({ 
-            error: 'Failed to get system users',
-            details: error.message 
-        });
+    if (!passwdResult.success) {
+      throw new Error(`Failed to get passwd database: ${passwdResult.error}`);
     }
+
+    const users = [];
+    const lines = passwdResult.output.split('\n');
+
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+
+      const fields = line.split(':');
+      if (fields.length < 7) {
+        continue;
+      }
+
+      const user = {
+        username: fields[0],
+        uid: parseInt(fields[2]),
+        gid: parseInt(fields[3]),
+        comment: fields[4] || '',
+        home: fields[5] || '',
+        shell: fields[6] || '',
+      };
+
+      // No filtering by default - return all users unless explicitly excluded
+      // Only skip if include_system is explicitly set to false AND it's a very low UID
+      if (include_system === 'false' && user.uid < 10) {
+        // Only filter out daemon, bin, sys (UIDs 1-9) if explicitly requested
+        continue;
+      }
+
+      users.push(user);
+
+      // Respect limit
+      if (users.length >= parseInt(limit)) {
+        break;
+      }
+    }
+
+    // Sort by username
+    users.sort((a, b) => a.username.localeCompare(b.username));
+
+    res.json({
+      users,
+      total_users: users.length,
+      include_system: include_system === 'true' || include_system === true,
+      limit_applied: parseInt(limit),
+    });
+  } catch (error) {
+    log.api.error('Error getting system users', {
+      error: error.message,
+      stack: error.stack,
+      include_system,
+      limit,
+    });
+    res.status(500).json({
+      error: 'Failed to get system users',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -315,67 +320,70 @@ export const getSystemUsers = async (req, res) => {
  *         description: Failed to get groups
  */
 export const getSystemGroups = async (req, res) => {
-    try {
-        const { include_system = false, limit = 50 } = req.query;
-        
-        // Get all groups from group database
-        const groupResult = await executeCommand('getent group');
-        
-        if (!groupResult.success) {
-            throw new Error(`Failed to get group database: ${groupResult.error}`);
-        }
-        
-        const groups = [];
-        const lines = groupResult.output.split('\n');
-        
-        for (const line of lines) {
-            if (!line.trim()) continue;
-            
-            const fields = line.split(':');
-            if (fields.length < 4) continue;
-            
-            const group = {
-                groupname: fields[0],
-                gid: parseInt(fields[2]),
-                members: fields[3] ? fields[3].split(',').filter(m => m.trim()) : []
-            };
-            
-            // No filtering by default - return all groups unless explicitly excluded
-            if (include_system === 'false' && group.gid < 10) {
-                // Only filter out very low system GIDs if explicitly requested
-                continue;
-            }
-            
-            groups.push(group);
-            
-            // Respect limit
-            if (groups.length >= parseInt(limit)) {
-                break;
-            }
-        }
-        
-        // Sort by group name
-        groups.sort((a, b) => a.groupname.localeCompare(b.groupname));
+  try {
+    const { include_system = false, limit = 50 } = req.query;
 
-        res.json({
-            groups: groups,
-            total_groups: groups.length,
-            include_system: include_system === 'true' || include_system === true,
-            limit_applied: parseInt(limit)
-        });
+    // Get all groups from group database
+    const groupResult = await executeCommand('getent group');
 
-    } catch (error) {
-        log.api.error('Error getting system groups', {
-            error: error.message,
-            stack: error.stack,
-            include_system: include_system,
-            limit: limit
-        });
-        res.status(500).json({ 
-            error: 'Failed to get system groups',
-            details: error.message 
-        });
+    if (!groupResult.success) {
+      throw new Error(`Failed to get group database: ${groupResult.error}`);
     }
+
+    const groups = [];
+    const lines = groupResult.output.split('\n');
+
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+
+      const fields = line.split(':');
+      if (fields.length < 4) {
+        continue;
+      }
+
+      const group = {
+        groupname: fields[0],
+        gid: parseInt(fields[2]),
+        members: fields[3] ? fields[3].split(',').filter(m => m.trim()) : [],
+      };
+
+      // No filtering by default - return all groups unless explicitly excluded
+      if (include_system === 'false' && group.gid < 10) {
+        // Only filter out very low system GIDs if explicitly requested
+        continue;
+      }
+
+      groups.push(group);
+
+      // Respect limit
+      if (groups.length >= parseInt(limit)) {
+        break;
+      }
+    }
+
+    // Sort by group name
+    groups.sort((a, b) => a.groupname.localeCompare(b.groupname));
+
+    res.json({
+      groups,
+      total_groups: groups.length,
+      include_system: include_system === 'true' || include_system === true,
+      limit_applied: parseInt(limit),
+    });
+  } catch (error) {
+    log.api.error('Error getting system groups', {
+      error: error.message,
+      stack: error.stack,
+      include_system,
+      limit,
+    });
+    res.status(500).json({
+      error: 'Failed to get system groups',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -410,58 +418,57 @@ export const getSystemGroups = async (req, res) => {
  *         description: Failed to lookup user
  */
 export const lookupUser = async (req, res) => {
-    try {
-        const { uid, username } = req.query;
-        
-        if (!uid && !username) {
-            return res.status(400).json({
-                error: 'Either uid or username parameter is required'
-            });
-        }
+  try {
+    const { uid, username } = req.query;
 
-        let command = 'getent passwd';
-        if (uid) {
-            command += ` ${uid}`;
-        } else {
-            command += ` ${username}`;
-        }
-
-        const result = await executeCommand(command);
-        
-        if (!result.success) {
-            return res.status(404).json({
-                error: uid ? `User with UID ${uid} not found` : `User '${username}' not found`
-            });
-        }
-
-        const fields = result.output.split(':');
-        if (fields.length < 7) {
-            throw new Error('Invalid passwd entry format');
-        }
-
-        const userInfo = {
-            username: fields[0],
-            uid: parseInt(fields[2]),
-            gid: parseInt(fields[3]),
-            comment: fields[4] || '',
-            home: fields[5] || '',
-            shell: fields[6] || ''
-        };
-
-        res.json(userInfo);
-
-    } catch (error) {
-        log.api.error('Error looking up user', {
-            error: error.message,
-            stack: error.stack,
-            uid: uid,
-            username: username
-        });
-        res.status(500).json({ 
-            error: 'Failed to lookup user',
-            details: error.message 
-        });
+    if (!uid && !username) {
+      return res.status(400).json({
+        error: 'Either uid or username parameter is required',
+      });
     }
+
+    let command = 'getent passwd';
+    if (uid) {
+      command += ` ${uid}`;
+    } else {
+      command += ` ${username}`;
+    }
+
+    const result = await executeCommand(command);
+
+    if (!result.success) {
+      return res.status(404).json({
+        error: uid ? `User with UID ${uid} not found` : `User '${username}' not found`,
+      });
+    }
+
+    const fields = result.output.split(':');
+    if (fields.length < 7) {
+      throw new Error('Invalid passwd entry format');
+    }
+
+    const userInfo = {
+      username: fields[0],
+      uid: parseInt(fields[2]),
+      gid: parseInt(fields[3]),
+      comment: fields[4] || '',
+      home: fields[5] || '',
+      shell: fields[6] || '',
+    };
+
+    res.json(userInfo);
+  } catch (error) {
+    log.api.error('Error looking up user', {
+      error: error.message,
+      stack: error.stack,
+      uid,
+      username,
+    });
+    res.status(500).json({
+      error: 'Failed to lookup user',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -496,61 +503,60 @@ export const lookupUser = async (req, res) => {
  *         description: Failed to lookup group
  */
 export const lookupGroup = async (req, res) => {
-    try {
-        const { gid, groupname } = req.query;
-        
-        if (!gid && !groupname) {
-            return res.status(400).json({
-                error: 'Either gid or groupname parameter is required'
-            });
-        }
+  try {
+    const { gid, groupname } = req.query;
 
-        let command = 'getent group';
-        if (gid) {
-            command += ` ${gid}`;
-        } else {
-            command += ` ${groupname}`;
-        }
-
-        const result = await executeCommand(command);
-        
-        if (!result.success) {
-            return res.status(404).json({
-                error: gid ? `Group with GID ${gid} not found` : `Group '${groupname}' not found`
-            });
-        }
-
-        const fields = result.output.split(':');
-        if (fields.length < 4) {
-            throw new Error('Invalid group entry format');
-        }
-
-        const groupInfo = {
-            groupname: fields[0],
-            gid: parseInt(fields[2]),
-            members: fields[3] ? fields[3].split(',').filter(m => m.trim()) : []
-        };
-
-        res.json(groupInfo);
-
-    } catch (error) {
-        log.api.error('Error looking up group', {
-            error: error.message,
-            stack: error.stack,
-            gid: gid,
-            groupname: groupname
-        });
-        res.status(500).json({ 
-            error: 'Failed to lookup group',
-            details: error.message 
-        });
+    if (!gid && !groupname) {
+      return res.status(400).json({
+        error: 'Either gid or groupname parameter is required',
+      });
     }
+
+    let command = 'getent group';
+    if (gid) {
+      command += ` ${gid}`;
+    } else {
+      command += ` ${groupname}`;
+    }
+
+    const result = await executeCommand(command);
+
+    if (!result.success) {
+      return res.status(404).json({
+        error: gid ? `Group with GID ${gid} not found` : `Group '${groupname}' not found`,
+      });
+    }
+
+    const fields = result.output.split(':');
+    if (fields.length < 4) {
+      throw new Error('Invalid group entry format');
+    }
+
+    const groupInfo = {
+      groupname: fields[0],
+      gid: parseInt(fields[2]),
+      members: fields[3] ? fields[3].split(',').filter(m => m.trim()) : [],
+    };
+
+    res.json(groupInfo);
+  } catch (error) {
+    log.api.error('Error looking up group', {
+      error: error.message,
+      stack: error.stack,
+      gid,
+      groupname,
+    });
+    res.status(500).json({
+      error: 'Failed to lookup group',
+      details: error.message,
+    });
+  }
 };
 
 export default {
-    getCurrentUserInfo,
-    getSystemUsers,
-    getSystemGroups,
-    lookupUser,
-    lookupGroup
+  getCurrentUserInfo,
+  getSystemUsers,
+  getSystemGroups,
+  lookupUser,
+  lookupGroup,
 };

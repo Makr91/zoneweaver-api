@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -54,40 +54,44 @@ const { DataTypes } = Sequelize;
  * @description Sequelize model representing API key entities in the database
  * @type {import('sequelize').Model}
  */
-const Entities = db.define('entities',{
-    name:{
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Human-readable name for the API key entity'
+const Entities = db.define(
+  'entities',
+  {
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Human-readable name for the API key entity',
     },
-    api_key_hash:{
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Bcrypt hash of the API key for secure storage'
+    api_key_hash: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Bcrypt hash of the API key for secure storage',
     },
-    description:{
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'Optional description of the API key purpose'
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Optional description of the API key purpose',
     },
-    is_active:{
-        type: DataTypes.BOOLEAN,
-        defaultValue: true,
-        comment: 'Whether the API key is active and can be used for authentication'
+    is_active: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+      comment: 'Whether the API key is active and can be used for authentication',
     },
-    created_at:{
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Timestamp when the entity was created'
+    created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp when the entity was created',
     },
-    last_used:{
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Timestamp when the API key was last used for authentication'
-    }
-},{
-    freezeTableName:true,
-    comment: 'API key entities for authentication and access control'
-});
- 
+    last_used: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp when the API key was last used for authentication',
+    },
+  },
+  {
+    freezeTableName: true,
+    comment: 'API key entities for authentication and access control',
+  }
+);
+
 export default Entities;

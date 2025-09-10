@@ -5,25 +5,25 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { Op, Sequelize } from "sequelize";
-import sequelize from "../config/Database.js";
-import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
-import NetworkUsage from "../models/NetworkUsageModel.js";
-import IPAddresses from "../models/IPAddressModel.js";
-import Routes from "../models/RoutingTableModel.js";
-import ZFSPools from "../models/ZFSPoolModel.js";
-import ZFSDatasets from "../models/ZFSDatasetModel.js";
-import Disks from "../models/DiskModel.js";
-import DiskIOStats from "../models/DiskIOStatsModel.js";
-import ARCStats from "../models/ARCStatsModel.js";
-import PoolIOStats from "../models/PoolIOStatsModel.js";
-import HostInfo from "../models/HostInfoModel.js";
-import CPUStats from "../models/CPUStatsModel.js";
-import MemoryStats from "../models/MemoryStatsModel.js";
-import yj from "yieldable-json";
-import { getHostMonitoringService } from "./HostMonitoringService.js";
-import os from "os";
-import { log } from "../lib/Logger.js";
+import { Op, Sequelize } from 'sequelize';
+import sequelize from '../config/Database.js';
+import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
+import NetworkUsage from '../models/NetworkUsageModel.js';
+import IPAddresses from '../models/IPAddressModel.js';
+import Routes from '../models/RoutingTableModel.js';
+import ZFSPools from '../models/ZFSPoolModel.js';
+import ZFSDatasets from '../models/ZFSDatasetModel.js';
+import Disks from '../models/DiskModel.js';
+import DiskIOStats from '../models/DiskIOStatsModel.js';
+import ARCStats from '../models/ARCStatsModel.js';
+import PoolIOStats from '../models/PoolIOStatsModel.js';
+import HostInfo from '../models/HostInfoModel.js';
+import CPUStats from '../models/CPUStatsModel.js';
+import MemoryStats from '../models/MemoryStatsModel.js';
+import yj from 'yieldable-json';
+import { getHostMonitoringService } from './HostMonitoringService.js';
+import os from 'os';
+import { log } from '../lib/Logger.js';
 
 /**
  * @swagger
@@ -59,20 +59,20 @@ import { log } from "../lib/Logger.js";
  *         description: Failed to get monitoring status
  */
 export const getMonitoringStatus = async (req, res) => {
-    try {
-        const service = getHostMonitoringService();
-        const status = service.getStatus();
-        res.json(status);
-    } catch (error) {
-        log.api.error('Error getting monitoring status', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get monitoring status',
-            details: error.message 
-        });
-    }
+  try {
+    const service = getHostMonitoringService();
+    const status = service.getStatus();
+    res.json(status);
+  } catch (error) {
+    log.api.error('Error getting monitoring status', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get monitoring status',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -114,20 +114,20 @@ export const getMonitoringStatus = async (req, res) => {
  *         description: Failed to get health check
  */
 export const getHealthCheck = async (req, res) => {
-    try {
-        const service = getHostMonitoringService();
-        const health = await service.getHealthCheck();
-        res.json(health);
-    } catch (error) {
-        log.api.error('Error getting health check', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get health check',
-            details: error.message 
-        });
-    }
+  try {
+    const service = getHostMonitoringService();
+    const health = await service.getHealthCheck();
+    res.json(health);
+  } catch (error) {
+    log.api.error('Error getting health check', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get health check',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -166,26 +166,26 @@ export const getHealthCheck = async (req, res) => {
  *         description: Failed to trigger collection
  */
 export const triggerCollection = async (req, res) => {
-    try {
-        const { type = 'all' } = req.body;
-        const service = getHostMonitoringService();
-        const results = await service.triggerCollection(type);
-        
-        res.json({
-            success: results.errors.length === 0,
-            type: type,
-            results: results
-        });
-    } catch (error) {
-        log.api.error('Error triggering collection', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to trigger collection',
-            details: error.message 
-        });
-    }
+  try {
+    const { type = 'all' } = req.body;
+    const service = getHostMonitoringService();
+    const results = await service.triggerCollection(type);
+
+    res.json({
+      success: results.errors.length === 0,
+      type,
+      results,
+    });
+  } catch (error) {
+    log.api.error('Error triggering collection', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to trigger collection',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -238,42 +238,47 @@ export const triggerCollection = async (req, res) => {
  *         description: Failed to get network interfaces
  */
 export const getNetworkInterfaces = async (req, res) => {
-    try {
-        const { limit = 100, offset = 0, state, link } = req.query;
-        
-        const whereClause = {};
-        if (state) whereClause.state = state;
-        if (link) whereClause.link = { [Op.like]: `%${link}%` };
+  try {
+    const { limit = 100, offset = 0, state, link } = req.query;
 
-        const { count, rows } = await NetworkInterfaces.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: [['scan_timestamp', 'DESC'], ['link', 'ASC']]
-        });
-
-        res.json({
-            interfaces: rows,
-            totalCount: count,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                hasMore: count > (parseInt(offset) + parseInt(limit))
-            }
-        });
-        
-    } catch (error) {
-        log.api.error('Error getting network interfaces', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get network interfaces',
-            details: error.message 
-        });
+    const whereClause = {};
+    if (state) {
+      whereClause.state = state;
     }
-};
+    if (link) {
+      whereClause.link = { [Op.like]: `%${link}%` };
+    }
 
+    const { count, rows } = await NetworkInterfaces.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [
+        ['scan_timestamp', 'DESC'],
+        ['link', 'ASC'],
+      ],
+    });
+
+    res.json({
+      interfaces: rows,
+      totalCount: count,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: count > parseInt(offset) + parseInt(limit),
+      },
+    });
+  } catch (error) {
+    log.api.error('Error getting network interfaces', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get network interfaces',
+      details: error.message,
+    });
+  }
+};
 
 /**
  * @swagger
@@ -318,221 +323,245 @@ export const getNetworkInterfaces = async (req, res) => {
  *         description: Failed to get network usage
  */
 export const getNetworkUsage = async (req, res) => {
-    const startTime = Date.now();
-    
-    try {
-        const { limit = 100, since, link, per_interface = 'true' } = req.query;
-        const requestedLimit = parseInt(limit);
-        
-        const selectedAttributes = [
-            'link', 'scan_timestamp', 'rx_mbps', 'tx_mbps', 
-            'rx_bps', 'tx_bps', 'rbytes', 'obytes', 'interface_speed_mbps', 
-            'interface_class', 'time_delta_seconds', 'ipackets_delta', 'opackets_delta', 
-            'rbytes_delta', 'obytes_delta', 'ierrors_delta', 'oerrors_delta', 'ipackets'
-        ];
+  const startTime = Date.now();
 
-        if (per_interface === 'true') {
-            
-            if (!since) {
-                // Path 1: Latest Records - Fast JavaScript deduplication approach
-                const baseWhereClause = {};
-                if (link) baseWhereClause.link = { [Op.like]: `%${link}%` };
+  try {
+    const { limit = 100, since, link, per_interface = 'true' } = req.query;
+    const requestedLimit = parseInt(limit);
 
-                // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
-                const recentRecords = await NetworkUsage.findAll({
-                    attributes: selectedAttributes,
-                    where: baseWhereClause,
-                    order: [['scan_timestamp', 'DESC']]
-                });
+    const selectedAttributes = [
+      'link',
+      'scan_timestamp',
+      'rx_mbps',
+      'tx_mbps',
+      'rx_bps',
+      'tx_bps',
+      'rbytes',
+      'obytes',
+      'interface_speed_mbps',
+      'interface_class',
+      'time_delta_seconds',
+      'ipackets_delta',
+      'opackets_delta',
+      'rbytes_delta',
+      'obytes_delta',
+      'ierrors_delta',
+      'oerrors_delta',
+      'ipackets',
+    ];
 
-                if (recentRecords.length === 0) {
-                    return res.json({
-                        usage: [],
-                        totalCount: 0,
-                        returnedCount: 0,
-                        queryTime: `${Date.now() - startTime}ms`,
-                        sampling: {
-                            applied: true,
-                            interfaceCount: 0,
-                            strategy: "latest-per-interface-fast"
-                        }
-                    });
-                }
-
-                // JavaScript deduplication - pick first (most recent) occurrence of each interface
-                const latestPerInterface = {};
-                const interfaceOrder = [];
-                
-                recentRecords.forEach(record => {
-                    if (!latestPerInterface[record.link]) {
-                        latestPerInterface[record.link] = record;
-                        interfaceOrder.push(record.link);
-                    }
-                });
-
-                // Convert to array and sort by interface name
-                const results = interfaceOrder
-                    .sort()
-                    .map(link => latestPerInterface[link]);
-
-                const interfaceCount = results.length;
-                const activeInterfaces = results.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
-
-                const queryTime = Date.now() - startTime;
-
-                res.json({
-                    usage: results,
-                    totalCount: results.length,
-                    returnedCount: results.length,
-                    queryTime: `${queryTime}ms`,
-                    sampling: {
-                        applied: true,
-                        interfaceCount: interfaceCount,
-                        samplesPerInterface: 1,
-                        strategy: "latest-per-interface-fast"
-                    },
-                    metadata: {
-                        activeInterfacesCount: activeInterfaces,
-                        interfaceList: results.map(row => row.link).sort()
-                    }
-                });
-
-            } else {
-                // Path 2: Historical Sampling - Even distribution across time range using JavaScript
-                const baseWhereClause = { 
-                    scan_timestamp: { [Op.gte]: new Date(since) }
-                };
-                if (link) baseWhereClause.link = { [Op.like]: `%${link}%` };
-
-                // Fetch all data within time range, grouped by interface
-                const allData = await NetworkUsage.findAll({
-                    attributes: selectedAttributes,
-                    where: baseWhereClause,
-                    order: [['link', 'ASC'], ['scan_timestamp', 'ASC']]
-                });
-
-                if (allData.length === 0) {
-                    return res.json({
-                        usage: [],
-                        totalCount: 0,
-                        returnedCount: 0,
-                        queryTime: `${Date.now() - startTime}ms`,
-                        sampling: {
-                            applied: true,
-                            interfaceCount: 0,
-                            strategy: "javascript-time-sampling"
-                        }
-                    });
-                }
-
-                // Group data by interface
-                const interfaceGroups = {};
-                allData.forEach(row => {
-                    if (!interfaceGroups[row.link]) {
-                        interfaceGroups[row.link] = [];
-                    }
-                    interfaceGroups[row.link].push(row);
-                });
-
-                // Sample evenly from each interface group
-                const sampledResults = [];
-                const interfaceNames = Object.keys(interfaceGroups);
-
-                interfaceNames.forEach(interfaceName => {
-                    const interfaceData = interfaceGroups[interfaceName];
-                    const totalRecords = interfaceData.length;
-                    
-                    if (totalRecords === 0) return;
-
-                    // Calculate sampling interval
-                    const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
-                    
-                    // Sample evenly across the data
-                    for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
-                        const index = Math.min(i * interval, totalRecords - 1);
-                        sampledResults.push(interfaceData[index]);
-                    }
-                });
-
-                // Sort results by interface and timestamp
-                sampledResults.sort((a, b) => {
-                    if (a.link !== b.link) {
-                        return a.link.localeCompare(b.link);
-                    }
-                    return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
-                });
-
-                const interfaceCount = interfaceNames.length;
-                const activeInterfaces = sampledResults.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
-
-                let timeSpan = null;
-                if (sampledResults.length > 1) {
-                    const timestamps = sampledResults.map(row => new Date(row.scan_timestamp)).sort();
-                    const firstRecord = timestamps[0];
-                    const lastRecord = timestamps[timestamps.length - 1];
-                    timeSpan = {
-                        start: firstRecord.toISOString(),
-                        end: lastRecord.toISOString(),
-                        durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60))
-                    };
-                }
-
-                const queryTime = Date.now() - startTime;
-
-                res.json({
-                    usage: sampledResults,
-                    totalCount: sampledResults.length,
-                    returnedCount: sampledResults.length,
-                    queryTime: `${queryTime}ms`,
-                    sampling: {
-                        applied: true,
-                        interfaceCount: interfaceCount,
-                        samplesPerInterface: Math.round(sampledResults.length / interfaceCount),
-                        requestedSamplesPerInterface: requestedLimit,
-                        strategy: "javascript-time-sampling"
-                    },
-                    metadata: {
-                        timeSpan: timeSpan,
-                        activeInterfacesCount: activeInterfaces,
-                        interfaceList: interfaceNames.sort()
-                    }
-                });
-            }
-
-        } else {
-            // Simple non-per-interface query (latest records across all interfaces)
-            const whereClause = {};
-            if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-            if (link) whereClause.link = { [Op.like]: `%${link}%` };
-            
-            const { count, rows } = await NetworkUsage.findAndCountAll({
-                where: whereClause,
-                attributes: selectedAttributes,
-                limit: requestedLimit,
-                order: [['scan_timestamp', 'DESC']]
-            });
-
-            const queryTime = Date.now() - startTime;
-
-            res.json({
-                usage: rows,
-                totalCount: count,
-                returnedCount: rows.length,
-                queryTime: `${queryTime}ms`,
-                sampling: {
-                    applied: false,
-                    strategy: "simple-limit-latest"
-                }
-            });
+    if (per_interface === 'true') {
+      if (!since) {
+        // Path 1: Latest Records - Fast JavaScript deduplication approach
+        const baseWhereClause = {};
+        if (link) {
+          baseWhereClause.link = { [Op.like]: `%${link}%` };
         }
-    } catch (error) {
-        const queryTime = Date.now() - startTime;
-        res.status(500).json({ 
-            error: 'Failed to get network usage',
-            details: error.message,
-            queryTime: `${queryTime}ms`
+
+        // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
+        const recentRecords = await NetworkUsage.findAll({
+          attributes: selectedAttributes,
+          where: baseWhereClause,
+          order: [['scan_timestamp', 'DESC']],
         });
+
+        if (recentRecords.length === 0) {
+          return res.json({
+            usage: [],
+            totalCount: 0,
+            returnedCount: 0,
+            queryTime: `${Date.now() - startTime}ms`,
+            sampling: {
+              applied: true,
+              interfaceCount: 0,
+              strategy: 'latest-per-interface-fast',
+            },
+          });
+        }
+
+        // JavaScript deduplication - pick first (most recent) occurrence of each interface
+        const latestPerInterface = {};
+        const interfaceOrder = [];
+
+        recentRecords.forEach(record => {
+          if (!latestPerInterface[record.link]) {
+            latestPerInterface[record.link] = record;
+            interfaceOrder.push(record.link);
+          }
+        });
+
+        // Convert to array and sort by interface name
+        const results = interfaceOrder.sort().map(link => latestPerInterface[link]);
+
+        const interfaceCount = results.length;
+        const activeInterfaces = results.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
+
+        const queryTime = Date.now() - startTime;
+
+        res.json({
+          usage: results,
+          totalCount: results.length,
+          returnedCount: results.length,
+          queryTime: `${queryTime}ms`,
+          sampling: {
+            applied: true,
+            interfaceCount,
+            samplesPerInterface: 1,
+            strategy: 'latest-per-interface-fast',
+          },
+          metadata: {
+            activeInterfacesCount: activeInterfaces,
+            interfaceList: results.map(row => row.link).sort(),
+          },
+        });
+      } else {
+        // Path 2: Historical Sampling - Even distribution across time range using JavaScript
+        const baseWhereClause = {
+          scan_timestamp: { [Op.gte]: new Date(since) },
+        };
+        if (link) {
+          baseWhereClause.link = { [Op.like]: `%${link}%` };
+        }
+
+        // Fetch all data within time range, grouped by interface
+        const allData = await NetworkUsage.findAll({
+          attributes: selectedAttributes,
+          where: baseWhereClause,
+          order: [
+            ['link', 'ASC'],
+            ['scan_timestamp', 'ASC'],
+          ],
+        });
+
+        if (allData.length === 0) {
+          return res.json({
+            usage: [],
+            totalCount: 0,
+            returnedCount: 0,
+            queryTime: `${Date.now() - startTime}ms`,
+            sampling: {
+              applied: true,
+              interfaceCount: 0,
+              strategy: 'javascript-time-sampling',
+            },
+          });
+        }
+
+        // Group data by interface
+        const interfaceGroups = {};
+        allData.forEach(row => {
+          if (!interfaceGroups[row.link]) {
+            interfaceGroups[row.link] = [];
+          }
+          interfaceGroups[row.link].push(row);
+        });
+
+        // Sample evenly from each interface group
+        const sampledResults = [];
+        const interfaceNames = Object.keys(interfaceGroups);
+
+        interfaceNames.forEach(interfaceName => {
+          const interfaceData = interfaceGroups[interfaceName];
+          const totalRecords = interfaceData.length;
+
+          if (totalRecords === 0) {
+            return;
+          }
+
+          // Calculate sampling interval
+          const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+
+          // Sample evenly across the data
+          for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+            const index = Math.min(i * interval, totalRecords - 1);
+            sampledResults.push(interfaceData[index]);
+          }
+        });
+
+        // Sort results by interface and timestamp
+        sampledResults.sort((a, b) => {
+          if (a.link !== b.link) {
+            return a.link.localeCompare(b.link);
+          }
+          return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
+        });
+
+        const interfaceCount = interfaceNames.length;
+        const activeInterfaces = sampledResults.filter(
+          row => row.rx_mbps > 0 || row.tx_mbps > 0
+        ).length;
+
+        let timeSpan = null;
+        if (sampledResults.length > 1) {
+          const timestamps = sampledResults.map(row => new Date(row.scan_timestamp)).sort();
+          const firstRecord = timestamps[0];
+          const lastRecord = timestamps[timestamps.length - 1];
+          timeSpan = {
+            start: firstRecord.toISOString(),
+            end: lastRecord.toISOString(),
+            durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60)),
+          };
+        }
+
+        const queryTime = Date.now() - startTime;
+
+        res.json({
+          usage: sampledResults,
+          totalCount: sampledResults.length,
+          returnedCount: sampledResults.length,
+          queryTime: `${queryTime}ms`,
+          sampling: {
+            applied: true,
+            interfaceCount,
+            samplesPerInterface: Math.round(sampledResults.length / interfaceCount),
+            requestedSamplesPerInterface: requestedLimit,
+            strategy: 'javascript-time-sampling',
+          },
+          metadata: {
+            timeSpan,
+            activeInterfacesCount: activeInterfaces,
+            interfaceList: interfaceNames.sort(),
+          },
+        });
+      }
+    } else {
+      // Simple non-per-interface query (latest records across all interfaces)
+      const whereClause = {};
+      if (since) {
+        whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
+      }
+      if (link) {
+        whereClause.link = { [Op.like]: `%${link}%` };
+      }
+
+      const { count, rows } = await NetworkUsage.findAndCountAll({
+        where: whereClause,
+        attributes: selectedAttributes,
+        limit: requestedLimit,
+        order: [['scan_timestamp', 'DESC']],
+      });
+
+      const queryTime = Date.now() - startTime;
+
+      res.json({
+        usage: rows,
+        totalCount: count,
+        returnedCount: rows.length,
+        queryTime: `${queryTime}ms`,
+        sampling: {
+          applied: false,
+          strategy: 'simple-limit-latest',
+        },
+      });
     }
+  } catch (error) {
+    const queryTime = Date.now() - startTime;
+    res.status(500).json({
+      error: 'Failed to get network usage',
+      details: error.message,
+      queryTime: `${queryTime}ms`,
+    });
+  }
 };
 
 /**
@@ -577,33 +606,40 @@ export const getNetworkUsage = async (req, res) => {
  *         description: Failed to get ZFS pools
  */
 export const getZFSPools = async (req, res) => {
-    try {
-        const { limit = 50, pool, health } = req.query;
-        
-        const whereClause = {};
-        if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
-        if (health) whereClause.health = health;
+  try {
+    const { limit = 50, pool, health } = req.query;
 
-        const { count, rows } = await ZFSPools.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC'], ['pool', 'ASC']]
-        });
-
-        res.json({
-            pools: rows,
-            totalCount: count
-        });
-    } catch (error) {
-        log.api.error('Error getting ZFS pools', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get ZFS pools',
-            details: error.message 
-        });
+    const whereClause = {};
+    if (pool) {
+      whereClause.pool = { [Op.like]: `%${pool}%` };
     }
+    if (health) {
+      whereClause.health = health;
+    }
+
+    const { count, rows } = await ZFSPools.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      order: [
+        ['scan_timestamp', 'DESC'],
+        ['pool', 'ASC'],
+      ],
+    });
+
+    res.json({
+      pools: rows,
+      totalCount: count,
+    });
+  } catch (error) {
+    log.api.error('Error getting ZFS pools', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get ZFS pools',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -661,40 +697,49 @@ export const getZFSPools = async (req, res) => {
  *         description: Failed to get ZFS datasets
  */
 export const getZFSDatasets = async (req, res) => {
-    try {
-        const { limit = 100, offset = 0, pool, type, name } = req.query;
-        
-        const whereClause = {};
-        if (pool) whereClause.pool = pool;
-        if (type) whereClause.type = type;
-        if (name) whereClause.name = { [Op.like]: `%${name}%` };
+  try {
+    const { limit = 100, offset = 0, pool, type, name } = req.query;
 
-        const { count, rows } = await ZFSDatasets.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: [['scan_timestamp', 'DESC'], ['name', 'ASC']]
-        });
-
-        res.json({
-            datasets: rows,
-            totalCount: count,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                hasMore: count > (parseInt(offset) + parseInt(limit))
-            }
-        });
-    } catch (error) {
-        log.api.error('Error getting ZFS datasets', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get ZFS datasets',
-            details: error.message 
-        });
+    const whereClause = {};
+    if (pool) {
+      whereClause.pool = pool;
     }
+    if (type) {
+      whereClause.type = type;
+    }
+    if (name) {
+      whereClause.name = { [Op.like]: `%${name}%` };
+    }
+
+    const { count, rows } = await ZFSDatasets.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [
+        ['scan_timestamp', 'DESC'],
+        ['name', 'ASC'],
+      ],
+    });
+
+    res.json({
+      datasets: rows,
+      totalCount: count,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: count > parseInt(offset) + parseInt(limit),
+      },
+    });
+  } catch (error) {
+    log.api.error('Error getting ZFS datasets', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get ZFS datasets',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -723,28 +768,28 @@ export const getZFSDatasets = async (req, res) => {
  *         description: Failed to get host information
  */
 export const getHostInfo = async (req, res) => {
-    try {
-        const hostInfo = await HostInfo.findOne({
-            order: [['updated_at', 'DESC']]
-        });
+  try {
+    const hostInfo = await HostInfo.findOne({
+      order: [['updated_at', 'DESC']],
+    });
 
-        if (!hostInfo) {
-            return res.status(404).json({ 
-                error: 'Host information not found'
-            });
-        }
-
-        res.json(hostInfo);
-    } catch (error) {
-        log.api.error('Error getting host info', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get host information',
-            details: error.message 
-        });
+    if (!hostInfo) {
+      return res.status(404).json({
+        error: 'Host information not found',
+      });
     }
+
+    res.json(hostInfo);
+  } catch (error) {
+    log.api.error('Error getting host info', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get host information',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -832,40 +877,49 @@ export const getHostInfo = async (req, res) => {
  *         description: Failed to get disk information
  */
 export const getDisks = async (req, res) => {
-    try {
-        const { limit = 100, offset = 0, pool, available, type } = req.query;
-        
-        const whereClause = {};
-        if (pool) whereClause.pool_assignment = pool;
-        if (available !== undefined) whereClause.is_available = available === 'true';
-        if (type) whereClause.disk_type = type;
+  try {
+    const { limit = 100, offset = 0, pool, available, type } = req.query;
 
-        const { count, rows } = await Disks.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: [['scan_timestamp', 'DESC'], ['disk_index', 'ASC']]
-        });
-
-        res.json({
-            disks: rows,
-            totalCount: count,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                hasMore: count > (parseInt(offset) + parseInt(limit))
-            }
-        });
-    } catch (error) {
-        log.api.error('Error getting disk information', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get disk information',
-            details: error.message 
-        });
+    const whereClause = {};
+    if (pool) {
+      whereClause.pool_assignment = pool;
     }
+    if (available !== undefined) {
+      whereClause.is_available = available === 'true';
+    }
+    if (type) {
+      whereClause.disk_type = type;
+    }
+
+    const { count, rows } = await Disks.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [
+        ['scan_timestamp', 'DESC'],
+        ['disk_index', 'ASC'],
+      ],
+    });
+
+    res.json({
+      disks: rows,
+      totalCount: count,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: count > parseInt(offset) + parseInt(limit),
+      },
+    });
+  } catch (error) {
+    log.api.error('Error getting disk information', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get disk information',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -924,44 +978,62 @@ export const getDisks = async (req, res) => {
  *         description: Failed to get IP addresses
  */
 export const getIPAddresses = async (req, res) => {
-    try {
-        const { limit = 100, offset = 0, interface: iface, ip_version, state } = req.query;
-        
-        const whereClause = {};
-        if (iface) whereClause.interface = { [Op.like]: `%${iface}%` };
-        if (ip_version) whereClause.ip_version = ip_version;
-        if (state) whereClause.state = state;
+  try {
+    const { limit = 100, offset = 0, interface: iface, ip_version, state } = req.query;
 
-        // Optimize: Remove expensive COUNT query, use only existing database columns
-        const rows = await IPAddresses.findAll({
-            where: whereClause,
-            attributes: [
-                'id', 'interface', 'ip_address', 'ip_version', 'state', 'scan_timestamp',
-                'addrobj', 'type', 'addr', 'prefix_length'
-            ], // Only columns that actually exist in database
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: [['scan_timestamp', 'DESC'], ['ip_version', 'ASC'], ['interface', 'ASC']]
-        });
-
-        res.json({
-            addresses: rows,
-            returned: rows.length,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset)
-            }
-        });
-    } catch (error) {
-        log.api.error('Error getting IP addresses', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get IP addresses',
-            details: error.message 
-        });
+    const whereClause = {};
+    if (iface) {
+      whereClause.interface = { [Op.like]: `%${iface}%` };
     }
+    if (ip_version) {
+      whereClause.ip_version = ip_version;
+    }
+    if (state) {
+      whereClause.state = state;
+    }
+
+    // Optimize: Remove expensive COUNT query, use only existing database columns
+    const rows = await IPAddresses.findAll({
+      where: whereClause,
+      attributes: [
+        'id',
+        'interface',
+        'ip_address',
+        'ip_version',
+        'state',
+        'scan_timestamp',
+        'addrobj',
+        'type',
+        'addr',
+        'prefix_length',
+      ], // Only columns that actually exist in database
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [
+        ['scan_timestamp', 'DESC'],
+        ['ip_version', 'ASC'],
+        ['interface', 'ASC'],
+      ],
+    });
+
+    res.json({
+      addresses: rows,
+      returned: rows.length,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+      },
+    });
+  } catch (error) {
+    log.api.error('Error getting IP addresses', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get IP addresses',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -1025,45 +1097,74 @@ export const getIPAddresses = async (req, res) => {
  *         description: Failed to get routing table
  */
 export const getRoutes = async (req, res) => {
-    try {
-        const { limit = 100, offset = 0, interface: iface, ip_version, is_default, destination } = req.query;
-        
-        const whereClause = {};
-        if (iface) whereClause.interface = { [Op.like]: `%${iface}%` };
-        if (ip_version) whereClause.ip_version = ip_version;
-        if (is_default !== undefined) whereClause.is_default = is_default === 'true';
-        if (destination) whereClause.destination = { [Op.like]: `%${destination}%` };
+  try {
+    const {
+      limit = 100,
+      offset = 0,
+      interface: iface,
+      ip_version,
+      is_default,
+      destination,
+    } = req.query;
 
-        // Optimize: Remove expensive COUNT query, use only existing database columns
-        const rows = await Routes.findAll({
-            where: whereClause,
-            attributes: [
-                'id', 'destination', 'gateway', 'interface', 'ip_version', 'is_default', 'flags', 'scan_timestamp',
-                'ref', 'use', 'destination_mask'
-            ], // Only columns that actually exist in database
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            order: [['scan_timestamp', 'DESC'], ['ip_version', 'ASC'], ['is_default', 'DESC'], ['destination', 'ASC']]
-        });
-
-        res.json({
-            routes: rows,
-            returned: rows.length,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset)
-            }
-        });
-    } catch (error) {
-        log.api.error('Error getting routing table', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get routing table',
-            details: error.message 
-        });
+    const whereClause = {};
+    if (iface) {
+      whereClause.interface = { [Op.like]: `%${iface}%` };
     }
+    if (ip_version) {
+      whereClause.ip_version = ip_version;
+    }
+    if (is_default !== undefined) {
+      whereClause.is_default = is_default === 'true';
+    }
+    if (destination) {
+      whereClause.destination = { [Op.like]: `%${destination}%` };
+    }
+
+    // Optimize: Remove expensive COUNT query, use only existing database columns
+    const rows = await Routes.findAll({
+      where: whereClause,
+      attributes: [
+        'id',
+        'destination',
+        'gateway',
+        'interface',
+        'ip_version',
+        'is_default',
+        'flags',
+        'scan_timestamp',
+        'ref',
+        'use',
+        'destination_mask',
+      ], // Only columns that actually exist in database
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [
+        ['scan_timestamp', 'DESC'],
+        ['ip_version', 'ASC'],
+        ['is_default', 'DESC'],
+        ['destination', 'ASC'],
+      ],
+    });
+
+    res.json({
+      routes: rows,
+      returned: rows.length,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+      },
+    });
+  } catch (error) {
+    log.api.error('Error getting routing table', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get routing table',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -1114,198 +1215,223 @@ export const getRoutes = async (req, res) => {
  *         description: Failed to get disk I/O statistics
  */
 export const getDiskIOStats = async (req, res) => {
-    const startTime = Date.now();
-    
-    try {
-        const { limit = 100, since, pool, device, per_device = 'true' } = req.query;
-        const requestedLimit = parseInt(limit);
-        
-        const selectedAttributes = [
-            'id', 'device_name', 'pool', 'scan_timestamp', 'read_ops', 'write_ops',
-            'read_bandwidth', 'write_bandwidth', 'read_bandwidth_bytes', 'write_bandwidth_bytes',
-            'read_ops_per_sec', 'write_ops_per_sec', 'alloc', 'free'
-        ];
+  const startTime = Date.now();
 
-        if (per_device === 'true') {
-            
-            if (!since) {
-                // Path 1: Latest Records - Fast JavaScript deduplication approach
-                const baseWhereClause = {};
-                if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
-                if (device) baseWhereClause.device_name = { [Op.like]: `%${device}%` };
+  try {
+    const { limit = 100, since, pool, device, per_device = 'true' } = req.query;
+    const requestedLimit = parseInt(limit);
 
-                // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
-                const recentRecords = await DiskIOStats.findAll({
-                    attributes: selectedAttributes,
-                    where: baseWhereClause,
-                    order: [['scan_timestamp', 'DESC']]
-                });
+    const selectedAttributes = [
+      'id',
+      'device_name',
+      'pool',
+      'scan_timestamp',
+      'read_ops',
+      'write_ops',
+      'read_bandwidth',
+      'write_bandwidth',
+      'read_bandwidth_bytes',
+      'write_bandwidth_bytes',
+      'read_ops_per_sec',
+      'write_ops_per_sec',
+      'alloc',
+      'free',
+    ];
 
-                if (recentRecords.length === 0) {
-                    return res.json({
-                        diskio: [],
-                        totalCount: 0,
-                        returnedCount: 0,
-                        queryTime: `${Date.now() - startTime}ms`,
-                        sampling: {
-                            applied: true,
-                            deviceCount: 0,
-                            strategy: "latest-per-device-fast"
-                        }
-                    });
-                }
-
-                // JavaScript deduplication - pick first (most recent) occurrence of each device
-                const latestPerDevice = {};
-                const deviceOrder = [];
-                
-                recentRecords.forEach(record => {
-                    if (!latestPerDevice[record.device_name]) {
-                        latestPerDevice[record.device_name] = record;
-                        deviceOrder.push(record.device_name);
-                    }
-                });
-
-                // Convert to array and sort by device name
-                const results = deviceOrder
-                    .sort()
-                    .map(deviceName => latestPerDevice[deviceName]);
-
-                const deviceCount = results.length;
-                const queryTime = Date.now() - startTime;
-
-                res.json({
-                    diskio: results,
-                    totalCount: results.length,
-                    returnedCount: results.length,
-                    queryTime: `${queryTime}ms`,
-                    sampling: {
-                        applied: true,
-                        deviceCount: deviceCount,
-                        samplesPerDevice: 1,
-                        strategy: "latest-per-device-fast"
-                    }
-                });
-
-            } else {
-                // Path 2: Historical Sampling - Even distribution across time range using JavaScript
-                const baseWhereClause = { 
-                    scan_timestamp: { [Op.gte]: new Date(since) }
-                };
-                if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
-                if (device) baseWhereClause.device_name = { [Op.like]: `%${device}%` };
-
-                // Fetch all data within time range, grouped by device
-                const allData = await DiskIOStats.findAll({
-                    attributes: selectedAttributes,
-                    where: baseWhereClause,
-                    order: [['device_name', 'ASC'], ['scan_timestamp', 'ASC']]
-                });
-
-                if (allData.length === 0) {
-                    return res.json({
-                        diskio: [],
-                        totalCount: 0,
-                        returnedCount: 0,
-                        queryTime: `${Date.now() - startTime}ms`,
-                        sampling: {
-                            applied: true,
-                            deviceCount: 0,
-                            strategy: "javascript-time-sampling"
-                        }
-                    });
-                }
-
-                // Group data by device
-                const deviceGroups = {};
-                allData.forEach(row => {
-                    if (!deviceGroups[row.device_name]) {
-                        deviceGroups[row.device_name] = [];
-                    }
-                    deviceGroups[row.device_name].push(row);
-                });
-
-                // Sample evenly from each device group
-                const sampledResults = [];
-                const deviceNames = Object.keys(deviceGroups);
-
-                deviceNames.forEach(deviceName => {
-                    const deviceData = deviceGroups[deviceName];
-                    const totalRecords = deviceData.length;
-                    
-                    if (totalRecords === 0) return;
-
-                    // Calculate sampling interval
-                    const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
-                    
-                    // Sample evenly across the data
-                    for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
-                        const index = Math.min(i * interval, totalRecords - 1);
-                        sampledResults.push(deviceData[index]);
-                    }
-                });
-
-                // Sort results by device and timestamp
-                sampledResults.sort((a, b) => {
-                    if (a.device_name !== b.device_name) {
-                        return a.device_name.localeCompare(b.device_name);
-                    }
-                    return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
-                });
-
-                const deviceCount = deviceNames.length;
-                const queryTime = Date.now() - startTime;
-
-                res.json({
-                    diskio: sampledResults,
-                    totalCount: sampledResults.length,
-                    returnedCount: sampledResults.length,
-                    queryTime: `${queryTime}ms`,
-                    sampling: {
-                        applied: true,
-                        deviceCount: deviceCount,
-                        samplesPerDevice: Math.round(sampledResults.length / deviceCount),
-                        requestedSamplesPerDevice: requestedLimit,
-                        strategy: "javascript-time-sampling"
-                    }
-                });
-            }
-
-        } else {
-            // Simple non-per-device query (latest records across all devices)
-            const whereClause = {};
-            if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-            if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
-            if (device) whereClause.device_name = { [Op.like]: `%${device}%` };
-            
-            const { count, rows } = await DiskIOStats.findAndCountAll({
-                where: whereClause,
-                attributes: selectedAttributes,
-                limit: requestedLimit,
-                order: [['scan_timestamp', 'DESC']]
-            });
-
-            const queryTime = Date.now() - startTime;
-
-            res.json({
-                diskio: rows,
-                totalCount: count,
-                returnedCount: rows.length,
-                queryTime: `${queryTime}ms`,
-                sampling: {
-                    applied: false,
-                    strategy: "simple-limit-latest"
-                }
-            });
+    if (per_device === 'true') {
+      if (!since) {
+        // Path 1: Latest Records - Fast JavaScript deduplication approach
+        const baseWhereClause = {};
+        if (pool) {
+          baseWhereClause.pool = { [Op.like]: `%${pool}%` };
         }
-    } catch (error) {
-        const queryTime = Date.now() - startTime;
-        res.status(500).json({ 
-            error: 'Failed to get disk I/O statistics',
-            details: error.message,
-            queryTime: `${queryTime}ms`
+        if (device) {
+          baseWhereClause.device_name = { [Op.like]: `%${device}%` };
+        }
+
+        // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
+        const recentRecords = await DiskIOStats.findAll({
+          attributes: selectedAttributes,
+          where: baseWhereClause,
+          order: [['scan_timestamp', 'DESC']],
         });
+
+        if (recentRecords.length === 0) {
+          return res.json({
+            diskio: [],
+            totalCount: 0,
+            returnedCount: 0,
+            queryTime: `${Date.now() - startTime}ms`,
+            sampling: {
+              applied: true,
+              deviceCount: 0,
+              strategy: 'latest-per-device-fast',
+            },
+          });
+        }
+
+        // JavaScript deduplication - pick first (most recent) occurrence of each device
+        const latestPerDevice = {};
+        const deviceOrder = [];
+
+        recentRecords.forEach(record => {
+          if (!latestPerDevice[record.device_name]) {
+            latestPerDevice[record.device_name] = record;
+            deviceOrder.push(record.device_name);
+          }
+        });
+
+        // Convert to array and sort by device name
+        const results = deviceOrder.sort().map(deviceName => latestPerDevice[deviceName]);
+
+        const deviceCount = results.length;
+        const queryTime = Date.now() - startTime;
+
+        res.json({
+          diskio: results,
+          totalCount: results.length,
+          returnedCount: results.length,
+          queryTime: `${queryTime}ms`,
+          sampling: {
+            applied: true,
+            deviceCount,
+            samplesPerDevice: 1,
+            strategy: 'latest-per-device-fast',
+          },
+        });
+      } else {
+        // Path 2: Historical Sampling - Even distribution across time range using JavaScript
+        const baseWhereClause = {
+          scan_timestamp: { [Op.gte]: new Date(since) },
+        };
+        if (pool) {
+          baseWhereClause.pool = { [Op.like]: `%${pool}%` };
+        }
+        if (device) {
+          baseWhereClause.device_name = { [Op.like]: `%${device}%` };
+        }
+
+        // Fetch all data within time range, grouped by device
+        const allData = await DiskIOStats.findAll({
+          attributes: selectedAttributes,
+          where: baseWhereClause,
+          order: [
+            ['device_name', 'ASC'],
+            ['scan_timestamp', 'ASC'],
+          ],
+        });
+
+        if (allData.length === 0) {
+          return res.json({
+            diskio: [],
+            totalCount: 0,
+            returnedCount: 0,
+            queryTime: `${Date.now() - startTime}ms`,
+            sampling: {
+              applied: true,
+              deviceCount: 0,
+              strategy: 'javascript-time-sampling',
+            },
+          });
+        }
+
+        // Group data by device
+        const deviceGroups = {};
+        allData.forEach(row => {
+          if (!deviceGroups[row.device_name]) {
+            deviceGroups[row.device_name] = [];
+          }
+          deviceGroups[row.device_name].push(row);
+        });
+
+        // Sample evenly from each device group
+        const sampledResults = [];
+        const deviceNames = Object.keys(deviceGroups);
+
+        deviceNames.forEach(deviceName => {
+          const deviceData = deviceGroups[deviceName];
+          const totalRecords = deviceData.length;
+
+          if (totalRecords === 0) {
+            return;
+          }
+
+          // Calculate sampling interval
+          const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+
+          // Sample evenly across the data
+          for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+            const index = Math.min(i * interval, totalRecords - 1);
+            sampledResults.push(deviceData[index]);
+          }
+        });
+
+        // Sort results by device and timestamp
+        sampledResults.sort((a, b) => {
+          if (a.device_name !== b.device_name) {
+            return a.device_name.localeCompare(b.device_name);
+          }
+          return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
+        });
+
+        const deviceCount = deviceNames.length;
+        const queryTime = Date.now() - startTime;
+
+        res.json({
+          diskio: sampledResults,
+          totalCount: sampledResults.length,
+          returnedCount: sampledResults.length,
+          queryTime: `${queryTime}ms`,
+          sampling: {
+            applied: true,
+            deviceCount,
+            samplesPerDevice: Math.round(sampledResults.length / deviceCount),
+            requestedSamplesPerDevice: requestedLimit,
+            strategy: 'javascript-time-sampling',
+          },
+        });
+      }
+    } else {
+      // Simple non-per-device query (latest records across all devices)
+      const whereClause = {};
+      if (since) {
+        whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
+      }
+      if (pool) {
+        whereClause.pool = { [Op.like]: `%${pool}%` };
+      }
+      if (device) {
+        whereClause.device_name = { [Op.like]: `%${device}%` };
+      }
+
+      const { count, rows } = await DiskIOStats.findAndCountAll({
+        where: whereClause,
+        attributes: selectedAttributes,
+        limit: requestedLimit,
+        order: [['scan_timestamp', 'DESC']],
+      });
+
+      const queryTime = Date.now() - startTime;
+
+      res.json({
+        diskio: rows,
+        totalCount: count,
+        returnedCount: rows.length,
+        queryTime: `${queryTime}ms`,
+        sampling: {
+          applied: false,
+          strategy: 'simple-limit-latest',
+        },
+      });
     }
+  } catch (error) {
+    const queryTime = Date.now() - startTime;
+    res.status(500).json({
+      error: 'Failed to get disk I/O statistics',
+      details: error.message,
+      queryTime: `${queryTime}ms`,
+    });
+  }
 };
 
 /**
@@ -1356,199 +1482,227 @@ export const getDiskIOStats = async (req, res) => {
  *         description: Failed to get pool I/O statistics
  */
 export const getPoolIOStats = async (req, res) => {
-    const startTime = Date.now();
-    
-    try {
-        const { limit = 100, since, pool, pool_type, per_pool = 'true' } = req.query;
-        const requestedLimit = parseInt(limit);
-        
-        const selectedAttributes = [
-            'id', 'pool', 'pool_type', 'scan_timestamp', 'read_ops', 'write_ops', 
-            'read_bandwidth', 'write_bandwidth', 'read_bandwidth_bytes', 'write_bandwidth_bytes',
-            'total_wait_read', 'total_wait_write', 'disk_wait_read', 'disk_wait_write',
-            'syncq_wait_read', 'syncq_wait_write', 'asyncq_wait_read', 'asyncq_wait_write'
-        ];
+  const startTime = Date.now();
 
-        if (per_pool === 'true') {
-            
-            if (!since) {
-                // Path 1: Latest Records - Fast JavaScript deduplication approach
-                const baseWhereClause = {};
-                if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
-                if (pool_type) baseWhereClause.pool_type = pool_type;
+  try {
+    const { limit = 100, since, pool, pool_type, per_pool = 'true' } = req.query;
+    const requestedLimit = parseInt(limit);
 
-                // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
-                const recentRecords = await PoolIOStats.findAll({
-                    attributes: selectedAttributes,
-                    where: baseWhereClause,
-                    order: [['scan_timestamp', 'DESC']]
-                });
+    const selectedAttributes = [
+      'id',
+      'pool',
+      'pool_type',
+      'scan_timestamp',
+      'read_ops',
+      'write_ops',
+      'read_bandwidth',
+      'write_bandwidth',
+      'read_bandwidth_bytes',
+      'write_bandwidth_bytes',
+      'total_wait_read',
+      'total_wait_write',
+      'disk_wait_read',
+      'disk_wait_write',
+      'syncq_wait_read',
+      'syncq_wait_write',
+      'asyncq_wait_read',
+      'asyncq_wait_write',
+    ];
 
-                if (recentRecords.length === 0) {
-                    return res.json({
-                        poolio: [],
-                        totalCount: 0,
-                        returnedCount: 0,
-                        queryTime: `${Date.now() - startTime}ms`,
-                        sampling: {
-                            applied: true,
-                            poolCount: 0,
-                            strategy: "latest-per-pool-fast"
-                        }
-                    });
-                }
-
-                // JavaScript deduplication - pick first (most recent) occurrence of each pool
-                const latestPerPool = {};
-                const poolOrder = [];
-                
-                recentRecords.forEach(record => {
-                    if (!latestPerPool[record.pool]) {
-                        latestPerPool[record.pool] = record;
-                        poolOrder.push(record.pool);
-                    }
-                });
-
-                // Convert to array and sort by pool name
-                const results = poolOrder
-                    .sort()
-                    .map(poolName => latestPerPool[poolName]);
-
-                const poolCount = results.length;
-                const queryTime = Date.now() - startTime;
-
-                res.json({
-                    poolio: results,
-                    totalCount: results.length,
-                    returnedCount: results.length,
-                    queryTime: `${queryTime}ms`,
-                    sampling: {
-                        applied: true,
-                        poolCount: poolCount,
-                        samplesPerPool: 1,
-                        strategy: "latest-per-pool-fast"
-                    }
-                });
-
-            } else {
-                // Path 2: Historical Sampling - Even distribution across time range using JavaScript
-                const baseWhereClause = { 
-                    scan_timestamp: { [Op.gte]: new Date(since) }
-                };
-                if (pool) baseWhereClause.pool = { [Op.like]: `%${pool}%` };
-                if (pool_type) baseWhereClause.pool_type = pool_type;
-
-                // Fetch all data within time range, grouped by pool
-                const allData = await PoolIOStats.findAll({
-                    attributes: selectedAttributes,
-                    where: baseWhereClause,
-                    order: [['pool', 'ASC'], ['scan_timestamp', 'ASC']]
-                });
-
-                if (allData.length === 0) {
-                    return res.json({
-                        poolio: [],
-                        totalCount: 0,
-                        returnedCount: 0,
-                        queryTime: `${Date.now() - startTime}ms`,
-                        sampling: {
-                            applied: true,
-                            poolCount: 0,
-                            strategy: "javascript-time-sampling"
-                        }
-                    });
-                }
-
-                // Group data by pool
-                const poolGroups = {};
-                allData.forEach(row => {
-                    if (!poolGroups[row.pool]) {
-                        poolGroups[row.pool] = [];
-                    }
-                    poolGroups[row.pool].push(row);
-                });
-
-                // Sample evenly from each pool group
-                const sampledResults = [];
-                const poolNames = Object.keys(poolGroups);
-
-                poolNames.forEach(poolName => {
-                    const poolData = poolGroups[poolName];
-                    const totalRecords = poolData.length;
-                    
-                    if (totalRecords === 0) return;
-
-                    // Calculate sampling interval
-                    const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
-                    
-                    // Sample evenly across the data
-                    for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
-                        const index = Math.min(i * interval, totalRecords - 1);
-                        sampledResults.push(poolData[index]);
-                    }
-                });
-
-                // Sort results by pool and timestamp
-                sampledResults.sort((a, b) => {
-                    if (a.pool !== b.pool) {
-                        return a.pool.localeCompare(b.pool);
-                    }
-                    return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
-                });
-
-                const poolCount = poolNames.length;
-                const queryTime = Date.now() - startTime;
-
-                res.json({
-                    poolio: sampledResults,
-                    totalCount: sampledResults.length,
-                    returnedCount: sampledResults.length,
-                    queryTime: `${queryTime}ms`,
-                    sampling: {
-                        applied: true,
-                        poolCount: poolCount,
-                        samplesPerPool: Math.round(sampledResults.length / poolCount),
-                        requestedSamplesPerPool: requestedLimit,
-                        strategy: "javascript-time-sampling"
-                    }
-                });
-            }
-
-        } else {
-            // Simple non-per-pool query (latest records across all pools)
-            const whereClause = {};
-            if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
-            if (pool) whereClause.pool = { [Op.like]: `%${pool}%` };
-            if (pool_type) whereClause.pool_type = pool_type;
-            
-            const { count, rows } = await PoolIOStats.findAndCountAll({
-                where: whereClause,
-                attributes: selectedAttributes,
-                limit: requestedLimit,
-                order: [['scan_timestamp', 'DESC']]
-            });
-
-            const queryTime = Date.now() - startTime;
-
-            res.json({
-                poolio: rows,
-                totalCount: count,
-                returnedCount: rows.length,
-                queryTime: `${queryTime}ms`,
-                sampling: {
-                    applied: false,
-                    strategy: "simple-limit-latest"
-                }
-            });
+    if (per_pool === 'true') {
+      if (!since) {
+        // Path 1: Latest Records - Fast JavaScript deduplication approach
+        const baseWhereClause = {};
+        if (pool) {
+          baseWhereClause.pool = { [Op.like]: `%${pool}%` };
         }
-    } catch (error) {
-        const queryTime = Date.now() - startTime;
-        res.status(500).json({ 
-            error: 'Failed to get pool I/O statistics',
-            details: error.message,
-            queryTime: `${queryTime}ms`
+        if (pool_type) {
+          baseWhereClause.pool_type = pool_type;
+        }
+
+        // Fetch recent records ordered by timestamp DESC - much faster than GROUP BY
+        const recentRecords = await PoolIOStats.findAll({
+          attributes: selectedAttributes,
+          where: baseWhereClause,
+          order: [['scan_timestamp', 'DESC']],
         });
+
+        if (recentRecords.length === 0) {
+          return res.json({
+            poolio: [],
+            totalCount: 0,
+            returnedCount: 0,
+            queryTime: `${Date.now() - startTime}ms`,
+            sampling: {
+              applied: true,
+              poolCount: 0,
+              strategy: 'latest-per-pool-fast',
+            },
+          });
+        }
+
+        // JavaScript deduplication - pick first (most recent) occurrence of each pool
+        const latestPerPool = {};
+        const poolOrder = [];
+
+        recentRecords.forEach(record => {
+          if (!latestPerPool[record.pool]) {
+            latestPerPool[record.pool] = record;
+            poolOrder.push(record.pool);
+          }
+        });
+
+        // Convert to array and sort by pool name
+        const results = poolOrder.sort().map(poolName => latestPerPool[poolName]);
+
+        const poolCount = results.length;
+        const queryTime = Date.now() - startTime;
+
+        res.json({
+          poolio: results,
+          totalCount: results.length,
+          returnedCount: results.length,
+          queryTime: `${queryTime}ms`,
+          sampling: {
+            applied: true,
+            poolCount,
+            samplesPerPool: 1,
+            strategy: 'latest-per-pool-fast',
+          },
+        });
+      } else {
+        // Path 2: Historical Sampling - Even distribution across time range using JavaScript
+        const baseWhereClause = {
+          scan_timestamp: { [Op.gte]: new Date(since) },
+        };
+        if (pool) {
+          baseWhereClause.pool = { [Op.like]: `%${pool}%` };
+        }
+        if (pool_type) {
+          baseWhereClause.pool_type = pool_type;
+        }
+
+        // Fetch all data within time range, grouped by pool
+        const allData = await PoolIOStats.findAll({
+          attributes: selectedAttributes,
+          where: baseWhereClause,
+          order: [
+            ['pool', 'ASC'],
+            ['scan_timestamp', 'ASC'],
+          ],
+        });
+
+        if (allData.length === 0) {
+          return res.json({
+            poolio: [],
+            totalCount: 0,
+            returnedCount: 0,
+            queryTime: `${Date.now() - startTime}ms`,
+            sampling: {
+              applied: true,
+              poolCount: 0,
+              strategy: 'javascript-time-sampling',
+            },
+          });
+        }
+
+        // Group data by pool
+        const poolGroups = {};
+        allData.forEach(row => {
+          if (!poolGroups[row.pool]) {
+            poolGroups[row.pool] = [];
+          }
+          poolGroups[row.pool].push(row);
+        });
+
+        // Sample evenly from each pool group
+        const sampledResults = [];
+        const poolNames = Object.keys(poolGroups);
+
+        poolNames.forEach(poolName => {
+          const poolData = poolGroups[poolName];
+          const totalRecords = poolData.length;
+
+          if (totalRecords === 0) {
+            return;
+          }
+
+          // Calculate sampling interval
+          const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+
+          // Sample evenly across the data
+          for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+            const index = Math.min(i * interval, totalRecords - 1);
+            sampledResults.push(poolData[index]);
+          }
+        });
+
+        // Sort results by pool and timestamp
+        sampledResults.sort((a, b) => {
+          if (a.pool !== b.pool) {
+            return a.pool.localeCompare(b.pool);
+          }
+          return new Date(a.scan_timestamp) - new Date(b.scan_timestamp);
+        });
+
+        const poolCount = poolNames.length;
+        const queryTime = Date.now() - startTime;
+
+        res.json({
+          poolio: sampledResults,
+          totalCount: sampledResults.length,
+          returnedCount: sampledResults.length,
+          queryTime: `${queryTime}ms`,
+          sampling: {
+            applied: true,
+            poolCount,
+            samplesPerPool: Math.round(sampledResults.length / poolCount),
+            requestedSamplesPerPool: requestedLimit,
+            strategy: 'javascript-time-sampling',
+          },
+        });
+      }
+    } else {
+      // Simple non-per-pool query (latest records across all pools)
+      const whereClause = {};
+      if (since) {
+        whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
+      }
+      if (pool) {
+        whereClause.pool = { [Op.like]: `%${pool}%` };
+      }
+      if (pool_type) {
+        whereClause.pool_type = pool_type;
+      }
+
+      const { count, rows } = await PoolIOStats.findAndCountAll({
+        where: whereClause,
+        attributes: selectedAttributes,
+        limit: requestedLimit,
+        order: [['scan_timestamp', 'DESC']],
+      });
+
+      const queryTime = Date.now() - startTime;
+
+      res.json({
+        poolio: rows,
+        totalCount: count,
+        returnedCount: rows.length,
+        queryTime: `${queryTime}ms`,
+        sampling: {
+          applied: false,
+          strategy: 'simple-limit-latest',
+        },
+      });
     }
+  } catch (error) {
+    const queryTime = Date.now() - startTime;
+    res.status(500).json({
+      error: 'Failed to get pool I/O statistics',
+      details: error.message,
+      queryTime: `${queryTime}ms`,
+    });
+  }
 };
 
 /**
@@ -1592,117 +1746,134 @@ export const getPoolIOStats = async (req, res) => {
  *         description: Failed to get ARC statistics
  */
 export const getARCStats = async (req, res) => {
-    const startTime = Date.now();
-    
-    try {
-        const { limit = 100, since } = req.query;
-        const requestedLimit = parseInt(limit);
-        
-        const selectedAttributes = [
-            'id', 'scan_timestamp', 'arc_size', 'arc_target_size', 'arc_min_size', 'arc_max_size',
-            'arc_meta_used', 'arc_meta_limit', 'mru_size', 'mfu_size', 'data_size', 'metadata_size',
-            'hits', 'misses', 'demand_data_hits', 'demand_data_misses', 'hit_ratio', 
-            'data_demand_efficiency', 'data_prefetch_efficiency', 'l2_hits', 'l2_misses', 'l2_size'
-        ];
+  const startTime = Date.now();
 
-        if (!since) {
-            // Path 1: Latest Records - Get most recent system-wide ARC stats
-            const latestRecord = await ARCStats.findOne({
-                attributes: selectedAttributes,
-                order: [['scan_timestamp', 'DESC']]
-            });
+  try {
+    const { limit = 100, since } = req.query;
+    const requestedLimit = parseInt(limit);
 
-            const results = latestRecord ? [latestRecord] : [];
-            const queryTime = Date.now() - startTime;
+    const selectedAttributes = [
+      'id',
+      'scan_timestamp',
+      'arc_size',
+      'arc_target_size',
+      'arc_min_size',
+      'arc_max_size',
+      'arc_meta_used',
+      'arc_meta_limit',
+      'mru_size',
+      'mfu_size',
+      'data_size',
+      'metadata_size',
+      'hits',
+      'misses',
+      'demand_data_hits',
+      'demand_data_misses',
+      'hit_ratio',
+      'data_demand_efficiency',
+      'data_prefetch_efficiency',
+      'l2_hits',
+      'l2_misses',
+      'l2_size',
+    ];
 
-            res.json({
-                arc: results,
-                totalCount: results.length,
-                returnedCount: results.length,
-                queryTime: `${queryTime}ms`,
-                latest: latestRecord,
-                sampling: {
-                    applied: true,
-                    strategy: "latest-system-wide"
-                }
-            });
+    if (!since) {
+      // Path 1: Latest Records - Get most recent system-wide ARC stats
+      const latestRecord = await ARCStats.findOne({
+        attributes: selectedAttributes,
+        order: [['scan_timestamp', 'DESC']],
+      });
 
-        } else {
-            // Path 2: Historical Sampling - Even distribution across time range
-            const baseWhereClause = { 
-                scan_timestamp: { [Op.gte]: new Date(since) }
-            };
+      const results = latestRecord ? [latestRecord] : [];
+      const queryTime = Date.now() - startTime;
 
-            // Fetch all data within time range
-            const allData = await ARCStats.findAll({
-                attributes: selectedAttributes,
-                where: baseWhereClause,
-                order: [['scan_timestamp', 'ASC']]
-            });
+      res.json({
+        arc: results,
+        totalCount: results.length,
+        returnedCount: results.length,
+        queryTime: `${queryTime}ms`,
+        latest: latestRecord,
+        sampling: {
+          applied: true,
+          strategy: 'latest-system-wide',
+        },
+      });
+    } else {
+      // Path 2: Historical Sampling - Even distribution across time range
+      const baseWhereClause = {
+        scan_timestamp: { [Op.gte]: new Date(since) },
+      };
 
-            if (allData.length === 0) {
-                return res.json({
-                    arc: [],
-                    totalCount: 0,
-                    returnedCount: 0,
-                    queryTime: `${Date.now() - startTime}ms`,
-                    latest: null,
-                    sampling: {
-                        applied: true,
-                        strategy: "javascript-time-sampling"
-                    }
-                });
-            }
+      // Fetch all data within time range
+      const allData = await ARCStats.findAll({
+        attributes: selectedAttributes,
+        where: baseWhereClause,
+        order: [['scan_timestamp', 'ASC']],
+      });
 
-            // Sample evenly across the time range
-            const totalRecords = allData.length;
-            const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
-            const sampledResults = [];
-
-            for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
-                const index = Math.min(i * interval, totalRecords - 1);
-                sampledResults.push(allData[index]);
-            }
-
-            let timeSpan = null;
-            if (sampledResults.length > 1) {
-                const firstRecord = new Date(sampledResults[0].scan_timestamp);
-                const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
-                timeSpan = {
-                    start: firstRecord.toISOString(),
-                    end: lastRecord.toISOString(),
-                    durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60))
-                };
-            }
-
-            const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
-            const queryTime = Date.now() - startTime;
-
-            res.json({
-                arc: sampledResults,
-                totalCount: sampledResults.length,
-                returnedCount: sampledResults.length,
-                queryTime: `${queryTime}ms`,
-                latest: latest,
-                sampling: {
-                    applied: true,
-                    samplesRequested: requestedLimit,
-                    samplesReturned: sampledResults.length,
-                    strategy: "javascript-time-sampling"
-                },
-                metadata: {
-                    timeSpan: timeSpan
-                }
-            });
-        }
-    } catch (error) {
-        const queryTime = Date.now() - startTime;
-        res.status(500).json({ 
-            error: 'Failed to get ARC statistics',
-            details: error.message,
-            queryTime: `${queryTime}ms`
+      if (allData.length === 0) {
+        return res.json({
+          arc: [],
+          totalCount: 0,
+          returnedCount: 0,
+          queryTime: `${Date.now() - startTime}ms`,
+          latest: null,
+          sampling: {
+            applied: true,
+            strategy: 'javascript-time-sampling',
+          },
         });
+      }
+
+      // Sample evenly across the time range
+      const totalRecords = allData.length;
+      const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+      const sampledResults = [];
+
+      for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+        const index = Math.min(i * interval, totalRecords - 1);
+        sampledResults.push(allData[index]);
+      }
+
+      let timeSpan = null;
+      if (sampledResults.length > 1) {
+        const firstRecord = new Date(sampledResults[0].scan_timestamp);
+        const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
+        timeSpan = {
+          start: firstRecord.toISOString(),
+          end: lastRecord.toISOString(),
+          durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60)),
+        };
+      }
+
+      const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
+      const queryTime = Date.now() - startTime;
+
+      res.json({
+        arc: sampledResults,
+        totalCount: sampledResults.length,
+        returnedCount: sampledResults.length,
+        queryTime: `${queryTime}ms`,
+        latest,
+        sampling: {
+          applied: true,
+          samplesRequested: requestedLimit,
+          samplesReturned: sampledResults.length,
+          strategy: 'javascript-time-sampling',
+        },
+        metadata: {
+          timeSpan,
+        },
+      });
     }
+  } catch (error) {
+    const queryTime = Date.now() - startTime;
+    res.status(500).json({
+      error: 'Failed to get ARC statistics',
+      details: error.message,
+      queryTime: `${queryTime}ms`,
+    });
+  }
 };
 
 /**
@@ -1752,154 +1923,174 @@ export const getARCStats = async (req, res) => {
  *         description: Failed to get CPU statistics
  */
 export const getCPUStats = async (req, res) => {
-    const startTime = Date.now();
-    
-    try {
-        const { limit = 100, since, include_cores = false } = req.query;
-        const requestedLimit = parseInt(limit);
-        
-        const selectedAttributes = [
-            'id', 'scan_timestamp', 'cpu_utilization_pct', 'load_avg_1min', 'load_avg_5min', 'load_avg_15min',
-            'user_pct', 'system_pct', 'idle_pct', 'iowait_pct', 'context_switches', 'interrupts', 
-            'system_calls', 'processes_running', 'processes_blocked', 'cpu_count', 'page_faults',
-            'page_ins', 'page_outs'
-        ];
+  const startTime = Date.now();
 
-        // Add per_core_data if requested
-        if (include_cores === 'true' || include_cores === true) {
-            selectedAttributes.push('per_core_data');
-        }
+  try {
+    const { limit = 100, since, include_cores = false } = req.query;
+    const requestedLimit = parseInt(limit);
 
-        if (!since) {
-            // Path 1: Latest Records - Get most recent system-wide CPU stats
-            const latestRecord = await CPUStats.findOne({
-                attributes: selectedAttributes,
-                order: [['scan_timestamp', 'DESC']]
-            });
+    const selectedAttributes = [
+      'id',
+      'scan_timestamp',
+      'cpu_utilization_pct',
+      'load_avg_1min',
+      'load_avg_5min',
+      'load_avg_15min',
+      'user_pct',
+      'system_pct',
+      'idle_pct',
+      'iowait_pct',
+      'context_switches',
+      'interrupts',
+      'system_calls',
+      'processes_running',
+      'processes_blocked',
+      'cpu_count',
+      'page_faults',
+      'page_ins',
+      'page_outs',
+    ];
 
-            // Parse per-core data if requested and available
-            if ((include_cores === 'true' || include_cores === true) && latestRecord?.per_core_data) {
-                try {
-                    latestRecord.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
-                        yj.parseAsync(latestRecord.per_core_data, (err, result) => {
-                            if (err) reject(err);
-                            else resolve(result);
-                        });
-                    });
-                } catch (error) {
-                    latestRecord.dataValues.per_core_parsed = null;
-                }
-            }
-
-            const results = latestRecord ? [latestRecord] : [];
-            const queryTime = Date.now() - startTime;
-
-            res.json({
-                cpu: results,
-                totalCount: results.length,
-                returnedCount: results.length,
-                queryTime: `${queryTime}ms`,
-                latest: latestRecord,
-                sampling: {
-                    applied: true,
-                    strategy: "latest-system-wide"
-                }
-            });
-
-        } else {
-            // Path 2: Historical Sampling - Even distribution across time range
-            const baseWhereClause = { 
-                scan_timestamp: { [Op.gte]: new Date(since) }
-            };
-
-            // Fetch all data within time range
-            const allData = await CPUStats.findAll({
-                attributes: selectedAttributes,
-                where: baseWhereClause,
-                order: [['scan_timestamp', 'ASC']]
-            });
-
-            if (allData.length === 0) {
-                return res.json({
-                    cpu: [],
-                    totalCount: 0,
-                    returnedCount: 0,
-                    queryTime: `${Date.now() - startTime}ms`,
-                    latest: null,
-                    sampling: {
-                        applied: true,
-                        strategy: "javascript-time-sampling"
-                    }
-                });
-            }
-
-            // Sample evenly across the time range
-            const totalRecords = allData.length;
-            const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
-            const sampledResults = [];
-
-            for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
-                const index = Math.min(i * interval, totalRecords - 1);
-                sampledResults.push(allData[index]);
-            }
-
-            // Parse per-core data if requested
-            if (include_cores === 'true' || include_cores === true) {
-                for (const row of sampledResults) {
-                    if (row.per_core_data) {
-                        try {
-                            row.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
-                                yj.parseAsync(row.per_core_data, (err, result) => {
-                                    if (err) reject(err);
-                                    else resolve(result);
-                                });
-                            });
-                        } catch (error) {
-                            row.dataValues.per_core_parsed = null;
-                        }
-                    }
-                }
-            }
-
-            let timeSpan = null;
-            if (sampledResults.length > 1) {
-                const firstRecord = new Date(sampledResults[0].scan_timestamp);
-                const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
-                timeSpan = {
-                    start: firstRecord.toISOString(),
-                    end: lastRecord.toISOString(),
-                    durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60))
-                };
-            }
-
-            const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
-            const queryTime = Date.now() - startTime;
-
-            res.json({
-                cpu: sampledResults,
-                totalCount: sampledResults.length,
-                returnedCount: sampledResults.length,
-                queryTime: `${queryTime}ms`,
-                latest: latest,
-                sampling: {
-                    applied: true,
-                    samplesRequested: requestedLimit,
-                    samplesReturned: sampledResults.length,
-                    strategy: "javascript-time-sampling"
-                },
-                metadata: {
-                    timeSpan: timeSpan
-                }
-            });
-        }
-    } catch (error) {
-        const queryTime = Date.now() - startTime;
-        res.status(500).json({ 
-            error: 'Failed to get CPU statistics',
-            details: error.message,
-            queryTime: `${queryTime}ms`
-        });
+    // Add per_core_data if requested
+    if (include_cores === 'true' || include_cores === true) {
+      selectedAttributes.push('per_core_data');
     }
+
+    if (!since) {
+      // Path 1: Latest Records - Get most recent system-wide CPU stats
+      const latestRecord = await CPUStats.findOne({
+        attributes: selectedAttributes,
+        order: [['scan_timestamp', 'DESC']],
+      });
+
+      // Parse per-core data if requested and available
+      if ((include_cores === 'true' || include_cores === true) && latestRecord?.per_core_data) {
+        try {
+          latestRecord.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
+            yj.parseAsync(latestRecord.per_core_data, (err, result) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(result);
+              }
+            });
+          });
+        } catch (error) {
+          latestRecord.dataValues.per_core_parsed = null;
+        }
+      }
+
+      const results = latestRecord ? [latestRecord] : [];
+      const queryTime = Date.now() - startTime;
+
+      res.json({
+        cpu: results,
+        totalCount: results.length,
+        returnedCount: results.length,
+        queryTime: `${queryTime}ms`,
+        latest: latestRecord,
+        sampling: {
+          applied: true,
+          strategy: 'latest-system-wide',
+        },
+      });
+    } else {
+      // Path 2: Historical Sampling - Even distribution across time range
+      const baseWhereClause = {
+        scan_timestamp: { [Op.gte]: new Date(since) },
+      };
+
+      // Fetch all data within time range
+      const allData = await CPUStats.findAll({
+        attributes: selectedAttributes,
+        where: baseWhereClause,
+        order: [['scan_timestamp', 'ASC']],
+      });
+
+      if (allData.length === 0) {
+        return res.json({
+          cpu: [],
+          totalCount: 0,
+          returnedCount: 0,
+          queryTime: `${Date.now() - startTime}ms`,
+          latest: null,
+          sampling: {
+            applied: true,
+            strategy: 'javascript-time-sampling',
+          },
+        });
+      }
+
+      // Sample evenly across the time range
+      const totalRecords = allData.length;
+      const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+      const sampledResults = [];
+
+      for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+        const index = Math.min(i * interval, totalRecords - 1);
+        sampledResults.push(allData[index]);
+      }
+
+      // Parse per-core data if requested
+      if (include_cores === 'true' || include_cores === true) {
+        for (const row of sampledResults) {
+          if (row.per_core_data) {
+            try {
+              row.dataValues.per_core_parsed = await new Promise((resolve, reject) => {
+                yj.parseAsync(row.per_core_data, (err, result) => {
+                  if (err) {
+                    reject(err);
+                  } else {
+                    resolve(result);
+                  }
+                });
+              });
+            } catch (error) {
+              row.dataValues.per_core_parsed = null;
+            }
+          }
+        }
+      }
+
+      let timeSpan = null;
+      if (sampledResults.length > 1) {
+        const firstRecord = new Date(sampledResults[0].scan_timestamp);
+        const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
+        timeSpan = {
+          start: firstRecord.toISOString(),
+          end: lastRecord.toISOString(),
+          durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60)),
+        };
+      }
+
+      const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
+      const queryTime = Date.now() - startTime;
+
+      res.json({
+        cpu: sampledResults,
+        totalCount: sampledResults.length,
+        returnedCount: sampledResults.length,
+        queryTime: `${queryTime}ms`,
+        latest,
+        sampling: {
+          applied: true,
+          samplesRequested: requestedLimit,
+          samplesReturned: sampledResults.length,
+          strategy: 'javascript-time-sampling',
+        },
+        metadata: {
+          timeSpan,
+        },
+      });
+    }
+  } catch (error) {
+    const queryTime = Date.now() - startTime;
+    res.status(500).json({
+      error: 'Failed to get CPU statistics',
+      details: error.message,
+      queryTime: `${queryTime}ms`,
+    });
+  }
 };
 
 /**
@@ -1943,115 +2134,123 @@ export const getCPUStats = async (req, res) => {
  *         description: Failed to get memory statistics
  */
 export const getMemoryStats = async (req, res) => {
-    const startTime = Date.now();
-    
-    try {
-        const { limit = 100, since } = req.query;
-        const requestedLimit = parseInt(limit);
-        
-        const selectedAttributes = [
-            'id', 'scan_timestamp', 'total_memory_bytes', 'used_memory_bytes', 'free_memory_bytes', 'available_memory_bytes', 
-            'memory_utilization_pct', 'swap_total_bytes', 'swap_used_bytes', 'swap_free_bytes', 'swap_utilization_pct'
-        ];
+  const startTime = Date.now();
 
-        if (!since) {
-            // Path 1: Latest Records - Get most recent system-wide memory stats
-            const latestRecord = await MemoryStats.findOne({
-                attributes: selectedAttributes,
-                order: [['scan_timestamp', 'DESC']]
-            });
+  try {
+    const { limit = 100, since } = req.query;
+    const requestedLimit = parseInt(limit);
 
-            const results = latestRecord ? [latestRecord] : [];
-            const queryTime = Date.now() - startTime;
+    const selectedAttributes = [
+      'id',
+      'scan_timestamp',
+      'total_memory_bytes',
+      'used_memory_bytes',
+      'free_memory_bytes',
+      'available_memory_bytes',
+      'memory_utilization_pct',
+      'swap_total_bytes',
+      'swap_used_bytes',
+      'swap_free_bytes',
+      'swap_utilization_pct',
+    ];
 
-            res.json({
-                memory: results,
-                totalCount: results.length,
-                returnedCount: results.length,
-                queryTime: `${queryTime}ms`,
-                latest: latestRecord,
-                sampling: {
-                    applied: true,
-                    strategy: "latest-system-wide"
-                }
-            });
+    if (!since) {
+      // Path 1: Latest Records - Get most recent system-wide memory stats
+      const latestRecord = await MemoryStats.findOne({
+        attributes: selectedAttributes,
+        order: [['scan_timestamp', 'DESC']],
+      });
 
-        } else {
-            // Path 2: Historical Sampling - Even distribution across time range
-            const baseWhereClause = { 
-                scan_timestamp: { [Op.gte]: new Date(since) }
-            };
+      const results = latestRecord ? [latestRecord] : [];
+      const queryTime = Date.now() - startTime;
 
-            // Fetch all data within time range
-            const allData = await MemoryStats.findAll({
-                attributes: selectedAttributes,
-                where: baseWhereClause,
-                order: [['scan_timestamp', 'ASC']]
-            });
+      res.json({
+        memory: results,
+        totalCount: results.length,
+        returnedCount: results.length,
+        queryTime: `${queryTime}ms`,
+        latest: latestRecord,
+        sampling: {
+          applied: true,
+          strategy: 'latest-system-wide',
+        },
+      });
+    } else {
+      // Path 2: Historical Sampling - Even distribution across time range
+      const baseWhereClause = {
+        scan_timestamp: { [Op.gte]: new Date(since) },
+      };
 
-            if (allData.length === 0) {
-                return res.json({
-                    memory: [],
-                    totalCount: 0,
-                    returnedCount: 0,
-                    queryTime: `${Date.now() - startTime}ms`,
-                    latest: null,
-                    sampling: {
-                        applied: true,
-                        strategy: "javascript-time-sampling"
-                    }
-                });
-            }
+      // Fetch all data within time range
+      const allData = await MemoryStats.findAll({
+        attributes: selectedAttributes,
+        where: baseWhereClause,
+        order: [['scan_timestamp', 'ASC']],
+      });
 
-            // Sample evenly across the time range
-            const totalRecords = allData.length;
-            const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
-            const sampledResults = [];
-
-            for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
-                const index = Math.min(i * interval, totalRecords - 1);
-                sampledResults.push(allData[index]);
-            }
-
-            let timeSpan = null;
-            if (sampledResults.length > 1) {
-                const firstRecord = new Date(sampledResults[0].scan_timestamp);
-                const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
-                timeSpan = {
-                    start: firstRecord.toISOString(),
-                    end: lastRecord.toISOString(),
-                    durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60))
-                };
-            }
-
-            const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
-            const queryTime = Date.now() - startTime;
-
-            res.json({
-                memory: sampledResults,
-                totalCount: sampledResults.length,
-                returnedCount: sampledResults.length,
-                queryTime: `${queryTime}ms`,
-                latest: latest,
-                sampling: {
-                    applied: true,
-                    samplesRequested: requestedLimit,
-                    samplesReturned: sampledResults.length,
-                    strategy: "javascript-time-sampling"
-                },
-                metadata: {
-                    timeSpan: timeSpan
-                }
-            });
-        }
-    } catch (error) {
-        const queryTime = Date.now() - startTime;
-        res.status(500).json({ 
-            error: 'Failed to get memory statistics',
-            details: error.message,
-            queryTime: `${queryTime}ms`
+      if (allData.length === 0) {
+        return res.json({
+          memory: [],
+          totalCount: 0,
+          returnedCount: 0,
+          queryTime: `${Date.now() - startTime}ms`,
+          latest: null,
+          sampling: {
+            applied: true,
+            strategy: 'javascript-time-sampling',
+          },
         });
+      }
+
+      // Sample evenly across the time range
+      const totalRecords = allData.length;
+      const interval = Math.max(1, Math.floor(totalRecords / requestedLimit));
+      const sampledResults = [];
+
+      for (let i = 0; i < Math.min(requestedLimit, totalRecords); i++) {
+        const index = Math.min(i * interval, totalRecords - 1);
+        sampledResults.push(allData[index]);
+      }
+
+      let timeSpan = null;
+      if (sampledResults.length > 1) {
+        const firstRecord = new Date(sampledResults[0].scan_timestamp);
+        const lastRecord = new Date(sampledResults[sampledResults.length - 1].scan_timestamp);
+        timeSpan = {
+          start: firstRecord.toISOString(),
+          end: lastRecord.toISOString(),
+          durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60)),
+        };
+      }
+
+      const latest = sampledResults.length > 0 ? sampledResults[sampledResults.length - 1] : null;
+      const queryTime = Date.now() - startTime;
+
+      res.json({
+        memory: sampledResults,
+        totalCount: sampledResults.length,
+        returnedCount: sampledResults.length,
+        queryTime: `${queryTime}ms`,
+        latest,
+        sampling: {
+          applied: true,
+          samplesRequested: requestedLimit,
+          samplesReturned: sampledResults.length,
+          strategy: 'javascript-time-sampling',
+        },
+        metadata: {
+          timeSpan,
+        },
+      });
     }
+  } catch (error) {
+    const queryTime = Date.now() - startTime;
+    res.status(500).json({
+      error: 'Failed to get memory statistics',
+      details: error.message,
+      queryTime: `${queryTime}ms`,
+    });
+  }
 };
 
 /**
@@ -2110,259 +2309,267 @@ export const getMemoryStats = async (req, res) => {
  *         description: Failed to get system load metrics
  */
 export const getSystemLoadMetrics = async (req, res) => {
-    try {
-        const { limit = 100, since } = req.query;
-        
-        const whereClause = {};
-        if (since) whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
+  try {
+    const { limit = 100, since } = req.query;
 
-        const { count, rows } = await CPUStats.findAndCountAll({
-            where: whereClause,
-            limit: parseInt(limit),
-            order: [['scan_timestamp', 'DESC']],
-            attributes: [
-                'scan_timestamp',
-                'load_avg_1min',
-                'load_avg_5min', 
-                'load_avg_15min',
-                'context_switches',
-                'interrupts',
-                'system_calls',
-                'page_faults',
-                'page_ins',
-                'page_outs',
-                'processes_running',
-                'processes_blocked',
-                'cpu_count'
-            ]
-        });
-
-        // Transform data for load-specific charting
-        const loadMetrics = rows.map(row => ({
-            timestamp: row.scan_timestamp,
-            load_averages: {
-                one_min: row.load_avg_1min,
-                five_min: row.load_avg_5min,
-                fifteen_min: row.load_avg_15min
-            },
-            system_activity: {
-                context_switches_per_sec: row.context_switches,
-                interrupts_per_sec: row.interrupts,
-                system_calls_per_sec: row.system_calls,
-                page_faults_per_sec: row.page_faults
-            },
-            memory_pressure: {
-                pages_in_per_sec: row.page_ins,
-                pages_out_per_sec: row.page_outs
-            },
-            process_activity: {
-                running: row.processes_running,
-                blocked: row.processes_blocked
-            },
-            cpu_count: row.cpu_count
-        }));
-
-        // Get the latest load metrics for quick reference
-        const latest = loadMetrics.length > 0 ? loadMetrics[0] : null;
-
-        res.json({
-            load: loadMetrics,
-            totalCount: count,
-            latest: latest,
-            metadata: {
-                description: "System load and activity metrics",
-                metrics_included: [
-                    "Load averages (1, 5, 15 min)",
-                    "Context switches per second",
-                    "Interrupts per second", 
-                    "System calls per second",
-                    "Page faults per second",
-                    "Memory paging activity",
-                    "Process queue status"
-                ]
-            }
-        });
-    } catch (error) {
-        log.api.error('Error getting system load metrics', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get system load metrics',
-            details: error.message 
-        });
+    const whereClause = {};
+    if (since) {
+      whereClause.scan_timestamp = { [Op.gte]: new Date(since) };
     }
+
+    const { count, rows } = await CPUStats.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      order: [['scan_timestamp', 'DESC']],
+      attributes: [
+        'scan_timestamp',
+        'load_avg_1min',
+        'load_avg_5min',
+        'load_avg_15min',
+        'context_switches',
+        'interrupts',
+        'system_calls',
+        'page_faults',
+        'page_ins',
+        'page_outs',
+        'processes_running',
+        'processes_blocked',
+        'cpu_count',
+      ],
+    });
+
+    // Transform data for load-specific charting
+    const loadMetrics = rows.map(row => ({
+      timestamp: row.scan_timestamp,
+      load_averages: {
+        one_min: row.load_avg_1min,
+        five_min: row.load_avg_5min,
+        fifteen_min: row.load_avg_15min,
+      },
+      system_activity: {
+        context_switches_per_sec: row.context_switches,
+        interrupts_per_sec: row.interrupts,
+        system_calls_per_sec: row.system_calls,
+        page_faults_per_sec: row.page_faults,
+      },
+      memory_pressure: {
+        pages_in_per_sec: row.page_ins,
+        pages_out_per_sec: row.page_outs,
+      },
+      process_activity: {
+        running: row.processes_running,
+        blocked: row.processes_blocked,
+      },
+      cpu_count: row.cpu_count,
+    }));
+
+    // Get the latest load metrics for quick reference
+    const latest = loadMetrics.length > 0 ? loadMetrics[0] : null;
+
+    res.json({
+      load: loadMetrics,
+      totalCount: count,
+      latest,
+      metadata: {
+        description: 'System load and activity metrics',
+        metrics_included: [
+          'Load averages (1, 5, 15 min)',
+          'Context switches per second',
+          'Interrupts per second',
+          'System calls per second',
+          'Page faults per second',
+          'Memory paging activity',
+          'Process queue status',
+        ],
+      },
+    });
+  } catch (error) {
+    log.api.error('Error getting system load metrics', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get system load metrics',
+      details: error.message,
+    });
+  }
 };
 
 export const getMonitoringSummary = async (req, res) => {
-    const startTime = Date.now();
-    log.monitoring.debug('Monitoring summary query started');
-    
-    try {
-        const hostname = os.hostname();
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const startTime = Date.now();
+  log.monitoring.debug('Monitoring summary query started');
 
-        log.monitoring.debug('Using optimized summary query');
-        
-        // Step 1: Get host info with selective attributes
-        const hostInfoQuery = Date.now();
-        const hostInfo = await HostInfo.findOne({
-            order: [['updated_at', 'DESC']],
-            attributes: [
-                'network_acct_enabled', 'network_scan_errors', 'storage_scan_errors', 'platform', 
-                'uptime', 'last_network_scan', 'last_network_stats_scan', 'last_network_usage_scan', 
-                'last_storage_scan'
-            ]
-        });
-        log.monitoring.debug('Host info query completed', {
-            duration_ms: Date.now() - hostInfoQuery
-        });
+  try {
+    const hostname = os.hostname();
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        // Step 2: Parallel count queries for the last 24 hours
-        const countQuery = Date.now();
-        const [
-            interfaceCount,
-            usageCount,
-            ipAddressCount,
-            routeCount,
-            poolCount,
-            datasetCount,
-            diskCount
-        ] = await Promise.all([
-            NetworkInterfaces.count({
-                where: { 
-                    scan_timestamp: { [Op.gte]: oneDayAgo }
-                }
-            }),
-            NetworkUsage.count({
-                where: { 
-                    scan_timestamp: { [Op.gte]: oneDayAgo }
-                }
-            }),
-            IPAddresses.count({
-                where: { 
-                    scan_timestamp: { [Op.gte]: oneDayAgo }
-                }
-            }),
-            Routes.count({
-                where: { 
-                    scan_timestamp: { [Op.gte]: oneDayAgo }
-                }
-            }),
-            ZFSPools.count({
-                where: { 
-                    scan_timestamp: { [Op.gte]: oneDayAgo }
-                }
-            }),
-            ZFSDatasets.count({
-                where: { 
-                    scan_timestamp: { [Op.gte]: oneDayAgo }
-                }
-            }),
-            Disks.count({
-                where: { 
-                    scan_timestamp: { [Op.gte]: oneDayAgo }
-                }
-            })
-        ]);
-        log.monitoring.debug('Count queries completed', {
-            duration_ms: Date.now() - countQuery
-        });
+    log.monitoring.debug('Using optimized summary query');
 
-        // Step 3: Parallel latest timestamp queries with minimal attributes
-        const latestQuery = Date.now();
-        const [
-            latestInterface,
-            latestUsage,
-            latestIPAddress,
-            latestRoute,
-            latestPool,
-            latestDataset,
-            latestDisk
-        ] = await Promise.all([
-            NetworkInterfaces.findOne({
-                order: [['scan_timestamp', 'DESC']],
-                attributes: ['scan_timestamp']
-            }),
-            NetworkUsage.findOne({
-                order: [['scan_timestamp', 'DESC']],
-                attributes: ['scan_timestamp']
-            }),
-            IPAddresses.findOne({
-                order: [['scan_timestamp', 'DESC']],
-                attributes: ['scan_timestamp']
-            }),
-            Routes.findOne({
-                order: [['scan_timestamp', 'DESC']],
-                attributes: ['scan_timestamp']
-            }),
-            ZFSPools.findOne({
-                order: [['scan_timestamp', 'DESC']],
-                attributes: ['scan_timestamp']
-            }),
-            ZFSDatasets.findOne({
-                order: [['scan_timestamp', 'DESC']],
-                attributes: ['scan_timestamp']
-            }),
-            Disks.findOne({
-                order: [['scan_timestamp', 'DESC']],
-                attributes: ['scan_timestamp']
-            })
-        ]);
-        log.monitoring.debug('Latest timestamp queries completed', {
-            duration_ms: Date.now() - latestQuery
-        });
+    // Step 1: Get host info with selective attributes
+    const hostInfoQuery = Date.now();
+    const hostInfo = await HostInfo.findOne({
+      order: [['updated_at', 'DESC']],
+      attributes: [
+        'network_acct_enabled',
+        'network_scan_errors',
+        'storage_scan_errors',
+        'platform',
+        'uptime',
+        'last_network_scan',
+        'last_network_stats_scan',
+        'last_network_usage_scan',
+        'last_storage_scan',
+      ],
+    });
+    log.monitoring.debug('Host info query completed', {
+      duration_ms: Date.now() - hostInfoQuery,
+    });
 
-        const queryTime = Date.now() - startTime;
-        log.monitoring.info('Summary query completed', {
-            total_duration_ms: queryTime
-        });
+    // Step 2: Parallel count queries for the last 24 hours
+    const countQuery = Date.now();
+    const [
+      interfaceCount,
+      usageCount,
+      ipAddressCount,
+      routeCount,
+      poolCount,
+      datasetCount,
+      diskCount,
+    ] = await Promise.all([
+      NetworkInterfaces.count({
+        where: {
+          scan_timestamp: { [Op.gte]: oneDayAgo },
+        },
+      }),
+      NetworkUsage.count({
+        where: {
+          scan_timestamp: { [Op.gte]: oneDayAgo },
+        },
+      }),
+      IPAddresses.count({
+        where: {
+          scan_timestamp: { [Op.gte]: oneDayAgo },
+        },
+      }),
+      Routes.count({
+        where: {
+          scan_timestamp: { [Op.gte]: oneDayAgo },
+        },
+      }),
+      ZFSPools.count({
+        where: {
+          scan_timestamp: { [Op.gte]: oneDayAgo },
+        },
+      }),
+      ZFSDatasets.count({
+        where: {
+          scan_timestamp: { [Op.gte]: oneDayAgo },
+        },
+      }),
+      Disks.count({
+        where: {
+          scan_timestamp: { [Op.gte]: oneDayAgo },
+        },
+      }),
+    ]);
+    log.monitoring.debug('Count queries completed', {
+      duration_ms: Date.now() - countQuery,
+    });
 
-        res.json({
-            host: hostname,
-            summary: {
-                networkAccountingEnabled: hostInfo?.network_acct_enabled || false,
-                networkErrors: hostInfo?.network_scan_errors || 0,
-                storageErrors: hostInfo?.storage_scan_errors || 0,
-                platform: hostInfo?.platform,
-                uptime: hostInfo?.uptime
-            },
-            lastCollected: {
-                networkInterfaces: hostInfo?.last_network_scan,
-                networkUsage: hostInfo?.last_network_usage_scan,
-                storage: hostInfo?.last_storage_scan
-            },
-            recordCounts: {
-                networkInterfaces: interfaceCount,
-                networkUsage: usageCount,
-                ipAddresses: ipAddressCount,
-                routes: routeCount,
-                zfsPools: poolCount,
-                zfsDatasets: datasetCount,
-                disks: diskCount
-            },
-            latestData: {
-                networkInterfaces: latestInterface?.scan_timestamp,
-                networkUsage: latestUsage?.scan_timestamp,
-                ipAddresses: latestIPAddress?.scan_timestamp,
-                routes: latestRoute?.scan_timestamp,
-                zfsPools: latestPool?.scan_timestamp,
-                zfsDatasets: latestDataset?.scan_timestamp,
-                disks: latestDisk?.scan_timestamp
-            },
-            queryTime: `${queryTime}ms`
-        });
-    } catch (error) {
-        const queryTime = Date.now() - startTime;
-        log.api.error('Summary query failed', {
-            duration_ms: queryTime,
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to get monitoring summary',
-            details: error.message,
-            queryTime: `${queryTime}ms`
-        });
-    }
+    // Step 3: Parallel latest timestamp queries with minimal attributes
+    const latestQuery = Date.now();
+    const [
+      latestInterface,
+      latestUsage,
+      latestIPAddress,
+      latestRoute,
+      latestPool,
+      latestDataset,
+      latestDisk,
+    ] = await Promise.all([
+      NetworkInterfaces.findOne({
+        order: [['scan_timestamp', 'DESC']],
+        attributes: ['scan_timestamp'],
+      }),
+      NetworkUsage.findOne({
+        order: [['scan_timestamp', 'DESC']],
+        attributes: ['scan_timestamp'],
+      }),
+      IPAddresses.findOne({
+        order: [['scan_timestamp', 'DESC']],
+        attributes: ['scan_timestamp'],
+      }),
+      Routes.findOne({
+        order: [['scan_timestamp', 'DESC']],
+        attributes: ['scan_timestamp'],
+      }),
+      ZFSPools.findOne({
+        order: [['scan_timestamp', 'DESC']],
+        attributes: ['scan_timestamp'],
+      }),
+      ZFSDatasets.findOne({
+        order: [['scan_timestamp', 'DESC']],
+        attributes: ['scan_timestamp'],
+      }),
+      Disks.findOne({
+        order: [['scan_timestamp', 'DESC']],
+        attributes: ['scan_timestamp'],
+      }),
+    ]);
+    log.monitoring.debug('Latest timestamp queries completed', {
+      duration_ms: Date.now() - latestQuery,
+    });
+
+    const queryTime = Date.now() - startTime;
+    log.monitoring.info('Summary query completed', {
+      total_duration_ms: queryTime,
+    });
+
+    res.json({
+      host: hostname,
+      summary: {
+        networkAccountingEnabled: hostInfo?.network_acct_enabled || false,
+        networkErrors: hostInfo?.network_scan_errors || 0,
+        storageErrors: hostInfo?.storage_scan_errors || 0,
+        platform: hostInfo?.platform,
+        uptime: hostInfo?.uptime,
+      },
+      lastCollected: {
+        networkInterfaces: hostInfo?.last_network_scan,
+        networkUsage: hostInfo?.last_network_usage_scan,
+        storage: hostInfo?.last_storage_scan,
+      },
+      recordCounts: {
+        networkInterfaces: interfaceCount,
+        networkUsage: usageCount,
+        ipAddresses: ipAddressCount,
+        routes: routeCount,
+        zfsPools: poolCount,
+        zfsDatasets: datasetCount,
+        disks: diskCount,
+      },
+      latestData: {
+        networkInterfaces: latestInterface?.scan_timestamp,
+        networkUsage: latestUsage?.scan_timestamp,
+        ipAddresses: latestIPAddress?.scan_timestamp,
+        routes: latestRoute?.scan_timestamp,
+        zfsPools: latestPool?.scan_timestamp,
+        zfsDatasets: latestDataset?.scan_timestamp,
+        disks: latestDisk?.scan_timestamp,
+      },
+      queryTime: `${queryTime}ms`,
+    });
+  } catch (error) {
+    const queryTime = Date.now() - startTime;
+    log.api.error('Summary query failed', {
+      duration_ms: queryTime,
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to get monitoring summary',
+      details: error.message,
+      queryTime: `${queryTime}ms`,
+    });
+  }
 };

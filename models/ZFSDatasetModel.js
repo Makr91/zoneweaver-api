@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -127,175 +127,179 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const ZFSDatasets = db.define('zfs_datasets', {
+const ZFSDatasets = db.define(
+  'zfs_datasets',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the dataset is located'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the dataset is located',
     },
     name: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Full ZFS dataset name'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Full ZFS dataset name',
     },
     pool: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Pool name (extracted from dataset name)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Pool name (extracted from dataset name)',
     },
     type: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Dataset type (filesystem, volume, snapshot)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Dataset type (filesystem, volume, snapshot)',
     },
     creation: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Creation date/time string'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Creation date/time string',
     },
     used: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Used space with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Used space with units',
     },
     used_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Used space in bytes'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Used space in bytes',
     },
     available: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Available space with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Available space with units',
     },
     available_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Available space in bytes'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Available space in bytes',
     },
     referenced: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Referenced space with units'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Referenced space with units',
     },
     referenced_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Referenced space in bytes'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Referenced space in bytes',
     },
     compressratio: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Compression ratio'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Compression ratio',
     },
     reservation: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Space reservation'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Space reservation',
     },
     volsize: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Volume size (for volume datasets)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Volume size (for volume datasets)',
     },
     volblocksize: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Volume block size (for volume datasets)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Volume block size (for volume datasets)',
     },
     checksum: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Checksum algorithm'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Checksum algorithm',
     },
     compression: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Compression algorithm'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Compression algorithm',
     },
     readonly: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Read-only setting'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Read-only setting',
     },
     copies: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Number of copies'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Number of copies',
     },
     guid: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Dataset GUID'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Dataset GUID',
     },
     usedbysnapshots: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Space used by snapshots'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Space used by snapshots',
     },
     usedbydataset: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Space used by dataset itself'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Space used by dataset itself',
     },
     usedbychildren: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Space used by child datasets'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Space used by child datasets',
     },
     logicalused: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Logical space used'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Logical space used',
     },
     logicalreferenced: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Logical space referenced'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Logical space referenced',
     },
     written: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Space written since last snapshot'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Space written since last snapshot',
     },
     mountpoint: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Mount point'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Mount point',
     },
     mounted: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Mount status'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Mount status',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'ZFS dataset properties and statistics (collected every 5 minutes)',
     indexes: [
-        {
-            fields: ['host', 'name', 'scan_timestamp']
-        },
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['scan_timestamp']
-        },
-        {
-            fields: ['pool', 'scan_timestamp']
-        },
-        {
-            fields: ['type']
-        },
-        {
-            fields: ['name']
-        }
-    ]
-});
- 
+      {
+        fields: ['host', 'name', 'scan_timestamp'],
+      },
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+      {
+        fields: ['pool', 'scan_timestamp'],
+      },
+      {
+        fields: ['type'],
+      },
+      {
+        fields: ['name'],
+      },
+    ],
+  }
+);
+
 export default ZFSDatasets;

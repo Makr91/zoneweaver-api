@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -74,81 +74,85 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const SwapArea = db.define('swap_areas', {
+const SwapArea = db.define(
+  'swap_areas',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the swap area is located'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the swap area is located',
     },
     swapfile: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Path to swap file or device (e.g., /dev/zvol/dsk/rpool/swap)'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Path to swap file or device (e.g., /dev/zvol/dsk/rpool/swap)',
     },
     dev: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Device identifier (major,minor)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Device identifier (major,minor)',
     },
     swaplo: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Starting block of swap area'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Starting block of swap area',
     },
     blocks: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Size in blocks (512-byte blocks)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Size in blocks (512-byte blocks)',
     },
     free: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Free blocks available'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Free blocks available',
     },
     size_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Total swap area size in bytes'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Total swap area size in bytes',
     },
     used_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Used swap space in bytes'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Used swap space in bytes',
     },
     free_bytes: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Free swap space in bytes'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Free swap space in bytes',
     },
     utilization_pct: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'Swap utilization percentage (used/total * 100)'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'Swap utilization percentage (used/total * 100)',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'Individual swap area information from swap -l (collected every 5 minutes)',
     indexes: [
-        {
-            unique: true,
-            fields: ['host', 'swapfile'],
-            name: 'unique_host_swapfile'
-        },
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['scan_timestamp']
-        },
-        {
-            fields: ['utilization_pct']
-        }
-    ]
-});
- 
+      {
+        unique: true,
+        fields: ['host', 'swapfile'],
+        name: 'unique_host_swapfile',
+      },
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+      {
+        fields: ['utilization_pct'],
+      },
+    ],
+  }
+);
+
 export default SwapArea;

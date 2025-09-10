@@ -5,10 +5,10 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import PCIDevices from "../models/PCIDeviceModel.js";
-import { Op } from "sequelize";
-import os from "os";
-import { log } from "../lib/Logger.js";
+import PCIDevices from '../models/PCIDeviceModel.js';
+import { Op } from 'sequelize';
+import os from 'os';
+import { log } from '../lib/Logger.js';
 
 /**
  * Determine if a device is capable of PCI passthrough
@@ -16,33 +16,41 @@ import { log } from "../lib/Logger.js";
  * @returns {boolean} True if device is PPT-capable
  */
 function isPPTCapable(device) {
-    // Exclude devices already assigned to zones
-    if (device.assigned_to_zones && Array.isArray(device.assigned_to_zones) && device.assigned_to_zones.length > 0) {
-        return false;
-    }
-    
-    // Intel devices (vendor_id 8086) - allow ONLY network cards
-    // All other Intel devices are system-critical (chipset, I/O hub, etc.)
-    if (device.vendor_id === "8086") {
-        return device.device_category === "network";
-    }
-    
-    // AMD devices (vendor_id 1022) - exclude system critical components
-    // TODO: Expand this list as we get more AMD system data
-    if (device.vendor_id === "1022") {
-        // For now, be conservative and exclude AMD devices until we have test data
-        // Exception: allow discrete GPUs and add-in cards
-        return device.device_category === "display" || device.device_category === "network" || device.device_category === "storage";
-    }
-    
-    // All other vendors (non-Intel, non-AMD) are generally PPT-capable
-    // This includes add-in cards from vendors like:
-    // - Broadcom/LSI storage controllers
-    // - NVIDIA GPUs  
-    // - Renesas USB controllers
-    // - Matrox display controllers
-    // - Other specialty PCI cards
-    return true;
+  // Exclude devices already assigned to zones
+  if (
+    device.assigned_to_zones &&
+    Array.isArray(device.assigned_to_zones) &&
+    device.assigned_to_zones.length > 0
+  ) {
+    return false;
+  }
+
+  // Intel devices (vendor_id 8086) - allow ONLY network cards
+  // All other Intel devices are system-critical (chipset, I/O hub, etc.)
+  if (device.vendor_id === '8086') {
+    return device.device_category === 'network';
+  }
+
+  // AMD devices (vendor_id 1022) - exclude system critical components
+  // TODO: Expand this list as we get more AMD system data
+  if (device.vendor_id === '1022') {
+    // For now, be conservative and exclude AMD devices until we have test data
+    // Exception: allow discrete GPUs and add-in cards
+    return (
+      device.device_category === 'display' ||
+      device.device_category === 'network' ||
+      device.device_category === 'storage'
+    );
+  }
+
+  // All other vendors (non-Intel, non-AMD) are generally PPT-capable
+  // This includes add-in cards from vendors like:
+  // - Broadcom/LSI storage controllers
+  // - NVIDIA GPUs
+  // - Renesas USB controllers
+  // - Matrox display controllers
+  // - Other specialty PCI cards
+  return true;
 }
 
 /**
@@ -116,107 +124,110 @@ function isPPTCapable(device) {
  *                         type: string
  */
 export const listDevices = async (req, res) => {
-    try {
-        const { 
-            category, 
-            ppt_enabled, 
-            ppt_capable,
-            driver_attached, 
-            available, 
-            limit = 100 
-        } = req.query;
-        
-        const hostname = os.hostname();
-        const whereClause = { host: hostname };
-        
-        // Apply filters
-        if (category) {
-            whereClause.device_category = category;
-        }
-        
-        if (ppt_enabled !== undefined) {
-            whereClause.ppt_enabled = ppt_enabled === 'true';
-        }
-        
-        if (ppt_capable !== undefined) {
-            whereClause.ppt_capable = ppt_capable === 'true';
-        }
-        
-        if (driver_attached !== undefined) {
-            whereClause.driver_attached = driver_attached === 'true';
-        }
-        
-        if (available === 'true') {
-            // Show only devices not assigned to zones
-            whereClause.assigned_to_zones = { [Op.or]: [null, []] };
-        }
-        
-        const devices = await PCIDevices.findAll({
-            where: whereClause,
-            order: [
-                ['device_category', 'ASC'],
-                ['vendor_name', 'ASC'],
-                ['device_name', 'ASC']
-            ],
-            limit: parseInt(limit)
-        });
-        
-        // Calculate summary statistics
-        const allDevices = await PCIDevices.findAll({
-            where: { host: hostname },
-            attributes: ['device_category', 'vendor_id', 'ppt_enabled', 'assigned_to_zones']
-        });
-        
-        const summary = {
-            total_devices: allDevices.length,
-            by_category: {},
-            ppt_capable: 0,
-            ppt_assigned: 0,
-            zones_using_passthrough: []
-        };
-        
-        const zonesSet = new Set();
-        
-        allDevices.forEach(device => {
-            // Count by category
-            const category = device.device_category || 'other';
-            summary.by_category[category] = (summary.by_category[category] || 0) + 1;
-            
-            // Count PPT-capable devices (using new logic)
-            if (isPPTCapable(device)) {
-                summary.ppt_capable++;
-            }
-            
-            // Count PPT-configured devices (actually enabled in pptadm)
-            if (device.ppt_enabled) {
-                // Check if assigned to zones
-                if (device.assigned_to_zones && Array.isArray(device.assigned_to_zones) && device.assigned_to_zones.length > 0) {
-                    summary.ppt_assigned++;
-                    device.assigned_to_zones.forEach(assignment => {
-                        if (assignment.zone_name) {
-                            zonesSet.add(assignment.zone_name);
-                        }
-                    });
-                }
-            }
-        });
-        
-        summary.zones_using_passthrough = Array.from(zonesSet);
-        
-        res.json({
-            devices: devices,
-            summary: summary
-        });
-        
-    } catch (error) {
-        log.api.error('Error listing devices', {
-            error: error.message,
-            stack: error.stack,
-            hostname: hostname,
-            filters: { category, ppt_enabled, ppt_capable, driver_attached, available }
-        });
-        res.status(500).json({ error: 'Failed to retrieve devices' });
+  try {
+    const {
+      category,
+      ppt_enabled,
+      ppt_capable,
+      driver_attached,
+      available,
+      limit = 100,
+    } = req.query;
+
+    const hostname = os.hostname();
+    const whereClause = { host: hostname };
+
+    // Apply filters
+    if (category) {
+      whereClause.device_category = category;
     }
+
+    if (ppt_enabled !== undefined) {
+      whereClause.ppt_enabled = ppt_enabled === 'true';
+    }
+
+    if (ppt_capable !== undefined) {
+      whereClause.ppt_capable = ppt_capable === 'true';
+    }
+
+    if (driver_attached !== undefined) {
+      whereClause.driver_attached = driver_attached === 'true';
+    }
+
+    if (available === 'true') {
+      // Show only devices not assigned to zones
+      whereClause.assigned_to_zones = { [Op.or]: [null, []] };
+    }
+
+    const devices = await PCIDevices.findAll({
+      where: whereClause,
+      order: [
+        ['device_category', 'ASC'],
+        ['vendor_name', 'ASC'],
+        ['device_name', 'ASC'],
+      ],
+      limit: parseInt(limit),
+    });
+
+    // Calculate summary statistics
+    const allDevices = await PCIDevices.findAll({
+      where: { host: hostname },
+      attributes: ['device_category', 'vendor_id', 'ppt_enabled', 'assigned_to_zones'],
+    });
+
+    const summary = {
+      total_devices: allDevices.length,
+      by_category: {},
+      ppt_capable: 0,
+      ppt_assigned: 0,
+      zones_using_passthrough: [],
+    };
+
+    const zonesSet = new Set();
+
+    allDevices.forEach(device => {
+      // Count by category
+      const category = device.device_category || 'other';
+      summary.by_category[category] = (summary.by_category[category] || 0) + 1;
+
+      // Count PPT-capable devices (using new logic)
+      if (isPPTCapable(device)) {
+        summary.ppt_capable++;
+      }
+
+      // Count PPT-configured devices (actually enabled in pptadm)
+      if (device.ppt_enabled) {
+        // Check if assigned to zones
+        if (
+          device.assigned_to_zones &&
+          Array.isArray(device.assigned_to_zones) &&
+          device.assigned_to_zones.length > 0
+        ) {
+          summary.ppt_assigned++;
+          device.assigned_to_zones.forEach(assignment => {
+            if (assignment.zone_name) {
+              zonesSet.add(assignment.zone_name);
+            }
+          });
+        }
+      }
+    });
+
+    summary.zones_using_passthrough = Array.from(zonesSet);
+
+    res.json({
+      devices,
+      summary,
+    });
+  } catch (error) {
+    log.api.error('Error listing devices', {
+      error: error.message,
+      stack: error.stack,
+      hostname,
+      filters: { category, ppt_enabled, ppt_capable, driver_attached, available },
+    });
+    res.status(500).json({ error: 'Failed to retrieve devices' });
+  }
 };
 
 /**
@@ -246,47 +257,46 @@ export const listDevices = async (req, res) => {
  *         description: Available devices retrieved successfully
  */
 export const listAvailableDevices = async (req, res) => {
-    try {
-        const { category, ppt_only = false } = req.query;
-        const hostname = os.hostname();
-        
-        const whereClause = {
-            host: hostname,
-            assigned_to_zones: { [Op.or]: [null, []] }
-        };
-        
-        if (category) {
-            whereClause.device_category = category;
-        }
-        
-        if (ppt_only === 'true') {
-            whereClause.ppt_enabled = true;
-        }
-        
-        const devices = await PCIDevices.findAll({
-            where: whereClause,
-            order: [
-                ['device_category', 'ASC'],
-                ['ppt_enabled', 'DESC'], // PPT devices first
-                ['vendor_name', 'ASC']
-            ]
-        });
-        
-        res.json({
-            available_devices: devices,
-            total: devices.length
-        });
-        
-    } catch (error) {
-        log.api.error('Error listing available devices', {
-            error: error.message,
-            stack: error.stack,
-            hostname: hostname,
-            category: category,
-            ppt_only: ppt_only
-        });
-        res.status(500).json({ error: 'Failed to retrieve available devices' });
+  try {
+    const { category, ppt_only = false } = req.query;
+    const hostname = os.hostname();
+
+    const whereClause = {
+      host: hostname,
+      assigned_to_zones: { [Op.or]: [null, []] },
+    };
+
+    if (category) {
+      whereClause.device_category = category;
     }
+
+    if (ppt_only === 'true') {
+      whereClause.ppt_enabled = true;
+    }
+
+    const devices = await PCIDevices.findAll({
+      where: whereClause,
+      order: [
+        ['device_category', 'ASC'],
+        ['ppt_enabled', 'DESC'], // PPT devices first
+        ['vendor_name', 'ASC'],
+      ],
+    });
+
+    res.json({
+      available_devices: devices,
+      total: devices.length,
+    });
+  } catch (error) {
+    log.api.error('Error listing available devices', {
+      error: error.message,
+      stack: error.stack,
+      hostname,
+      category,
+      ppt_only,
+    });
+    res.status(500).json({ error: 'Failed to retrieve available devices' });
+  }
 };
 
 /**
@@ -316,36 +326,32 @@ export const listAvailableDevices = async (req, res) => {
  *         description: Device not found
  */
 export const getDeviceDetails = async (req, res) => {
-    try {
-        const { deviceId } = req.params;
-        const hostname = os.hostname();
-        
-        // Try to find by ID first, then by PCI address
-        let device = await PCIDevices.findOne({
-            where: {
-                host: hostname,
-                [Op.or]: [
-                    { id: deviceId },
-                    { pci_address: deviceId }
-                ]
-            }
-        });
-        
-        if (!device) {
-            return res.status(404).json({ error: 'Device not found' });
-        }
-        
-        res.json(device);
-        
-    } catch (error) {
-        log.api.error('Error getting device details', {
-            error: error.message,
-            stack: error.stack,
-            device_id: deviceId,
-            hostname: hostname
-        });
-        res.status(500).json({ error: 'Failed to retrieve device details' });
+  try {
+    const { deviceId } = req.params;
+    const hostname = os.hostname();
+
+    // Try to find by ID first, then by PCI address
+    const device = await PCIDevices.findOne({
+      where: {
+        host: hostname,
+        [Op.or]: [{ id: deviceId }, { pci_address: deviceId }],
+      },
+    });
+
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
     }
+
+    res.json(device);
+  } catch (error) {
+    log.api.error('Error getting device details', {
+      error: error.message,
+      stack: error.stack,
+      device_id: deviceId,
+      hostname,
+    });
+    res.status(500).json({ error: 'Failed to retrieve device details' });
+  }
 };
 
 /**
@@ -369,59 +375,64 @@ export const getDeviceDetails = async (req, res) => {
  *                   type: object
  */
 export const getDeviceCategories = async (req, res) => {
-    try {
-        const hostname = os.hostname();
-        
-        const devices = await PCIDevices.findAll({
-            where: { host: hostname },
-            attributes: ['device_category', 'vendor_id', 'ppt_enabled', 'driver_attached', 'assigned_to_zones']
-        });
-        
-        const categories = {};
-        
-        devices.forEach(device => {
-            const category = device.device_category || 'other';
-            
-            if (!categories[category]) {
-                categories[category] = {
-                    total: 0,
-                    ppt_capable: 0,
-                    driver_attached: 0,
-                    available: 0,
-                    assigned: 0
-                };
-            }
-            
-            categories[category].total++;
-            
-            if (isPPTCapable(device)) {
-                categories[category].ppt_capable++;
-            }
-            
-            if (device.driver_attached) {
-                categories[category].driver_attached++;
-            }
-            
-            if (!device.assigned_to_zones || device.assigned_to_zones.length === 0) {
-                categories[category].available++;
-            } else {
-                categories[category].assigned++;
-            }
-        });
-        
-        res.json({
-            categories: categories,
-            total_devices: devices.length
-        });
-        
-    } catch (error) {
-        log.api.error('Error getting device categories', {
-            error: error.message,
-            stack: error.stack,
-            hostname: hostname
-        });
-        res.status(500).json({ error: 'Failed to retrieve device categories' });
-    }
+  try {
+    const hostname = os.hostname();
+
+    const devices = await PCIDevices.findAll({
+      where: { host: hostname },
+      attributes: [
+        'device_category',
+        'vendor_id',
+        'ppt_enabled',
+        'driver_attached',
+        'assigned_to_zones',
+      ],
+    });
+
+    const categories = {};
+
+    devices.forEach(device => {
+      const category = device.device_category || 'other';
+
+      if (!categories[category]) {
+        categories[category] = {
+          total: 0,
+          ppt_capable: 0,
+          driver_attached: 0,
+          available: 0,
+          assigned: 0,
+        };
+      }
+
+      categories[category].total++;
+
+      if (isPPTCapable(device)) {
+        categories[category].ppt_capable++;
+      }
+
+      if (device.driver_attached) {
+        categories[category].driver_attached++;
+      }
+
+      if (!device.assigned_to_zones || device.assigned_to_zones.length === 0) {
+        categories[category].available++;
+      } else {
+        categories[category].assigned++;
+      }
+    });
+
+    res.json({
+      categories,
+      total_devices: devices.length,
+    });
+  } catch (error) {
+    log.api.error('Error getting device categories', {
+      error: error.message,
+      stack: error.stack,
+      hostname,
+    });
+    res.status(500).json({ error: 'Failed to retrieve device categories' });
+  }
 };
 
 /**
@@ -449,55 +460,54 @@ export const getDeviceCategories = async (req, res) => {
  *                   type: object
  */
 export const getPPTStatus = async (req, res) => {
-    try {
-        const hostname = os.hostname();
-        
-        const pptDevices = await PCIDevices.findAll({
-            where: {
-                host: hostname,
-                ppt_enabled: true
-            },
-            order: [['ppt_device_path', 'ASC']]
+  try {
+    const hostname = os.hostname();
+
+    const pptDevices = await PCIDevices.findAll({
+      where: {
+        host: hostname,
+        ppt_enabled: true,
+      },
+      order: [['ppt_device_path', 'ASC']],
+    });
+
+    const summary = {
+      total_ppt_devices: pptDevices.length,
+      available: 0,
+      assigned_to_zones: 0,
+      zone_assignments: {},
+    };
+
+    pptDevices.forEach(device => {
+      if (!device.assigned_to_zones || device.assigned_to_zones.length === 0) {
+        summary.available++;
+      } else {
+        summary.assigned_to_zones++;
+        device.assigned_to_zones.forEach(assignment => {
+          if (!summary.zone_assignments[assignment.zone_name]) {
+            summary.zone_assignments[assignment.zone_name] = [];
+          }
+          summary.zone_assignments[assignment.zone_name].push({
+            device_name: device.device_name,
+            ppt_device_path: device.ppt_device_path,
+            assignment_type: assignment.assignment_type,
+          });
         });
-        
-        const summary = {
-            total_ppt_devices: pptDevices.length,
-            available: 0,
-            assigned_to_zones: 0,
-            zone_assignments: {}
-        };
-        
-        pptDevices.forEach(device => {
-            if (!device.assigned_to_zones || device.assigned_to_zones.length === 0) {
-                summary.available++;
-            } else {
-                summary.assigned_to_zones++;
-                device.assigned_to_zones.forEach(assignment => {
-                    if (!summary.zone_assignments[assignment.zone_name]) {
-                        summary.zone_assignments[assignment.zone_name] = [];
-                    }
-                    summary.zone_assignments[assignment.zone_name].push({
-                        device_name: device.device_name,
-                        ppt_device_path: device.ppt_device_path,
-                        assignment_type: assignment.assignment_type
-                    });
-                });
-            }
-        });
-        
-        res.json({
-            ppt_devices: pptDevices,
-            summary: summary
-        });
-        
-    } catch (error) {
-        log.api.error('Error getting PPT status', {
-            error: error.message,
-            stack: error.stack,
-            hostname: hostname
-        });
-        res.status(500).json({ error: 'Failed to retrieve PPT status' });
-    }
+      }
+    });
+
+    res.json({
+      ppt_devices: pptDevices,
+      summary,
+    });
+  } catch (error) {
+    log.api.error('Error getting PPT status', {
+      error: error.message,
+      stack: error.stack,
+      hostname,
+    });
+    res.status(500).json({ error: 'Failed to retrieve PPT status' });
+  }
 };
 
 /**
@@ -525,49 +535,48 @@ export const getPPTStatus = async (req, res) => {
  *                   type: integer
  */
 export const triggerDeviceDiscovery = async (req, res) => {
-    try {
-        // Import here to avoid circular dependencies
-        const { getHostMonitoringService } = await import('./HostMonitoringService.js');
-        const hostMonitoringService = getHostMonitoringService();
-        
-        // Trigger immediate device collection
-        const result = await hostMonitoringService.triggerCollection('devices');
-        
-        if (result.errors && result.errors.length > 0) {
-            return res.status(500).json({
-                success: false,
-                message: 'Device discovery completed with errors',
-                errors: result.errors
-            });
-        }
-        
-        // Count devices found in latest scan
-        const hostname = os.hostname();
-        const devicesFound = await PCIDevices.count({
-            where: {
-                host: hostname,
-                scan_timestamp: {
-                    [Op.gte]: new Date(Date.now() - 5 * 60 * 1000) // Last 5 minutes
-                }
-            }
-        });
-        
-        res.json({
-            success: true,
-            message: 'Device discovery completed successfully',
-            devices_found: devicesFound
-        });
-        
-    } catch (error) {
-        log.api.error('Error triggering device discovery', {
-            error: error.message,
-            stack: error.stack,
-            hostname: hostname
-        });
-        res.status(500).json({ 
-            success: false,
-            error: 'Failed to trigger device discovery',
-            details: error.message
-        });
+  try {
+    // Import here to avoid circular dependencies
+    const { getHostMonitoringService } = await import('./HostMonitoringService.js');
+    const hostMonitoringService = getHostMonitoringService();
+
+    // Trigger immediate device collection
+    const result = await hostMonitoringService.triggerCollection('devices');
+
+    if (result.errors && result.errors.length > 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Device discovery completed with errors',
+        errors: result.errors,
+      });
     }
+
+    // Count devices found in latest scan
+    const hostname = os.hostname();
+    const devicesFound = await PCIDevices.count({
+      where: {
+        host: hostname,
+        scan_timestamp: {
+          [Op.gte]: new Date(Date.now() - 5 * 60 * 1000), // Last 5 minutes
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Device discovery completed successfully',
+      devices_found: devicesFound,
+    });
+  } catch (error) {
+    log.api.error('Error triggering device discovery', {
+      error: error.message,
+      stack: error.stack,
+      hostname,
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to trigger device discovery',
+      details: error.message,
+    });
+  }
 };

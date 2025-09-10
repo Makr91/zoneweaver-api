@@ -6,16 +6,16 @@
  */
 
 import {
-    getProcesses,
-    getProcessDetails,
-    signalProcess,
-    killProcess,
-    getProcessFiles,
-    getProcessStack,
-    getProcessLimits,
-    findProcesses,
-    killProcessesByPattern,
-    getProcessStats
+  getProcesses,
+  getProcessDetails,
+  signalProcess,
+  killProcess,
+  getProcessFiles,
+  getProcessStack,
+  getProcessLimits,
+  findProcesses,
+  killProcessesByPattern,
+  getProcessStats,
 } from '../lib/ProcessManager.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { log, createTimer } from '../lib/Logger.js';
@@ -115,24 +115,24 @@ import { log, createTimer } from '../lib/Logger.js';
  *         description: Failed to retrieve processes
  */
 export const listProcesses = async (req, res) => {
-    try {
-        const options = {
-            zone: req.query.zone,
-            user: req.query.user,
-            command: req.query.command,
-            detailed: req.query.detailed === 'true',
-            limit: req.query.limit ? parseInt(req.query.limit) : 100
-        };
+  try {
+    const options = {
+      zone: req.query.zone,
+      user: req.query.user,
+      command: req.query.command,
+      detailed: req.query.detailed === 'true',
+      limit: req.query.limit ? parseInt(req.query.limit) : 100,
+    };
 
-        const processes = await getProcesses(options);
-        res.json(processes);
-    } catch (error) {
-        log.api.error('Error listing processes', {
-            error: error.message,
-            query_params: req.query
-        });
-        res.status(500).json({ error: 'Failed to retrieve processes' });
-    }
+    const processes = await getProcesses(options);
+    res.json(processes);
+  } catch (error) {
+    log.api.error('Error listing processes', {
+      error: error.message,
+      query_params: req.query,
+    });
+    res.status(500).json({ error: 'Failed to retrieve processes' });
+  }
 };
 
 /**
@@ -181,25 +181,25 @@ export const listProcesses = async (req, res) => {
  *         description: Failed to retrieve process details
  */
 export const getProcessDetailsController = async (req, res) => {
-    try {
-        const pid = parseInt(req.params.pid);
-        if (isNaN(pid)) {
-            return res.status(400).json({ error: 'Invalid process ID' });
-        }
-
-        const processInfo = await getProcessDetails(pid);
-        res.json(processInfo);
-    } catch (error) {
-        log.api.error('Error getting process details', {
-            error: error.message,
-            pid: req.params.pid
-        });
-        if (error.message.includes('not found')) {
-            res.status(404).json({ error: error.message });
-        } else {
-            res.status(500).json({ error: 'Failed to retrieve process details' });
-        }
+  try {
+    const pid = parseInt(req.params.pid);
+    if (isNaN(pid)) {
+      return res.status(400).json({ error: 'Invalid process ID' });
     }
+
+    const processInfo = await getProcessDetails(pid);
+    res.json(processInfo);
+  } catch (error) {
+    log.api.error('Error getting process details', {
+      error: error.message,
+      pid: req.params.pid,
+    });
+    if (error.message.includes('not found')) {
+      res.status(404).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'Failed to retrieve process details' });
+    }
+  }
 };
 
 /**
@@ -238,33 +238,33 @@ export const getProcessDetailsController = async (req, res) => {
  *         description: Failed to send signal
  */
 export const sendSignalToProcess = async (req, res) => {
-    try {
-        const pid = parseInt(req.params.pid);
-        if (isNaN(pid)) {
-            return res.status(400).json({ error: 'Invalid process ID' });
-        }
-
-        const { signal = 'TERM' } = req.body;
-        const result = await signalProcess(pid, signal);
-
-        if (result.success) {
-            res.json({
-                success: true,
-                message: result.message,
-                pid: pid,
-                signal: signal
-            });
-        } else {
-            res.status(500).json({ error: result.error });
-        }
-    } catch (error) {
-        log.api.error('Error sending signal to process', {
-            error: error.message,
-            pid: req.params.pid,
-            signal: req.body.signal
-        });
-        res.status(500).json({ error: 'Failed to send signal to process' });
+  try {
+    const pid = parseInt(req.params.pid);
+    if (isNaN(pid)) {
+      return res.status(400).json({ error: 'Invalid process ID' });
     }
+
+    const { signal = 'TERM' } = req.body;
+    const result = await signalProcess(pid, signal);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: result.message,
+        pid,
+        signal,
+      });
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    log.api.error('Error sending signal to process', {
+      error: error.message,
+      pid: req.params.pid,
+      signal: req.body.signal,
+    });
+    res.status(500).json({ error: 'Failed to send signal to process' });
+  }
 };
 
 /**
@@ -301,33 +301,33 @@ export const sendSignalToProcess = async (req, res) => {
  *         description: Failed to kill process
  */
 export const killProcessController = async (req, res) => {
-    try {
-        const pid = parseInt(req.params.pid);
-        if (isNaN(pid)) {
-            return res.status(400).json({ error: 'Invalid process ID' });
-        }
-
-        const { force = false } = req.body;
-        const result = await killProcess(pid, force);
-
-        if (result.success) {
-            res.json({
-                success: true,
-                message: result.message,
-                pid: pid,
-                method: force ? 'SIGKILL' : 'SIGTERM'
-            });
-        } else {
-            res.status(500).json({ error: result.error });
-        }
-    } catch (error) {
-        log.api.error('Error killing process', {
-            error: error.message,
-            pid: req.params.pid,
-            force: req.body.force
-        });
-        res.status(500).json({ error: 'Failed to kill process' });
+  try {
+    const pid = parseInt(req.params.pid);
+    if (isNaN(pid)) {
+      return res.status(400).json({ error: 'Invalid process ID' });
     }
+
+    const { force = false } = req.body;
+    const result = await killProcess(pid, force);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: result.message,
+        pid,
+        method: force ? 'SIGKILL' : 'SIGTERM',
+      });
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    log.api.error('Error killing process', {
+      error: error.message,
+      pid: req.params.pid,
+      force: req.body.force,
+    });
+    res.status(500).json({ error: 'Failed to kill process' });
+  }
 };
 
 /**
@@ -370,25 +370,25 @@ export const killProcessController = async (req, res) => {
  *         description: Failed to retrieve process files
  */
 export const getProcessFilesController = async (req, res) => {
-    try {
-        const pid = parseInt(req.params.pid);
-        if (isNaN(pid)) {
-            return res.status(400).json({ error: 'Invalid process ID' });
-        }
-
-        const files = await getProcessFiles(pid);
-        res.json(files);
-    } catch (error) {
-        log.api.error('Error getting process files', {
-            error: error.message,
-            pid: req.params.pid
-        });
-        if (error.message.includes('not found')) {
-            res.status(404).json({ error: error.message });
-        } else {
-            res.status(500).json({ error: 'Failed to retrieve process files' });
-        }
+  try {
+    const pid = parseInt(req.params.pid);
+    if (isNaN(pid)) {
+      return res.status(400).json({ error: 'Invalid process ID' });
     }
+
+    const files = await getProcessFiles(pid);
+    res.json(files);
+  } catch (error) {
+    log.api.error('Error getting process files', {
+      error: error.message,
+      pid: req.params.pid,
+    });
+    if (error.message.includes('not found')) {
+      res.status(404).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'Failed to retrieve process files' });
+    }
+  }
 };
 
 /**
@@ -419,25 +419,25 @@ export const getProcessFilesController = async (req, res) => {
  *         description: Failed to retrieve stack trace
  */
 export const getProcessStackController = async (req, res) => {
-    try {
-        const pid = parseInt(req.params.pid);
-        if (isNaN(pid)) {
-            return res.status(400).json({ error: 'Invalid process ID' });
-        }
-
-        const stackTrace = await getProcessStack(pid);
-        res.type('text/plain').send(stackTrace);
-    } catch (error) {
-        log.api.error('Error getting process stack', {
-            error: error.message,
-            pid: req.params.pid
-        });
-        if (error.message.includes('not found')) {
-            res.status(404).json({ error: error.message });
-        } else {
-            res.status(500).json({ error: 'Failed to retrieve stack trace' });
-        }
+  try {
+    const pid = parseInt(req.params.pid);
+    if (isNaN(pid)) {
+      return res.status(400).json({ error: 'Invalid process ID' });
     }
+
+    const stackTrace = await getProcessStack(pid);
+    res.type('text/plain').send(stackTrace);
+  } catch (error) {
+    log.api.error('Error getting process stack', {
+      error: error.message,
+      pid: req.params.pid,
+    });
+    if (error.message.includes('not found')) {
+      res.status(404).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'Failed to retrieve stack trace' });
+    }
+  }
 };
 
 /**
@@ -470,25 +470,25 @@ export const getProcessStackController = async (req, res) => {
  *         description: Failed to retrieve process limits
  */
 export const getProcessLimitsController = async (req, res) => {
-    try {
-        const pid = parseInt(req.params.pid);
-        if (isNaN(pid)) {
-            return res.status(400).json({ error: 'Invalid process ID' });
-        }
-
-        const limits = await getProcessLimits(pid);
-        res.json(limits);
-    } catch (error) {
-        log.api.error('Error getting process limits', {
-            error: error.message,
-            pid: req.params.pid
-        });
-        if (error.message.includes('not found')) {
-            res.status(404).json({ error: error.message });
-        } else {
-            res.status(500).json({ error: 'Failed to retrieve process limits' });
-        }
+  try {
+    const pid = parseInt(req.params.pid);
+    if (isNaN(pid)) {
+      return res.status(400).json({ error: 'Invalid process ID' });
     }
+
+    const limits = await getProcessLimits(pid);
+    res.json(limits);
+  } catch (error) {
+    log.api.error('Error getting process limits', {
+      error: error.message,
+      pid: req.params.pid,
+    });
+    if (error.message.includes('not found')) {
+      res.status(404).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'Failed to retrieve process limits' });
+    }
+  }
 };
 
 /**
@@ -538,31 +538,35 @@ export const getProcessLimitsController = async (req, res) => {
  *         description: Failed to find processes
  */
 export const findProcessesController = async (req, res) => {
-    try {
-        const { pattern, zone, user } = req.query;
-        
-        if (!pattern) {
-            return res.status(400).json({ error: 'Pattern parameter is required' });
-        }
+  try {
+    const { pattern, zone, user } = req.query;
 
-        const options = {};
-        if (zone) options.zone = zone;
-        if (user) options.user = user;
-
-        const pids = await findProcesses(pattern, options);
-        res.json({
-            pattern: pattern,
-            pids: pids,
-            count: pids.length,
-            filters: options
-        });
-    } catch (error) {
-        log.api.error('Error finding processes', {
-            error: error.message,
-            pattern: req.query.pattern
-        });
-        res.status(500).json({ error: 'Failed to find processes' });
+    if (!pattern) {
+      return res.status(400).json({ error: 'Pattern parameter is required' });
     }
+
+    const options = {};
+    if (zone) {
+      options.zone = zone;
+    }
+    if (user) {
+      options.user = user;
+    }
+
+    const pids = await findProcesses(pattern, options);
+    res.json({
+      pattern,
+      pids,
+      count: pids.length,
+      filters: options,
+    });
+  } catch (error) {
+    log.api.error('Error finding processes', {
+      error: error.message,
+      pattern: req.query.pattern,
+    });
+    res.status(500).json({ error: 'Failed to find processes' });
+  }
 };
 
 /**
@@ -624,33 +628,37 @@ export const findProcessesController = async (req, res) => {
  *         description: Failed to kill processes
  */
 export const batchKillProcesses = async (req, res) => {
-    try {
-        const { pattern, zone, user, signal = 'TERM' } = req.body;
-        
-        if (!pattern) {
-            return res.status(400).json({ error: 'Pattern parameter is required' });
-        }
+  try {
+    const { pattern, zone, user, signal = 'TERM' } = req.body;
 
-        const options = { signal };
-        if (zone) options.zone = zone;
-        if (user) options.user = user;
-
-        const result = await killProcessesByPattern(pattern, options);
-        
-        res.json({
-            ...result,
-            pattern: pattern,
-            signal: signal,
-            filters: { zone, user }
-        });
-    } catch (error) {
-        log.api.error('Error in batch kill processes', {
-            error: error.message,
-            pattern: req.body.pattern,
-            signal: req.body.signal
-        });
-        res.status(500).json({ error: 'Failed to kill processes' });
+    if (!pattern) {
+      return res.status(400).json({ error: 'Pattern parameter is required' });
     }
+
+    const options = { signal };
+    if (zone) {
+      options.zone = zone;
+    }
+    if (user) {
+      options.user = user;
+    }
+
+    const result = await killProcessesByPattern(pattern, options);
+
+    res.json({
+      ...result,
+      pattern,
+      signal,
+      filters: { zone, user },
+    });
+  } catch (error) {
+    log.api.error('Error in batch kill processes', {
+      error: error.message,
+      pattern: req.body.pattern,
+      signal: req.body.signal,
+    });
+    res.status(500).json({ error: 'Failed to kill processes' });
+  }
 };
 
 /**
@@ -709,30 +717,30 @@ export const batchKillProcesses = async (req, res) => {
  *         description: Failed to retrieve process statistics
  */
 export const getProcessStatsController = async (req, res) => {
-    try {
-        const options = {
-            zone: req.query.zone,
-            interval: req.query.interval ? parseInt(req.query.interval) : 1,
-            count: req.query.count ? parseInt(req.query.count) : 1
-        };
+  try {
+    const options = {
+      zone: req.query.zone,
+      interval: req.query.interval ? parseInt(req.query.interval) : 1,
+      count: req.query.count ? parseInt(req.query.count) : 1,
+    };
 
-        // Validate parameters
-        if (options.interval < 1 || options.interval > 60) {
-            return res.status(400).json({ error: 'Interval must be between 1 and 60 seconds' });
-        }
-        if (options.count < 1 || options.count > 10) {
-            return res.status(400).json({ error: 'Count must be between 1 and 10' });
-        }
-
-        const stats = await getProcessStats(options);
-        res.json(stats);
-    } catch (error) {
-        log.api.error('Error getting process statistics', {
-            error: error.message,
-            query_params: req.query
-        });
-        res.status(500).json({ error: 'Failed to retrieve process statistics' });
+    // Validate parameters
+    if (options.interval < 1 || options.interval > 60) {
+      return res.status(400).json({ error: 'Interval must be between 1 and 60 seconds' });
     }
+    if (options.count < 1 || options.count > 10) {
+      return res.status(400).json({ error: 'Count must be between 1 and 10' });
+    }
+
+    const stats = await getProcessStats(options);
+    res.json(stats);
+  } catch (error) {
+    log.api.error('Error getting process statistics', {
+      error: error.message,
+      query_params: req.query,
+    });
+    res.status(500).json({ error: 'Failed to retrieve process statistics' });
+  }
 };
 
 /**
@@ -783,41 +791,41 @@ export const getProcessStatsController = async (req, res) => {
  *         description: Failed to create tracing task
  */
 export const startProcessTrace = async (req, res) => {
-    try {
-        const { pid, duration = 30 } = req.body;
-        
-        if (!pid || isNaN(parseInt(pid))) {
-            return res.status(400).json({ error: 'Valid process ID is required' });
-        }
-        
-        if (duration < 5 || duration > 300) {
-            return res.status(400).json({ error: 'Duration must be between 5 and 300 seconds' });
-        }
+  try {
+    const { pid, duration = 30 } = req.body;
 
-        // Create a task for the tracing operation
-        const task = await Tasks.create({
-            zone_name: `process-${pid}`,
-            operation: 'process_trace',
-            priority: TaskPriority.BACKGROUND,
-            created_by: req.entity.name,
-            status: 'pending',
-            metadata: JSON.stringify({ pid, duration })
-        });
-
-        res.json({
-            success: true,
-            message: `Process trace task created for PID ${pid}`,
-            task_id: task.id,
-            pid: parseInt(pid),
-            duration: duration
-        });
-    } catch (error) {
-        log.database.error('Error creating process trace task', {
-            error: error.message,
-            pid: req.body.pid,
-            duration: req.body.duration,
-            user: req.entity.name
-        });
-        res.status(500).json({ error: 'Failed to create tracing task' });
+    if (!pid || isNaN(parseInt(pid))) {
+      return res.status(400).json({ error: 'Valid process ID is required' });
     }
+
+    if (duration < 5 || duration > 300) {
+      return res.status(400).json({ error: 'Duration must be between 5 and 300 seconds' });
+    }
+
+    // Create a task for the tracing operation
+    const task = await Tasks.create({
+      zone_name: `process-${pid}`,
+      operation: 'process_trace',
+      priority: TaskPriority.BACKGROUND,
+      created_by: req.entity.name,
+      status: 'pending',
+      metadata: JSON.stringify({ pid, duration }),
+    });
+
+    res.json({
+      success: true,
+      message: `Process trace task created for PID ${pid}`,
+      task_id: task.id,
+      pid: parseInt(pid),
+      duration,
+    });
+  } catch (error) {
+    log.database.error('Error creating process trace task', {
+      error: error.message,
+      pid: req.body.pid,
+      duration: req.body.duration,
+      user: req.entity.name,
+    });
+    res.status(500).json({ error: 'Failed to create tracing task' });
+  }
 };

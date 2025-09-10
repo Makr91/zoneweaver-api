@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -95,153 +95,157 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const NetworkInterfaces = db.define('network_interfaces', {
+const NetworkInterfaces = db.define(
+  'network_interfaces',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the interface is located'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the interface is located',
     },
     link: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Link/interface name'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Link/interface name',
     },
     class: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Interface class (phys, vnic, etc.)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Interface class (phys, vnic, etc.)',
     },
     over: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Physical interface this is layered over'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Physical interface this is layered over',
     },
     speed: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Interface speed in Mbps'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Interface speed in Mbps',
     },
     mtu: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Maximum transmission unit'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Maximum transmission unit',
     },
     state: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Interface state (up, down, unknown)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Interface state (up, down, unknown)',
     },
     macaddress: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'MAC address'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'MAC address',
     },
     macaddrtype: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'MAC address type (fixed, random, etc.)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'MAC address type (fixed, random, etc.)',
     },
     vid: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'VLAN ID'
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'VLAN ID',
     },
     zone: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Zone assignment'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Zone assignment',
     },
     media: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Physical media type'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Physical media type',
     },
     duplex: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Duplex setting (full, half)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Duplex setting (full, half)',
     },
     device: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Physical device name'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Physical device name',
     },
     bridge: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Bridge assignment'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Bridge assignment',
     },
     pause: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Flow control pause setting'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Flow control pause setting',
     },
     auto: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Auto-negotiation setting'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Auto-negotiation setting',
     },
     ptype: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Port type'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Port type',
     },
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
     },
     // Aggregate-specific fields
     policy: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Aggregate load balancing policy (L2, L3, L4, etc.)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Aggregate load balancing policy (L2, L3, L4, etc.)',
     },
     address_policy: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Aggregate address assignment policy (auto, fixed)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Aggregate address assignment policy (auto, fixed)',
     },
     lacp_activity: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'LACP activity mode (off, active, passive)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'LACP activity mode (off, active, passive)',
     },
     lacp_timer: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'LACP timer setting (short, long)'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'LACP timer setting (short, long)',
     },
     flags: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Aggregate operational flags'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Aggregate operational flags',
     },
     ports_detail: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'JSON string containing detailed port information'
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'JSON string containing detailed port information',
     },
     lacp_detail: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'JSON string containing LACP operational states'
-    }
-}, {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'JSON string containing LACP operational states',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'Network interface configuration and status',
     indexes: [
-        {
-            unique: true,
-            fields: ['host', 'link', 'scan_timestamp']
-        },
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['state']
-        }
-    ]
-});
- 
+      {
+        unique: true,
+        fields: ['host', 'link', 'scan_timestamp'],
+      },
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['state'],
+      },
+    ],
+  }
+);
+
 export default NetworkInterfaces;

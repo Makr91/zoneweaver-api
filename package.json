@@ -9,6 +9,12 @@
     "dev": "nodemon index.js",
     "sync-versions": "node scripts/sync-versions.js",
     "generate-docs": "node scripts/generate-docs.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "quality": "npm run lint && npm run format:check",
+    "quality:fix": "npm run lint:fix && npm run format",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -42,6 +48,12 @@
     "yieldable-json": "^2.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "@eslint/js": "^9.35.0",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "globals": "^16.4.0",
+    "nodemon": "^3.1.4",
+    "prettier": "^3.6.2"
   }
 }

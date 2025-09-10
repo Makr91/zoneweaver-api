@@ -5,12 +5,12 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { exec } from "child_process";
-import util from "util";
-import fs from "fs/promises";
-import path from "path";
-import config from "../config/ConfigLoader.js";
-import { log } from "../lib/Logger.js";
+import { exec } from 'child_process';
+import util from 'util';
+import fs from 'fs/promises';
+import path from 'path';
+import config from '../config/ConfigLoader.js';
+import { log } from '../lib/Logger.js';
 
 const execProm = util.promisify(exec);
 
@@ -39,87 +39,87 @@ const execProm = util.promisify(exec);
  *         description: Failed to list log files
  */
 export const listLogFiles = async (req, res) => {
-    try {
-        const logsConfig = config.getSystemLogs();
-        
-        if (!logsConfig?.enabled) {
-            return res.status(503).json({
-                error: 'System logs are disabled in configuration'
-            });
-        }
+  try {
+    const logsConfig = config.getSystemLogs();
 
-        const logFiles = [];
-        const directories = [];
-
-        for (const allowedPath of logsConfig.allowed_paths) {
-            try {
-                const dirStats = await fs.stat(allowedPath);
-                if (!dirStats.isDirectory()) continue;
-
-                const files = await fs.readdir(allowedPath, { withFileTypes: true });
-                const dirInfo = {
-                    path: allowedPath,
-                    fileCount: 0,
-                    files: []
-                };
-
-                for (const file of files) {
-                    if (!file.isFile() || !isFilePermitted(file.name, logsConfig)) {
-                        continue;
-                    }
-
-                    const fullPath = path.join(allowedPath, file.name);
-                    const stats = await fs.stat(fullPath);
-                    
-                    // Skip binary files entirely
-                    const isBinary = await isBinaryFile(fullPath);
-                    if (isBinary) {
-                        // Silently skip binary files - no need to log
-                        continue;
-                    }
-                    
-                    const fileInfo = {
-                        name: file.name,
-                        path: fullPath,
-                        relativePath: path.relative('/var', fullPath),
-                        size: stats.size,
-                        modified: stats.mtime,
-                        sizeFormatted: formatFileSize(stats.size),
-                        type: getLogType(file.name)
-                    };
-                    
-                    logFiles.push(fileInfo);
-                    dirInfo.files.push(fileInfo);
-                    dirInfo.fileCount++;
-                }
-
-                directories.push(dirInfo);
-                
-            } catch (error) {
-                log.filesystem.warn('Could not read log directory', {
-                    directory: allowedPath,
-                    error: error.message
-                });
-            }
-        }
-
-        res.json({
-            log_files: logFiles,
-            directories: directories,
-            total_files: logFiles.length,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error listing log files', {
-            error: error.message,
-            stack: error.stack
-        });
-        res.status(500).json({ 
-            error: 'Failed to list log files',
-            details: error.message 
-        });
+    if (!logsConfig?.enabled) {
+      return res.status(503).json({
+        error: 'System logs are disabled in configuration',
+      });
     }
+
+    const logFiles = [];
+    const directories = [];
+
+    for (const allowedPath of logsConfig.allowed_paths) {
+      try {
+        const dirStats = await fs.stat(allowedPath);
+        if (!dirStats.isDirectory()) {
+          continue;
+        }
+
+        const files = await fs.readdir(allowedPath, { withFileTypes: true });
+        const dirInfo = {
+          path: allowedPath,
+          fileCount: 0,
+          files: [],
+        };
+
+        for (const file of files) {
+          if (!file.isFile() || !isFilePermitted(file.name, logsConfig)) {
+            continue;
+          }
+
+          const fullPath = path.join(allowedPath, file.name);
+          const stats = await fs.stat(fullPath);
+
+          // Skip binary files entirely
+          const isBinary = await isBinaryFile(fullPath);
+          if (isBinary) {
+            // Silently skip binary files - no need to log
+            continue;
+          }
+
+          const fileInfo = {
+            name: file.name,
+            path: fullPath,
+            relativePath: path.relative('/var', fullPath),
+            size: stats.size,
+            modified: stats.mtime,
+            sizeFormatted: formatFileSize(stats.size),
+            type: getLogType(file.name),
+          };
+
+          logFiles.push(fileInfo);
+          dirInfo.files.push(fileInfo);
+          dirInfo.fileCount++;
+        }
+
+        directories.push(dirInfo);
+      } catch (error) {
+        log.filesystem.warn('Could not read log directory', {
+          directory: allowedPath,
+          error: error.message,
+        });
+      }
+    }
+
+    res.json({
+      log_files: logFiles,
+      directories,
+      total_files: logFiles.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error listing log files', {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      error: 'Failed to list log files',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -169,109 +169,108 @@ export const listLogFiles = async (req, res) => {
  *         description: Failed to read log file
  */
 export const getLogFile = async (req, res) => {
-    try {
-        const { logname } = req.params;
-        const { lines = 100, tail = true, grep, since } = req.query;
-        const logsConfig = config.getSystemLogs();
-        
-        if (!logsConfig?.enabled) {
-            return res.status(503).json({
-                error: 'System logs are disabled in configuration'
-            });
-        }
+  try {
+    const { logname } = req.params;
+    const { lines = 100, tail = true, grep, since } = req.query;
+    const logsConfig = config.getSystemLogs();
 
-        // Find the log file in allowed paths
-        const logPath = await findLogFile(logname, logsConfig.allowed_paths);
-        if (!logPath) {
-            return res.status(404).json({
-                error: `Log file '${logname}' not found in allowed directories`
-            });
-        }
-
-        // Security check - validate path and file size
-        const securityCheck = await validateLogFileAccess(logPath, logsConfig);
-        if (!securityCheck.allowed) {
-            return res.status(400).json({
-                error: securityCheck.reason
-            });
-        }
-
-        // Check if file is binary - refuse to read binary files
-        const isBinary = await isBinaryFile(logPath);
-        if (isBinary) {
-            return res.status(400).json({
-                error: `Cannot read log file '${logname}' - file contains binary data`,
-                details: 'Binary files are not supported for log viewing',
-                logname: logname,
-                suggestion: 'Use system tools like hexdump or strings for binary file analysis'
-            });
-        }
-
-        // Build command to read log file
-        let command = '';
-        const requestedLines = Math.min(parseInt(lines) || 100, logsConfig.max_lines);
-
-        if (tail) {
-            command = `tail -n ${requestedLines} "${logPath}"`;
-        } else {
-            command = `head -n ${requestedLines} "${logPath}"`;
-        }
-
-        // Add grep filter if specified
-        if (grep) {
-            command += ` | grep "${grep.replace(/"/g, '\\"')}"`;
-        }
-
-        // Add since filter if specified (basic implementation)
-        if (since) {
-            // For logs with standard timestamp formats, use grep with date pattern
-            const datePattern = formatDateForGrep(since);
-            if (datePattern) {
-                command += ` | grep -E "${datePattern}"`;
-            }
-        }
-
-        const { stdout, stderr } = await execProm(command, { 
-            timeout: logsConfig.timeout * 1000,
-            maxBuffer: 10 * 1024 * 1024 // 10MB buffer
-        });
-
-        // Remove verbose stderr logging - most commands output to stderr even on success
-
-        const logLines = stdout.split('\n').filter(line => line.trim());
-
-        res.json({
-            logname: logname,
-            path: logPath,
-            lines: logLines,
-            totalLines: logLines.length,
-            requestedLines: requestedLines,
-            tail: tail,
-            filters: {
-                grep: grep || null,
-                since: since || null
-            },
-            raw_output: stdout,
-            fileInfo: {
-                size: securityCheck.fileSize,
-                sizeFormatted: formatFileSize(securityCheck.fileSize),
-                modified: securityCheck.modified
-            },
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error reading log file', {
-            error: error.message,
-            stack: error.stack,
-            logname: req.params.logname,
-            path: logPath
-        });
-        res.status(500).json({ 
-            error: 'Failed to read log file',
-            details: error.message 
-        });
+    if (!logsConfig?.enabled) {
+      return res.status(503).json({
+        error: 'System logs are disabled in configuration',
+      });
     }
+
+    // Find the log file in allowed paths
+    const logPath = await findLogFile(logname, logsConfig.allowed_paths);
+    if (!logPath) {
+      return res.status(404).json({
+        error: `Log file '${logname}' not found in allowed directories`,
+      });
+    }
+
+    // Security check - validate path and file size
+    const securityCheck = await validateLogFileAccess(logPath, logsConfig);
+    if (!securityCheck.allowed) {
+      return res.status(400).json({
+        error: securityCheck.reason,
+      });
+    }
+
+    // Check if file is binary - refuse to read binary files
+    const isBinary = await isBinaryFile(logPath);
+    if (isBinary) {
+      return res.status(400).json({
+        error: `Cannot read log file '${logname}' - file contains binary data`,
+        details: 'Binary files are not supported for log viewing',
+        logname,
+        suggestion: 'Use system tools like hexdump or strings for binary file analysis',
+      });
+    }
+
+    // Build command to read log file
+    let command = '';
+    const requestedLines = Math.min(parseInt(lines) || 100, logsConfig.max_lines);
+
+    if (tail) {
+      command = `tail -n ${requestedLines} "${logPath}"`;
+    } else {
+      command = `head -n ${requestedLines} "${logPath}"`;
+    }
+
+    // Add grep filter if specified
+    if (grep) {
+      command += ` | grep "${grep.replace(/"/g, '\\"')}"`;
+    }
+
+    // Add since filter if specified (basic implementation)
+    if (since) {
+      // For logs with standard timestamp formats, use grep with date pattern
+      const datePattern = formatDateForGrep(since);
+      if (datePattern) {
+        command += ` | grep -E "${datePattern}"`;
+      }
+    }
+
+    const { stdout, stderr } = await execProm(command, {
+      timeout: logsConfig.timeout * 1000,
+      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+    });
+
+    // Remove verbose stderr logging - most commands output to stderr even on success
+
+    const logLines = stdout.split('\n').filter(line => line.trim());
+
+    res.json({
+      logname,
+      path: logPath,
+      lines: logLines,
+      totalLines: logLines.length,
+      requestedLines,
+      tail,
+      filters: {
+        grep: grep || null,
+        since: since || null,
+      },
+      raw_output: stdout,
+      fileInfo: {
+        size: securityCheck.fileSize,
+        sizeFormatted: formatFileSize(securityCheck.fileSize),
+        modified: securityCheck.modified,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error reading log file', {
+      error: error.message,
+      stack: error.stack,
+      logname: req.params.logname,
+      path: logPath,
+    });
+    res.status(500).json({
+      error: 'Failed to read log file',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -319,80 +318,87 @@ export const getLogFile = async (req, res) => {
  *         description: Failed to read fault manager logs
  */
 export const getFaultManagerLogs = async (req, res) => {
-    try {
-        const { type } = req.params;
-        const { since, class: faultClass, uuid, verbose = false } = req.query;
-        const logsConfig = config.getSystemLogs();
-        
-        if (!logsConfig?.enabled) {
-            return res.status(503).json({
-                error: 'System logs are disabled in configuration'
-            });
-        }
+  try {
+    const { type } = req.params;
+    const { since, class: faultClass, uuid, verbose = false } = req.query;
+    const logsConfig = config.getSystemLogs();
 
-        // Build fmdump command
-        let command = 'fmdump';
-        
-        switch (type) {
-            case 'faults':
-                // Default - fault log
-                break;
-            case 'errors':
-                command += ' -e';
-                break;
-            case 'info':
-                command += ' -i';
-                break;
-            case 'info-hival':
-                command += ' -I';
-                break;
-            default:
-                return res.status(400).json({
-                    error: `Invalid log type: ${type}. Valid types: faults, errors, info, info-hival`
-                });
-        }
+    if (!logsConfig?.enabled) {
+      return res.status(503).json({
+        error: 'System logs are disabled in configuration',
+      });
+    }
 
-        // Add options
-        if (verbose) command += ' -v';
-        if (since) command += ` -t "${since}"`;
-        if (faultClass) command += ` -c "${faultClass}"`;
-        if (uuid) command += ` -u ${uuid}`;
+    // Build fmdump command
+    let command = 'fmdump';
 
-        const { stdout, stderr } = await execProm(command, { 
-            timeout: logsConfig.timeout * 1000,
-            maxBuffer: 10 * 1024 * 1024 // 10MB buffer
-        });
-
-        // Remove verbose stderr logging - fmdump outputs to stderr even on success
-
-        const logLines = stdout.split('\n').filter(line => line.trim());
-
-        res.json({
-            logType: type,
-            lines: logLines,
-            totalLines: logLines.length,
-            filters: {
-                since: since || null,
-                class: faultClass || null,
-                uuid: uuid || null,
-                verbose: verbose
-            },
-            command: command,
-            raw_output: stdout,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        log.api.error('Error reading fault manager logs', {
-            error: error.message,
-            stack: error.stack,
-            type: req.params.type
-        });
-        res.status(500).json({ 
-            error: 'Failed to read fault manager logs',
-            details: error.message 
+    switch (type) {
+      case 'faults':
+        // Default - fault log
+        break;
+      case 'errors':
+        command += ' -e';
+        break;
+      case 'info':
+        command += ' -i';
+        break;
+      case 'info-hival':
+        command += ' -I';
+        break;
+      default:
+        return res.status(400).json({
+          error: `Invalid log type: ${type}. Valid types: faults, errors, info, info-hival`,
         });
     }
+
+    // Add options
+    if (verbose) {
+      command += ' -v';
+    }
+    if (since) {
+      command += ` -t "${since}"`;
+    }
+    if (faultClass) {
+      command += ` -c "${faultClass}"`;
+    }
+    if (uuid) {
+      command += ` -u ${uuid}`;
+    }
+
+    const { stdout, stderr } = await execProm(command, {
+      timeout: logsConfig.timeout * 1000,
+      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+    });
+
+    // Remove verbose stderr logging - fmdump outputs to stderr even on success
+
+    const logLines = stdout.split('\n').filter(line => line.trim());
+
+    res.json({
+      logType: type,
+      lines: logLines,
+      totalLines: logLines.length,
+      filters: {
+        since: since || null,
+        class: faultClass || null,
+        uuid: uuid || null,
+        verbose,
+      },
+      command,
+      raw_output: stdout,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.api.error('Error reading fault manager logs', {
+      error: error.message,
+      stack: error.stack,
+      type: req.params.type,
+    });
+    res.status(500).json({
+      error: 'Failed to read fault manager logs',
+      details: error.message,
+    });
+  }
 };
 
 /**
@@ -402,16 +408,16 @@ export const getFaultManagerLogs = async (req, res) => {
  * @returns {string|null} Full path to log file or null if not found
  */
 async function findLogFile(logname, allowedPaths) {
-    for (const dirPath of allowedPaths) {
-        try {
-            const fullPath = path.join(dirPath, logname);
-            await fs.access(fullPath, fs.constants.R_OK);
-            return fullPath;
-        } catch (error) {
-            // File not found in this directory, continue searching
-        }
+  for (const dirPath of allowedPaths) {
+    try {
+      const fullPath = path.join(dirPath, logname);
+      await fs.access(fullPath, fs.constants.R_OK);
+      return fullPath;
+    } catch (error) {
+      // File not found in this directory, continue searching
     }
-    return null;
+  }
+  return null;
 }
 
 /**
@@ -421,42 +427,41 @@ async function findLogFile(logname, allowedPaths) {
  * @returns {Object} Validation result
  */
 async function validateLogFileAccess(logPath, logsConfig) {
-    try {
-        const stats = await fs.stat(logPath);
-        
-        // Check file size limit
-        const maxSizeBytes = logsConfig.security.max_file_size_mb * 1024 * 1024;
-        if (stats.size > maxSizeBytes) {
-            return {
-                allowed: false,
-                reason: `File too large: ${formatFileSize(stats.size)} exceeds limit of ${logsConfig.security.max_file_size_mb}MB`
-            };
-        }
+  try {
+    const stats = await fs.stat(logPath);
 
-        // Check forbidden patterns
-        const filename = path.basename(logPath);
-        for (const pattern of logsConfig.security.forbidden_patterns) {
-            const regex = new RegExp(pattern.replace('*', '.*'));
-            if (regex.test(filename) || regex.test(logPath)) {
-                return {
-                    allowed: false,
-                    reason: `File matches forbidden pattern: ${pattern}`
-                };
-            }
-        }
-
-        return {
-            allowed: true,
-            fileSize: stats.size,
-            modified: stats.mtime
-        };
-        
-    } catch (error) {
-        return {
-            allowed: false,
-            reason: `Cannot access file: ${error.message}`
-        };
+    // Check file size limit
+    const maxSizeBytes = logsConfig.security.max_file_size_mb * 1024 * 1024;
+    if (stats.size > maxSizeBytes) {
+      return {
+        allowed: false,
+        reason: `File too large: ${formatFileSize(stats.size)} exceeds limit of ${logsConfig.security.max_file_size_mb}MB`,
+      };
     }
+
+    // Check forbidden patterns
+    const filename = path.basename(logPath);
+    for (const pattern of logsConfig.security.forbidden_patterns) {
+      const regex = new RegExp(pattern.replace('*', '.*'));
+      if (regex.test(filename) || regex.test(logPath)) {
+        return {
+          allowed: false,
+          reason: `File matches forbidden pattern: ${pattern}`,
+        };
+      }
+    }
+
+    return {
+      allowed: true,
+      fileSize: stats.size,
+      modified: stats.mtime,
+    };
+  } catch (error) {
+    return {
+      allowed: false,
+      reason: `Cannot access file: ${error.message}`,
+    };
+  }
 }
 
 /**
@@ -466,13 +471,13 @@ async function validateLogFileAccess(logPath, logsConfig) {
  * @returns {boolean} Whether file is permitted
  */
 function isFilePermitted(filename, logsConfig) {
-    for (const pattern of logsConfig.security.forbidden_patterns) {
-        const regex = new RegExp(pattern.replace('*', '.*'));
-        if (regex.test(filename)) {
-            return false;
-        }
+  for (const pattern of logsConfig.security.forbidden_patterns) {
+    const regex = new RegExp(pattern.replace('*', '.*'));
+    if (regex.test(filename)) {
+      return false;
     }
-    return true;
+  }
+  return true;
 }
 
 /**
@@ -481,41 +486,45 @@ function isFilePermitted(filename, logsConfig) {
  * @returns {Promise<boolean>} True if file appears to be binary
  */
 async function isBinaryFile(filePath) {
-    try {
-        // Read first 8KB of file to check for binary content
-        const fileHandle = await fs.open(filePath, 'r');
-        const buffer = Buffer.alloc(8192);
-        const { bytesRead } = await fileHandle.read(buffer, 0, 8192, 0);
-        await fileHandle.close();
-        
-        if (bytesRead === 0) return false; // Empty file, treat as text
-        
-        const sample = buffer.slice(0, bytesRead);
-        
-        // Count null bytes - binary files typically have many null bytes
-        const nullBytes = sample.filter(byte => byte === 0).length;
-        const nullPercentage = nullBytes / bytesRead;
-        
-        // Consider binary if >1% null bytes or high percentage of control characters
-        if (nullPercentage > 0.01) return true;
-        
-        // Check for excessive control characters (excluding common ones like \n, \r, \t)
-        const controlBytes = sample.filter(byte => 
-            (byte >= 1 && byte <= 8) || // Control chars except \t
-            (byte >= 11 && byte <= 12) || // Control chars except \n
-            (byte >= 14 && byte <= 31) || // Control chars except \r
-            byte === 127 // DEL
-        ).length;
-        
-        const controlPercentage = controlBytes / bytesRead;
-        
-        // Consider binary if >5% control characters
-        return controlPercentage > 0.05;
-        
-    } catch (error) {
-        // If we can't read the file, assume it's binary to be safe
-        return true;
+  try {
+    // Read first 8KB of file to check for binary content
+    const fileHandle = await fs.open(filePath, 'r');
+    const buffer = Buffer.alloc(8192);
+    const { bytesRead } = await fileHandle.read(buffer, 0, 8192, 0);
+    await fileHandle.close();
+
+    if (bytesRead === 0) {
+      return false;
+    } // Empty file, treat as text
+
+    const sample = buffer.slice(0, bytesRead);
+
+    // Count null bytes - binary files typically have many null bytes
+    const nullBytes = sample.filter(byte => byte === 0).length;
+    const nullPercentage = nullBytes / bytesRead;
+
+    // Consider binary if >1% null bytes or high percentage of control characters
+    if (nullPercentage > 0.01) {
+      return true;
     }
+
+    // Check for excessive control characters (excluding common ones like \n, \r, \t)
+    const controlBytes = sample.filter(
+      byte =>
+        (byte >= 1 && byte <= 8) || // Control chars except \t
+        (byte >= 11 && byte <= 12) || // Control chars except \n
+        (byte >= 14 && byte <= 31) || // Control chars except \r
+        byte === 127 // DEL
+    ).length;
+
+    const controlPercentage = controlBytes / bytesRead;
+
+    // Consider binary if >5% control characters
+    return controlPercentage > 0.05;
+  } catch (error) {
+    // If we can't read the file, assume it's binary to be safe
+    return true;
+  }
 }
 
 /**
@@ -524,20 +533,40 @@ async function isBinaryFile(filePath) {
  * @returns {string} Log type
  */
 function getLogType(filename) {
-    const name = filename.toLowerCase();
-    
-    if (name.includes('syslog')) return 'system';
-    if (name.includes('message')) return 'system';
-    if (name.includes('kern')) return 'kernel';
-    if (name.includes('auth')) return 'authentication';
-    if (name.includes('error')) return 'error';
-    if (name.includes('debug')) return 'debug';
-    if (name.includes('audit')) return 'audit';
-    if (name.includes('sulog')) return 'switch-user';
-    if (name.includes('wtmp') || name.includes('utmp')) return 'login';
-    if (name.includes('zoneweaver')) return 'application';
-    
-    return 'other';
+  const name = filename.toLowerCase();
+
+  if (name.includes('syslog')) {
+    return 'system';
+  }
+  if (name.includes('message')) {
+    return 'system';
+  }
+  if (name.includes('kern')) {
+    return 'kernel';
+  }
+  if (name.includes('auth')) {
+    return 'authentication';
+  }
+  if (name.includes('error')) {
+    return 'error';
+  }
+  if (name.includes('debug')) {
+    return 'debug';
+  }
+  if (name.includes('audit')) {
+    return 'audit';
+  }
+  if (name.includes('sulog')) {
+    return 'switch-user';
+  }
+  if (name.includes('wtmp') || name.includes('utmp')) {
+    return 'login';
+  }
+  if (name.includes('zoneweaver')) {
+    return 'application';
+  }
+
+  return 'other';
 }
 
 /**
@@ -546,10 +575,12 @@ function getLogType(filename) {
  * @returns {string} Formatted file size
  */
 function formatFileSize(bytes) {
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    if (bytes === 0) return '0 B';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  if (bytes === 0) {
+    return '0 B';
+  }
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / 1024 ** i).toFixed(2)} ${sizes[i]}`;
 }
 
 /**
@@ -558,26 +589,39 @@ function formatFileSize(bytes) {
  * @returns {string|null} Grep-compatible date pattern or null
  */
 function formatDateForGrep(since) {
-    try {
-        const date = new Date(since);
-        if (isNaN(date.getTime())) return null;
-        
-        // Format for common log timestamp patterns
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const month = monthNames[date.getMonth()];
-        const day = date.getDate().toString().padStart(2, ' ');
-        
-        // Return pattern that matches "Jan 19" format common in logs
-        return `${month} ${day}`;
-        
-    } catch (error) {
-        return null;
+  try {
+    const date = new Date(since);
+    if (isNaN(date.getTime())) {
+      return null;
     }
+
+    // Format for common log timestamp patterns
+    const monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    const month = monthNames[date.getMonth()];
+    const day = date.getDate().toString().padStart(2, ' ');
+
+    // Return pattern that matches "Jan 19" format common in logs
+    return `${month} ${day}`;
+  } catch (error) {
+    return null;
+  }
 }
 
 export default {
-    listLogFiles,
-    getLogFile,
-    getFaultManagerLogs
+  listLogFiles,
+  getLogFile,
+  getFaultManagerLogs,
 };

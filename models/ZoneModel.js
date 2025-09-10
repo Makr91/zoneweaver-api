@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -60,57 +60,61 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Zone last update timestamp
  */
-const Zones = db.define('zones',{
-    name:{
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Zone name as it appears in the system'
+const Zones = db.define(
+  'zones',
+  {
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Zone name as it appears in the system',
     },
-    zone_id:{
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
-        comment: 'Unique zone identifier from OmniOS'
+    zone_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      comment: 'Unique zone identifier from OmniOS',
     },
-    host:{
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the zone is running'
+    host: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the zone is running',
     },
-    status:{
-        type: DataTypes.STRING,
-        allowNull: false,
-        defaultValue: 'configured',
-        comment: 'Current zone status (configured, installed, running, etc.)'
+    status: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'configured',
+      comment: 'Current zone status (configured, installed, running, etc.)',
     },
-    brand:{
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Zone brand (bhyve, kvm, lx, illumos, etc.)'
+    brand: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Zone brand (bhyve, kvm, lx, illumos, etc.)',
     },
-    vnc_port:{
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Assigned VNC port for console access'
+    vnc_port: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Assigned VNC port for console access',
     },
-    is_orphaned:{
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-        comment: 'Whether zone exists in database but not on system'
+    is_orphaned: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Whether zone exists in database but not on system',
     },
-    auto_discovered:{
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-        comment: 'Whether zone was automatically discovered by system scan'
+    auto_discovered: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Whether zone was automatically discovered by system scan',
     },
-    last_seen:{
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'Last time zone was detected during system scan'
-    }
-},{
-    freezeTableName:true,
-    comment: 'Zone management and metadata storage'
-});
- 
+    last_seen: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Last time zone was detected during system scan',
+    },
+  },
+  {
+    freezeTableName: true,
+    comment: 'Zone management and metadata storage',
+  }
+);
+
 export default Zones;

@@ -1,6 +1,6 @@
-import { Sequelize } from "sequelize";
-import db from "../config/Database.js";
- 
+import { Sequelize } from 'sequelize';
+import db from '../config/Database.js';
+
 const { DataTypes } = Sequelize;
 
 /**
@@ -186,200 +186,204 @@ const { DataTypes } = Sequelize;
  *           format: date-time
  *           description: Record last update timestamp
  */
-const ARCStats = db.define('arc_stats', {
+const ARCStats = db.define(
+  'arc_stats',
+  {
     host: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        comment: 'Host where the ARC stats are collected'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Host where the ARC stats are collected',
     },
     // Core ARC size metrics
     arc_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Current ARC size in bytes (size)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Current ARC size in bytes (size)',
     },
     arc_target_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Target ARC size in bytes (c)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Target ARC size in bytes (c)',
     },
     arc_min_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Minimum ARC size in bytes (c_min)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Minimum ARC size in bytes (c_min)',
     },
     arc_max_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Maximum ARC size in bytes (c_max)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Maximum ARC size in bytes (c_max)',
     },
     arc_meta_used: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'ARC metadata used in bytes (arc_meta_used)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'ARC metadata used in bytes (arc_meta_used)',
     },
     arc_meta_limit: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'ARC metadata limit in bytes (arc_meta_limit)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'ARC metadata limit in bytes (arc_meta_limit)',
     },
-    
+
     // Cache breakdown
     mru_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Most Recently Used cache size in bytes (mru_size)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Most Recently Used cache size in bytes (mru_size)',
     },
     mfu_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Most Frequently Used cache size in bytes (mfu_size)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Most Frequently Used cache size in bytes (mfu_size)',
     },
     data_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Data cache size in bytes (data_size)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Data cache size in bytes (data_size)',
     },
     metadata_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Metadata cache size in bytes (metadata_size)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Metadata cache size in bytes (metadata_size)',
     },
-    
+
     // Hit/miss statistics
     hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Total cache hits (hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Total cache hits (hits)',
     },
     misses: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Total cache misses (misses)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Total cache misses (misses)',
     },
     demand_data_hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Demand data hits (demand_data_hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Demand data hits (demand_data_hits)',
     },
     demand_data_misses: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Demand data misses (demand_data_misses)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Demand data misses (demand_data_misses)',
     },
     demand_metadata_hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Demand metadata hits (demand_metadata_hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Demand metadata hits (demand_metadata_hits)',
     },
     demand_metadata_misses: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Demand metadata misses (demand_metadata_misses)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Demand metadata misses (demand_metadata_misses)',
     },
     prefetch_data_hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Prefetch data hits (prefetch_data_hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Prefetch data hits (prefetch_data_hits)',
     },
     prefetch_data_misses: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Prefetch data misses (prefetch_data_misses)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Prefetch data misses (prefetch_data_misses)',
     },
-    
+
     // MRU/MFU statistics
     mru_hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Most Recently Used hits (mru_hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Most Recently Used hits (mru_hits)',
     },
     mfu_hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Most Frequently Used hits (mfu_hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Most Frequently Used hits (mfu_hits)',
     },
     mru_ghost_hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'MRU ghost list hits (mru_ghost_hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'MRU ghost list hits (mru_ghost_hits)',
     },
     mfu_ghost_hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'MFU ghost list hits (mfu_ghost_hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'MFU ghost list hits (mfu_ghost_hits)',
     },
-    
+
     // Calculated efficiency metrics
     hit_ratio: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'Overall cache hit ratio percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'Overall cache hit ratio percentage',
     },
     data_demand_efficiency: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'Data demand efficiency percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'Data demand efficiency percentage',
     },
     data_prefetch_efficiency: {
-        type: DataTypes.DECIMAL(5, 2),
-        allowNull: true,
-        comment: 'Data prefetch efficiency percentage'
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      comment: 'Data prefetch efficiency percentage',
     },
-    
+
     // Additional ARC metrics
     arc_p: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'ARC target size for MRU list (p)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'ARC target size for MRU list (p)',
     },
     compressed_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Compressed data size in bytes (compressed_size)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Compressed data size in bytes (compressed_size)',
     },
     uncompressed_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'Uncompressed data size in bytes (uncompressed_size)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'Uncompressed data size in bytes (uncompressed_size)',
     },
-    
+
     // L2ARC statistics
     l2_size: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'L2ARC size in bytes (l2_size)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'L2ARC size in bytes (l2_size)',
     },
     l2_hits: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'L2ARC hits (l2_hits)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'L2ARC hits (l2_hits)',
     },
     l2_misses: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-        comment: 'L2ARC misses (l2_misses)'
+      type: DataTypes.BIGINT,
+      allowNull: true,
+      comment: 'L2ARC misses (l2_misses)',
     },
-    
+
     scan_timestamp: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-        comment: 'When this data was collected'
-    }
-}, {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'When this data was collected',
+    },
+  },
+  {
     freezeTableName: true,
     comment: 'ZFS ARC (Adaptive Replacement Cache) statistics from kstat (collected every minute)',
     indexes: [
-        {
-            fields: ['host', 'scan_timestamp']
-        },
-        {
-            fields: ['scan_timestamp']
-        },
-        {
-            fields: ['hit_ratio']
-        }
-    ]
-});
- 
+      {
+        fields: ['host', 'scan_timestamp'],
+      },
+      {
+        fields: ['scan_timestamp'],
+      },
+      {
+        fields: ['hit_ratio'],
+      },
+    ],
+  }
+);
+
 export default ARCStats;
