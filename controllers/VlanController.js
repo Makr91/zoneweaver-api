@@ -11,6 +11,7 @@ import NetworkInterfaces from "../models/NetworkInterfaceModel.js";
 import { Op } from "sequelize";
 import yj from "yieldable-json";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -157,7 +158,13 @@ export const getVlans = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting VLANs:', error);
+        log.api.error('Error getting VLANs', {
+            error: error.message,
+            stack: error.stack,
+            live: live,
+            vid: vid,
+            over: over
+        });
         res.status(500).json({ 
             error: 'Failed to get VLANs',
             details: error.message 
@@ -257,7 +264,12 @@ export const getVlanDetails = async (req, res) => {
         res.json(vlanData);
 
     } catch (error) {
-        console.error('Error getting VLAN details:', error);
+        log.api.error('Error getting VLAN details', {
+            error: error.message,
+            stack: error.stack,
+            vlan: vlan,
+            live: live
+        });
         res.status(500).json({ 
             error: 'Failed to get VLAN details',
             details: error.message 
@@ -419,7 +431,13 @@ export const createVlan = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating VLAN:', error);
+        log.api.error('Error creating VLAN', {
+            error: error.message,
+            stack: error.stack,
+            vid: vid,
+            link: link,
+            name: name
+        });
         res.status(500).json({ 
             error: 'Failed to create VLAN task',
             details: error.message 
@@ -477,33 +495,19 @@ export const createVlan = async (req, res) => {
  *         description: Failed to create VLAN deletion task
  */
 export const deleteVlan = async (req, res) => {
-    console.log('🔧 === VLAN DELETION REQUEST STARTING ===');
-    console.log('📋 VLAN to delete:', req.params.vlan);
-    console.log('📋 Query parameters:', req.query);
-    
     try {
         const { vlan } = req.params;
         const { temporary = false, created_by = 'api' } = req.query;
 
-        console.log('✅ VLAN deletion - parsed parameters:');
-        console.log('   - vlan:', vlan);
-        console.log('   - temporary:', temporary);
-        console.log('   - created_by:', created_by);
-
         // Check if VLAN exists
-        console.log('🔍 Checking if VLAN exists...');
         const existsResult = await executeCommand(`pfexec dladm show-vlan ${vlan}`);
-        console.log('📋 VLAN existence check result:', existsResult.success ? 'EXISTS' : 'NOT FOUND');
         
         if (!existsResult.success) {
-            console.log('❌ VLAN not found, returning 404');
             return res.status(404).json({ 
                 error: `VLAN ${vlan} not found`,
                 details: existsResult.error
             });
         }
-
-        console.log('✅ VLAN exists, creating deletion task...');
 
         // Create task for VLAN deletion
         const task = await Tasks.create({
@@ -523,10 +527,12 @@ export const deleteVlan = async (req, res) => {
             })
         });
 
-        console.log('✅ VLAN deletion task created successfully:');
-        console.log('   - Task ID:', task.id);
-        console.log('   - VLAN:', vlan);
-        console.log('   - Temporary:', temporary);
+        log.app.info('VLAN deletion task created', {
+            task_id: task.id,
+            vlan: vlan,
+            temporary: temporary === 'true' || temporary === true,
+            created_by: created_by
+        });
 
         res.status(202).json({
             success: true,
@@ -536,11 +542,12 @@ export const deleteVlan = async (req, res) => {
             temporary: temporary === 'true' || temporary === true
         });
 
-        console.log('✅ VLAN deletion response sent successfully');
-
     } catch (error) {
-        console.error('❌ Error deleting VLAN:', error);
-        console.error('❌ Error stack:', error.stack);
+        log.api.error('Error deleting VLAN', {
+            error: error.message,
+            stack: error.stack,
+            vlan: req.params.vlan
+        });
         res.status(500).json({ 
             error: 'Failed to create VLAN deletion task',
             details: error.message 

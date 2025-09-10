@@ -10,6 +10,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import yj from 'yieldable-json';
+import { log } from '../lib/Logger.js';
 
 // Get config path from environment variable (set by SMF) or fallback to local config
 const getConfigPath = () => process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
@@ -133,7 +134,10 @@ export const getSettings = async (req, res) => {
 
         res.json(sanitizedConfig);
     } catch (error) {
-        console.error('Error getting settings:', error);
+        log.api.error('Error getting settings', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to get settings', details: error.message });
     }
 };
@@ -189,7 +193,10 @@ export const updateSettings = async (req, res) => {
         res.json({ success: true, message: 'Settings updated successfully. Some changes may require a server restart.' });
 
     } catch (error) {
-        console.error('Error updating settings:', error);
+        log.api.error('Error updating settings', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to update settings', details: error.message });
     }
 };
@@ -203,9 +210,16 @@ const createBackup = async () => {
         const timestamp = Date.now();
         const backupPath = path.join(backupDir, `config-${timestamp}.yaml`);
         await fs.copyFile(configPath, backupPath);
-        console.log(`Created config backup: ${backupPath}`);
+        log.app.info('Created config backup', {
+            backup_path: backupPath,
+            timestamp: timestamp
+        });
     } catch (error) {
-        console.error('Failed to create config backup:', error);
+        log.app.error('Failed to create config backup', {
+            error: error.message,
+            stack: error.stack,
+            backup_dir: backupDir
+        });
     }
 };
 
@@ -274,7 +288,11 @@ export const createConfigBackup = async (req, res) => {
         const backupPath = path.join(backupDir, filename);
         
         await fs.copyFile(configPath, backupPath);
-        console.log(`Created config backup: ${backupPath}`);
+        log.app.info('Created config backup', {
+            backup_path: backupPath,
+            filename: filename,
+            timestamp: timestamp
+        });
         
         res.json({ 
             success: true, 
@@ -285,7 +303,10 @@ export const createConfigBackup = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error creating backup:', error);
+        log.api.error('Error creating backup', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to create backup', details: error.message });
     }
 };
@@ -316,7 +337,11 @@ export const listBackups = async (req, res) => {
         
         res.json(backups);
     } catch (error) {
-        console.error('Error listing backups:', error);
+        log.api.error('Error listing backups', {
+            error: error.message,
+            stack: error.stack,
+            backup_dir: backupDir
+        });
         res.status(500).json({ error: 'Failed to list backups', details: error.message });
     }
 };
@@ -367,7 +392,11 @@ export const deleteBackup = async (req, res) => {
         if (error.code === 'ENOENT') {
             return res.status(404).json({ error: 'Backup not found' });
         }
-        console.error('Error deleting backup:', error);
+        log.api.error('Error deleting backup', {
+            error: error.message,
+            stack: error.stack,
+            filename: filename
+        });
         res.status(500).json({ error: 'Failed to delete backup', details: error.message });
     }
 };
@@ -413,7 +442,11 @@ export const restoreBackup = async (req, res) => {
         res.json({ success: true, message: `Restored configuration from ${filename}. A server restart may be required.` });
 
     } catch (error) {
-        console.error('Error restoring backup:', error);
+        log.api.error('Error restoring backup', {
+            error: error.message,
+            stack: error.stack,
+            filename: filename
+        });
         res.status(500).json({ error: 'Failed to restore backup', details: error.message });
     }
 };
@@ -452,7 +485,7 @@ export const restartServer = async (req, res) => {
         // Schedule restart in detached process after response is sent
         // This ensures the HTTP response is delivered before the process is terminated
         setTimeout(() => {
-            console.log('Initiating server restart via SMF...');
+            log.app.warn('Initiating server restart via SMF');
             
             // Import exec here to avoid loading it at module level
             import('child_process').then(({ exec }) => {
@@ -466,20 +499,25 @@ export const restartServer = async (req, res) => {
                         // This callback likely won't execute since the process will be killed
                         // but we include it for completeness
                         if (error) {
-                            console.error('Restart command error:', error);
-                        } else {
-                            console.log('Restart command executed successfully');
+                            log.app.error('Restart command error', {
+                                error: error.message
+                            });
                         }
                     }
                 );
             }).catch(err => {
-                console.error('Failed to import child_process for restart:', err);
+                log.app.error('Failed to import child_process for restart', {
+                    error: err.message
+                });
             });
             
         }, 1000); // 1 second delay to ensure HTTP response is fully sent
         
     } catch (error) {
-        console.error('Error initiating server restart:', error);
+        log.api.error('Error initiating server restart', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             success: false,
             error: 'Failed to initiate server restart', 

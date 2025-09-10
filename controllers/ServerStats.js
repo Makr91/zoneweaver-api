@@ -4,6 +4,7 @@ import { spawn, exec, execSync } from "child_process";
 import Zones from "../models/ZoneModel.js";
 import VncSessions from "../models/VncSessionModel.js";
 import Tasks from "../models/TaskModel.js";
+import { log } from "../lib/Logger.js";
 const execProm = util.promisify(exec);
 
 
@@ -70,7 +71,10 @@ export const serverStats = async (req, res) => {
             const allzones = execSync("zoneadm list -ic | grep -v global", { encoding: 'utf8' });
             returnObject.allzones = allzones.trim().split("\n").filter(line => line.trim() !== '');
         } catch (error) {
-            console.warn('Failed to get all zones:', error.message);
+            log.monitoring.warn('Failed to get all zones', {
+                error: error.message,
+                command: 'zoneadm list -ic | grep -v global'
+            });
             returnObject.allzones = [];
         }
 
@@ -78,14 +82,20 @@ export const serverStats = async (req, res) => {
             const runningzones = execSync("zoneadm list | grep -v global", { encoding: 'utf8' });
             returnObject.runningzones = runningzones.trim().split("\n").filter(line => line.trim() !== '');
         } catch (error) {
-            console.warn('Failed to get running zones:', error.message);
+            log.monitoring.warn('Failed to get running zones', {
+                error: error.message,
+                command: 'zoneadm list | grep -v global'
+            });
             returnObject.runningzones = [];
         }
 
         res.json(returnObject);
         
     } catch (error) {
-        console.error('Error in serverStats:', error);
+        log.monitoring.error('Error in serverStats', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to retrieve server statistics',
             details: error.message 

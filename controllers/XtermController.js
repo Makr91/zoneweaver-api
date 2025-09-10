@@ -1,5 +1,6 @@
 import { getPtyProcess } from './TerminalSessionController.js';
 import TerminalSessions from '../models/TerminalSessionModel.js';
+import { log } from '../lib/Logger.js';
 
 /**
  * @fileoverview Xterm Terminal WebSocket handler for Zoneweaver API
@@ -20,7 +21,11 @@ export const handleTerminalConnection = async (ws, sessionId) => {
         return;
     }
 
-    console.log(`WebSocket connected to terminal session: ${sessionId} (cookie: ${session.terminal_cookie}), status: ${session.status}`);
+    log.websocket.info('WebSocket connected to terminal session', {
+        session_id: sessionId,
+        terminal_cookie: session.terminal_cookie,
+        status: session.status
+    });
 
     // Handle sessions that are still connecting (PTY not ready yet)
     if (session.status === 'connecting') {
@@ -116,7 +121,11 @@ const setupTerminalConnection = async (ws, sessionId, session, ptyProcess) => {
                 last_activity: new Date() 
             });
         } catch (error) {
-            console.error(`Error updating session buffer for ${sessionId}:`, error);
+            log.websocket.error('Error updating session buffer', {
+                session_id: sessionId,
+                error: error.message,
+                stack: error.stack
+            });
         }
     };
     
@@ -130,18 +139,30 @@ const setupTerminalConnection = async (ws, sessionId, session, ptyProcess) => {
         try {
             await session.update({ last_activity: new Date() });
         } catch (error) {
-            console.error(`Error updating activity for ${sessionId}:`, error);
+            log.websocket.error('Error updating activity timestamp', {
+                session_id: sessionId,
+                error: error.message,
+                stack: error.stack
+            });
         }
     });
 
     // Handle WebSocket close
     ws.on('close', () => {
-        console.log(`WebSocket closed for terminal session: ${sessionId} (cookie: ${session.terminal_cookie})`);
+        log.websocket.info('WebSocket closed for terminal session', {
+            session_id: sessionId,
+            terminal_cookie: session.terminal_cookie
+        });
         ptyProcess.removeListener('data', onPtyData);
     });
 
     // Handle WebSocket errors
     ws.on('error', (error) => {
-        console.error(`WebSocket error for terminal session ${sessionId} (cookie: ${session.terminal_cookie}):`, error);
+        log.websocket.error('WebSocket error for terminal session', {
+            session_id: sessionId,
+            terminal_cookie: session.terminal_cookie,
+            error: error.message,
+            stack: error.stack
+        });
     });
 };

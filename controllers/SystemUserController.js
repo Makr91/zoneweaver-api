@@ -8,6 +8,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
+import { log } from '../lib/Logger.js';
 
 const execAsync = promisify(exec);
 
@@ -24,9 +25,7 @@ const executeCommand = async (command, timeout = 30000) => {
             maxBuffer: 10 * 1024 * 1024 // 10MB buffer
         });
         
-        if (stderr && stderr.trim()) {
-            console.warn(`Command stderr: ${stderr.trim()}`);
-        }
+        // Remove verbose stderr logging - most commands output to stderr even on success
         
         return { 
             success: true, 
@@ -137,7 +136,11 @@ export const getCurrentUserInfo = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting current user info:', error);
+        log.api.error('Error getting current user info', {
+            error: error.message,
+            stack: error.stack,
+            username: os.userInfo().username
+        });
         res.status(500).json({ 
             error: 'Failed to get current user information',
             details: error.message 
@@ -251,7 +254,12 @@ export const getSystemUsers = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting system users:', error);
+        log.api.error('Error getting system users', {
+            error: error.message,
+            stack: error.stack,
+            include_system: include_system,
+            limit: limit
+        });
         res.status(500).json({ 
             error: 'Failed to get system users',
             details: error.message 
@@ -357,7 +365,12 @@ export const getSystemGroups = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting system groups:', error);
+        log.api.error('Error getting system groups', {
+            error: error.message,
+            stack: error.stack,
+            include_system: include_system,
+            limit: limit
+        });
         res.status(500).json({ 
             error: 'Failed to get system groups',
             details: error.message 
@@ -438,7 +451,12 @@ export const lookupUser = async (req, res) => {
         res.json(userInfo);
 
     } catch (error) {
-        console.error('Error looking up user:', error);
+        log.api.error('Error looking up user', {
+            error: error.message,
+            stack: error.stack,
+            uid: uid,
+            username: username
+        });
         res.status(500).json({ 
             error: 'Failed to lookup user',
             details: error.message 
@@ -516,7 +534,12 @@ export const lookupGroup = async (req, res) => {
         res.json(groupInfo);
 
     } catch (error) {
-        console.error('Error looking up group:', error);
+        log.api.error('Error looking up group', {
+            error: error.message,
+            stack: error.stack,
+            gid: gid,
+            groupname: groupname
+        });
         res.status(500).json({ 
             error: 'Failed to lookup group',
             details: error.message 

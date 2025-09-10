@@ -6,6 +6,7 @@ import Zones from '../models/ZoneModel.js';
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
+import { log } from '../lib/Logger.js';
 
 /**
  * @fileoverview Zlogin Session Controller for Zoneweaver API

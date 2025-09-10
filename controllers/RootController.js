@@ -1,4 +1,5 @@
 import Entities from '../models/EntityModel.js';
+import { log } from '../lib/Logger.js';
 
 /**
  * @swagger
@@ -74,7 +75,10 @@ export const getRoot = async (req, res) => {
 
         res.status(200).send(html);
     } catch (error) {
-        console.error('Error fetching entities for root path:', error);
+        log.api.error('Error fetching entities for root path', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).send('<h1>Error 500: Internal Server Error</h1><p>Could not fetch entity list.</p>');
     }
 };

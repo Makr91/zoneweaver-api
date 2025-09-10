@@ -2,6 +2,7 @@ import Entities from "../models/EntityModel.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import config from "../config/ConfigLoader.js";
+import { log } from "../lib/Logger.js";
 
 // Generate a secure API key with wh_ prefix
 const generateApiKeyString = () => {
@@ -98,7 +99,10 @@ export const bootstrapFirstApiKey = async(req, res) => {
         });
         
     } catch (error) {
-        console.log(error);
+        log.auth.error('Bootstrap API key generation failed', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({msg: "Bootstrap failed"});
     }
 };
@@ -193,7 +197,11 @@ export const generateApiKey = async(req, res) => {
         });
         
     } catch (error) {
-        console.log(error);
+        log.auth.error('Failed to generate API key', {
+            error: error.message,
+            stack: error.stack,
+            name: name
+        });
         res.status(500).json({msg: "Failed to generate API key"});
     }
 };
@@ -255,7 +263,10 @@ export const listApiKeys = async(req, res) => {
         });
         
     } catch (error) {
-        console.log(error);
+        log.auth.error('Failed to list API keys', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({msg: "Failed to list API keys"});
     }
 };
@@ -303,7 +314,11 @@ export const deleteApiKey = async(req, res) => {
         });
         
     } catch (error) {
-        console.log(error);
+        log.auth.error('Failed to delete API key', {
+            error: error.message,
+            stack: error.stack,
+            entity_id: entityId
+        });
         res.status(500).json({msg: "Failed to delete API key"});
     }
 };
@@ -351,7 +366,11 @@ export const revokeApiKey = async(req, res) => {
         });
         
     } catch (error) {
-        console.log(error);
+        log.auth.error('Failed to revoke API key', {
+            error: error.message,
+            stack: error.stack,
+            entity_id: entityId
+        });
         res.status(500).json({msg: "Failed to revoke API key"});
     }
 };
@@ -411,7 +430,11 @@ export const getApiKeyInfo = async(req, res) => {
         res.json(entity);
         
     } catch (error) {
-        console.log(error);
+        log.auth.error('Failed to get API key info', {
+            error: error.message,
+            stack: error.stack,
+            entity_id: req.entity?.id
+        });
         res.status(500).json({msg: "Failed to get API key info"});
     }
 };

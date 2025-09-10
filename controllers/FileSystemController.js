@@ -152,7 +152,11 @@ export const browseDirectory = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error browsing directory:', error);
+        log.api.error('Error browsing directory', {
+            error: error.message,
+            stack: error.stack,
+            path: dirPath
+        });
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
             return res.status(403).json({ error: error.message });
@@ -251,7 +255,12 @@ export const createFolder = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating directory:', error);
+        log.filesystem.error('Error creating directory', {
+            error: error.message,
+            stack: error.stack,
+            path: fullPath,
+            name: name
+        });
         
         if (error.message.includes('already exists')) {
             return res.status(400).json({ error: error.message });
@@ -517,7 +526,11 @@ export const downloadFile = async (req, res) => {
         readStream.pipe(res);
 
         readStream.on('error', (error) => {
-            console.error('Error streaming file:', error);
+            log.filesystem.error('Error streaming file', {
+                error: error.message,
+                stack: error.stack,
+                path: normalizedPath
+            });
             if (!res.headersSent) {
                 res.status(500).json({ 
                     error: 'Failed to download file',
@@ -527,7 +540,11 @@ export const downloadFile = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error downloading file:', error);
+        log.api.error('Error downloading file', {
+            error: error.message,
+            stack: error.stack,
+            path: filePath
+        });
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
             return res.status(403).json({ error: error.message });
@@ -612,7 +629,11 @@ export const readFile = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error reading file:', error);
+        log.api.error('Error reading file', {
+            error: error.message,
+            stack: error.stack,
+            path: filePath
+        });
         
         if (error.message.includes('binary file')) {
             return res.status(400).json({ error: 'Cannot read binary file as text' });
@@ -721,7 +742,12 @@ export const writeFile = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error writing file:', error);
+        log.filesystem.error('Error writing file', {
+            error: error.message,
+            stack: error.stack,
+            path: filePath,
+            content_size: content ? Buffer.byteLength(content, 'utf8') : 0
+        });
         
         if (error.message.includes('exceeds edit limit')) {
             return res.status(400).json({ error: error.message });
@@ -819,7 +845,12 @@ export const moveFileItem = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating move task:', error);
+        log.api.error('Error creating move task', {
+            error: error.message,
+            stack: error.stack,
+            source: source,
+            destination: destination
+        });
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
             return res.status(403).json({ error: error.message });
@@ -913,7 +944,12 @@ export const copyFileItem = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating copy task:', error);
+        log.api.error('Error creating copy task', {
+            error: error.message,
+            stack: error.stack,
+            source: source,
+            destination: destination
+        });
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
             return res.status(403).json({ error: error.message });
@@ -985,7 +1021,10 @@ export const renameItem = async (req, res) => {
         // Sanitize new name
         const sanitizedName = new_name.replace(/[^a-zA-Z0-9._-]/g, '_');
         if (sanitizedName !== new_name) {
-            console.warn(`Sanitized filename from '${new_name}' to '${sanitizedName}'`);
+            log.filesystem.warn('Sanitized filename', {
+                original: new_name,
+                sanitized: sanitizedName
+            });
         }
 
         const parentDir = path.dirname(itemPath);
@@ -1004,7 +1043,12 @@ export const renameItem = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error renaming item:', error);
+        log.filesystem.error('Error renaming item', {
+            error: error.message,
+            stack: error.stack,
+            path: itemPath,
+            new_name: new_name
+        });
         
         if (error.message.includes('already exists')) {
             return res.status(409).json({ error: error.message });
@@ -1289,7 +1333,13 @@ export const createArchiveTask = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating archive task:', error);
+        log.api.error('Error creating archive task', {
+            error: error.message,
+            stack: error.stack,
+            sources_count: sources?.length,
+            archive_path: archive_path,
+            format: format
+        });
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
             return res.status(403).json({ error: error.message });
@@ -1383,7 +1433,12 @@ export const extractArchiveTask = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating extraction task:', error);
+        log.api.error('Error creating extraction task', {
+            error: error.message,
+            stack: error.stack,
+            archive_path: archive_path,
+            extract_path: extract_path
+        });
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
             return res.status(403).json({ error: error.message });
@@ -1469,7 +1524,7 @@ export const changePermissions = async (req, res) => {
             });
         }
 
-        console.log(`🔧 [CHMOD] Permission change request:`, {
+        log.filesystem.info('Permission change request', {
             path: itemPath,
             uid: uid,
             gid: gid,
@@ -1516,8 +1571,6 @@ export const changePermissions = async (req, res) => {
         // Get updated item info
         const itemInfo = await getItemInfo(itemPath);
 
-        console.log(`✅ [CHMOD] Successfully changed permissions for: ${itemPath}`);
-
         res.json({
             success: true,
             message: `Permissions updated successfully for '${itemInfo.name}'`,
@@ -1531,7 +1584,15 @@ export const changePermissions = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`❌ [CHMOD] Error changing permissions:`, error);
+        log.filesystem.error('Error changing permissions', {
+            error: error.message,
+            stack: error.stack,
+            path: itemPath,
+            uid: uid,
+            gid: gid,
+            mode: mode,
+            recursive: recursive
+        });
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
             return res.status(403).json({ error: error.message });

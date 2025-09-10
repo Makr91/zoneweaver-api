@@ -3,6 +3,7 @@ import util from 'util';
 import config from '../config/ConfigLoader.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import yj from 'yieldable-json';
+import { log } from '../lib/Logger.js';
 
 const execAsync = util.promisify(exec);
 
@@ -39,8 +40,6 @@ const checkPackage = async (binaryName) => {
 
 const installPackage = async (packageName) => {
     try {
-        console.log(`Creating task to install ${packageName}...`);
-        
         // Create a task for package installation (will be serialized with other package operations)
         const task = await Tasks.create({
             zone_name: 'system',
@@ -60,10 +59,17 @@ const installPackage = async (packageName) => {
             })
         });
 
-        console.log(`Package installation task created for ${packageName} (Task ID: ${task.id})`);
+        log.app.info('Package installation task created', {
+            package: packageName,
+            task_id: task.id
+        });
         return { success: true, task_id: task.id };
     } catch (error) {
-        console.error(`Failed to create installation task for ${packageName}: ${error.message}`);
+        log.app.error('Failed to create installation task', {
+            package: packageName,
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: error.message };
     }
 };
@@ -71,23 +77,27 @@ const installPackage = async (packageName) => {
 export const checkAndInstallPackages = async () => {
     const provisioningConfig = config.get('provisioning');
     if (!provisioningConfig || !provisioningConfig.install_tools) {
-        console.log('Tool provisioning is disabled in the configuration.');
+        // Silently skip if provisioning is disabled
         return;
     }
 
-    console.log('Starting package provisioning check...');
+    log.app.info('Starting package provisioning check');
 
+    const missingPackages = [];
     for (const [packageName, binaryName] of Object.entries(packages)) {
         const isInstalled = await checkPackage(binaryName);
-        if (isInstalled) {
-            console.log(`${packageName} (${binaryName}) is already installed.`);
-        } else {
-            console.log(`${packageName} (${binaryName}) not found. Attempting to install...`);
+        if (!isInstalled) {
+            missingPackages.push({ package: packageName, binary: binaryName });
             await installPackage(packageName);
         }
     }
 
-    console.log('Package provisioning check complete.');
+    if (missingPackages.length > 0) {
+        log.app.info('Package provisioning check complete', {
+            missing_packages: missingPackages.length,
+            packages: missingPackages
+        });
+    }
 };
 
 /**

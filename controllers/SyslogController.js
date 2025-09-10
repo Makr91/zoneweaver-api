@@ -10,6 +10,7 @@ import util from "util";
 import fs from "fs/promises";
 import config from "../config/ConfigLoader.js";
 import { getServiceDetails } from "../lib/ServiceManager.js";
+import { log } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -93,7 +94,12 @@ export const getSyslogConfig = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting syslog configuration:', error);
+        log.api.error('Error getting syslog configuration', {
+            error: error.message,
+            stack: error.stack,
+            config_file: configFile,
+            service: syslogService
+        });
         res.status(500).json({ 
             error: 'Failed to get syslog configuration',
             details: error.message 
@@ -230,7 +236,12 @@ export const updateSyslogConfig = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error updating syslog configuration:', error);
+        log.api.error('Error updating syslog configuration', {
+            error: error.message,
+            stack: error.stack,
+            config_file: configFile,
+            service: syslogService
+        });
         res.status(500).json({ 
             error: 'Failed to update syslog configuration',
             details: error.message 
@@ -323,7 +334,10 @@ export const getSyslogFacilities = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting syslog facilities:', error);
+        log.api.error('Error getting syslog facilities', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get syslog facilities',
             details: error.message 
@@ -375,7 +389,10 @@ export const validateSyslogConfig = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error validating syslog configuration:', error);
+        log.api.error('Error validating syslog configuration', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to validate syslog configuration',
             details: error.message 
@@ -438,7 +455,11 @@ export const reloadSyslogService = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error reloading syslog service:', error);
+        log.api.error('Error reloading syslog service', {
+            error: error.message,
+            stack: error.stack,
+            service: syslogService
+        });
         res.status(500).json({ 
             error: 'Failed to reload syslog service',
             details: error.message 
@@ -557,7 +578,12 @@ export const switchSyslogService = async (req, res) => {
         }
 
     } catch (error) {
-        console.error('Error switching syslog service:', error);
+        log.api.error('Error switching syslog service', {
+            error: error.message,
+            stack: error.stack,
+            current: currentService,
+            target: target
+        });
         res.status(500).json({ 
             error: 'Failed to switch syslog service',
             details: error.message 

@@ -12,6 +12,7 @@ import Zones from '../models/ZoneModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
 import { execSync } from 'child_process';
 import os from 'os';
+import { log } from '../lib/Logger.js';
 
 class ReconciliationService {
     constructor() {
@@ -27,21 +28,29 @@ class ReconciliationService {
         this.isReconciling = true;
 
         try {
-            if (this.reconciliationConfig.log_level === 'info' || this.reconciliationConfig.log_level === 'debug') {
-                console.log('Starting reconciliation...');
-            }
+            const startTime = Date.now();
 
             // Reconcile zones
-            await this.reconcileZones();
+            const zoneResults = await this.reconcileZones();
 
             // Reconcile network interfaces
-            await this.reconcileNetworkInterfaces();
+            const networkResults = await this.reconcileNetworkInterfaces();
 
-            if (this.reconciliationConfig.log_level === 'info' || this.reconciliationConfig.log_level === 'debug') {
-                console.log('Reconciliation complete.');
+            const duration = Date.now() - startTime;
+            
+            // Only log if something was reconciled or took significant time
+            if (zoneResults.orphaned > 0 || networkResults.total > 0 || duration > 5000) {
+                log.monitoring.info('Reconciliation complete', {
+                    duration_ms: duration,
+                    zones_orphaned: zoneResults.orphaned,
+                    network_orphaned: networkResults.total
+                });
             }
         } catch (error) {
-            console.error('Error during reconciliation:', error);
+            log.monitoring.error('Error during reconciliation', {
+                error: error.message,
+                stack: error.stack
+            });
         } finally {
             this.isReconciling = false;
         }
@@ -52,52 +61,88 @@ class ReconciliationService {
             const systemZones = execSync('zoneadm list -c').toString().split('\n').filter(Boolean);
             const dbZones = await Zones.findAll({ where: { host: os.hostname() } });
 
+            let orphaned = 0;
+            const orphanedZones = [];
+
             // Find orphaned zones
             for (const dbZone of dbZones) {
                 if (!systemZones.includes(dbZone.name)) {
-                    if (this.reconciliationConfig.log_level === 'debug') {
-                        console.log(`Found orphaned zone: ${dbZone.name}`);
-                    }
+                    orphaned++;
+                    orphanedZones.push(dbZone.name);
                     await dbZone.destroy();
                 }
             }
+
+            if (orphaned > 0) {
+                log.monitoring.warn('Orphaned zones removed from database', {
+                    count: orphaned,
+                    zones: orphanedZones
+                });
+            }
+
+            return { orphaned, zones: orphanedZones };
         } catch (error) {
-            console.error('Error reconciling zones:', error);
+            log.monitoring.error('Error reconciling zones', {
+                error: error.message,
+                stack: error.stack
+            });
+            return { orphaned: 0, zones: [] };
         }
     }
 
     async reconcileNetworkInterfaces() {
-        await this.reconcileResourceType('vnic', 'dladm show-vnic -p -o link');
-        await this.reconcileResourceType('aggr', 'dladm show-aggr -p -o link');
-        await this.reconcileResourceType('bridge', 'dladm show-bridge -p -o bridge');
-        await this.reconcileResourceType('etherstub', 'dladm show-etherstub -p');
-        await this.reconcileResourceType('vlan', 'dladm show-vlan -p -o link');
+        const results = {
+            vnic: await this.reconcileResourceType('vnic', 'dladm show-vnic -p -o link'),
+            aggr: await this.reconcileResourceType('aggr', 'dladm show-aggr -p -o link'),
+            bridge: await this.reconcileResourceType('bridge', 'dladm show-bridge -p -o bridge'),
+            etherstub: await this.reconcileResourceType('etherstub', 'dladm show-etherstub -p'),
+            vlan: await this.reconcileResourceType('vlan', 'dladm show-vlan -p -o link')
+        };
+
+        const total = Object.values(results).reduce((sum, count) => sum + count, 0);
+        return { total, details: results };
     }
 
     async reconcileResourceType(resourceClass, command) {
         try {
-            if (this.reconciliationConfig.log_level === 'debug') {
-                console.log(`Reconciling ${resourceClass}s...`);
-            }
             const systemResources = execSync(command).toString().split('\n').filter(Boolean).map(line => line.split(':')[0]);
             const dbResources = await NetworkInterfaces.findAll({ where: { host: os.hostname(), class: resourceClass } });
 
+            let orphaned = 0;
+            const orphanedResources = [];
+
             for (const dbResource of dbResources) {
                 if (!systemResources.includes(dbResource.link)) {
-                    if (this.reconciliationConfig.log_level === 'debug') {
-                        console.log(`Found orphaned ${resourceClass}: ${dbResource.link}`);
-                    }
+                    orphaned++;
+                    orphanedResources.push(dbResource.link);
                     await dbResource.destroy();
                 }
             }
+
+            if (orphaned > 0) {
+                log.monitoring.warn(`Orphaned ${resourceClass} resources removed`, {
+                    class: resourceClass,
+                    count: orphaned,
+                    resources: orphanedResources
+                });
+            }
+
+            return orphaned;
         } catch (error) {
-            console.error(`Error reconciling ${resourceClass}s:`, error);
+            log.monitoring.error(`Error reconciling ${resourceClass} resources`, {
+                class: resourceClass,
+                error: error.message,
+                stack: error.stack
+            });
+            return 0;
         }
     }
 
     start() {
         if (this.reconciliationConfig.enabled) {
-            console.log('Starting reconciliation service...');
+            log.monitoring.info('Starting reconciliation service', {
+                interval_seconds: this.reconciliationConfig.interval
+            });
             this.reconcile(); // Run on startup
             setInterval(() => {
                 this.reconcile();

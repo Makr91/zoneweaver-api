@@ -16,6 +16,7 @@ import {
     getProperties
 } from '../lib/ServiceManager.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import { log } from '../lib/Logger.js';
 
 /**
  * @swagger
@@ -74,7 +75,12 @@ export const listServices = async (req, res) => {
         const services = await getServices(options);
         res.json(services);
     } catch (error) {
-        console.error('Error listing services:', error);
+        log.api.error('Error listing services', {
+            error: error.message,
+            stack: error.stack,
+            pattern: pattern,
+            zone: zone
+        });
         res.status(500).json({ error: 'Failed to retrieve services' });
     }
 };
@@ -111,7 +117,11 @@ export const getServiceDetailsController = async (req, res) => {
         const service = await getServiceDetails(decodedFmri);
         res.json(service);
     } catch (error) {
-        console.error('Error getting service details:', error);
+        log.api.error('Error getting service details', {
+            error: error.message,
+            stack: error.stack,
+            fmri: decodedFmri
+        });
         res.status(500).json({ error: 'Failed to retrieve service details' });
     }
 };
@@ -165,7 +175,13 @@ export const serviceAction = async (req, res) => {
             task_id: task.id
         });
     } catch (error) {
-        console.error(`Error creating task for action ${req.body.action} on service ${req.body.fmri}:`, error);
+        log.api.error('Error creating service action task', {
+            error: error.message,
+            stack: error.stack,
+            action: req.body.action,
+            fmri: decodedFmri,
+            created_by: req.entity?.name
+        });
         res.status(500).json({ error: `Failed to create task for action ${req.body.action}` });
     }
 };
@@ -202,7 +218,11 @@ export const getPropertiesController = async (req, res) => {
         const properties = await getProperties(decodedFmri);
         res.json(properties);
     } catch (error) {
-        console.error('Error getting service properties:', error);
+        log.api.error('Error getting service properties', {
+            error: error.message,
+            stack: error.stack,
+            fmri: decodedFmri
+        });
         res.status(500).json({ error: 'Failed to retrieve service properties' });
     }
 };

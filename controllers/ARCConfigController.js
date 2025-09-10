@@ -10,6 +10,7 @@ import util from "util";
 import os from "os";
 import fs from "fs/promises";
 import { setRebootRequired, getRebootStatus } from "../lib/RebootManager.js";
+import { log } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -200,7 +201,11 @@ export const getARCConfig = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting ZFS ARC configuration:', error);
+        log.api.error('Error getting ZFS ARC configuration', {
+            error: error.message,
+            stack: error.stack,
+            host: hostname
+        });
         res.status(500).json({ 
             error: 'Failed to get ZFS ARC configuration',
             details: error.message 
@@ -424,7 +429,9 @@ export const updateARCConfig = async (req, res) => {
             const collector = new StorageCollector();
             await collector.collectARCStats();
         } catch (collectionError) {
-            console.warn('Failed to immediately update ARC stats data:', collectionError.message);
+            log.monitoring.warn('Failed to immediately update ARC stats data', {
+                error: collectionError.message
+            });
         }
 
         res.json({
@@ -435,7 +442,10 @@ export const updateARCConfig = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error updating ZFS configuration:', error);
+        log.api.error('Error updating ZFS configuration', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to update ZFS configuration',
             details: error.message 
@@ -519,7 +529,10 @@ export const validateARCConfig = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error validating ZFS ARC configuration:', error);
+        log.api.error('Error validating ZFS ARC configuration', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to validate ZFS ARC configuration',
             details: error.message 
@@ -577,13 +590,14 @@ export const resetARCConfig = async (req, res) => {
                 // Use pfexec to remove the file with proper permissions
                 const { stdout, stderr } = await execProm(`pfexec rm -f ${configPath}`, { timeout: 5000 });
                 
-                if (stderr && stderr.trim()) {
-                    console.warn(`Remove config file stderr: ${stderr}`);
-                }
+                // Remove verbose stderr logging
                 
                 results.changes.push(`Persistent: Removed configuration file ${configPath}`);
             } catch (error) {
-                console.warn(`Failed to remove config file: ${error.message}`);
+                log.filesystem.warn('Failed to remove config file', {
+                    error: error.message,
+                    config_path: configPath
+                });
                 results.changes.push(`Persistent: No configuration file to remove (${configPath})`);
             }
             
@@ -602,7 +616,10 @@ export const resetARCConfig = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error resetting ZFS ARC configuration:', error);
+        log.api.error('Error resetting ZFS ARC configuration', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to reset ZFS ARC configuration',
             details: error.message 
@@ -656,7 +673,10 @@ async function getCurrentARCStats() {
         return arcData;
         
     } catch (error) {
-        console.error('Error getting current ARC stats:', error);
+        log.monitoring.error('Error getting current ARC stats', {
+            error: error.message,
+            stack: error.stack
+        });
         throw new Error(`Failed to get ARC statistics: ${error.message}`);
     }
 }
@@ -677,7 +697,10 @@ async function getPhysicalMemoryBytes() {
         return parseInt(match[1]) * 1024 * 1024; // Convert MB to bytes
         
     } catch (error) {
-        console.error('Error getting physical memory:', error);
+        log.monitoring.error('Error getting physical memory', {
+            error: error.message,
+            stack: error.stack
+        });
         throw new Error(`Failed to get physical memory: ${error.message}`);
     }
 }
@@ -709,7 +732,9 @@ async function getZFSTunableParams() {
         return params;
         
     } catch (error) {
-        console.warn('Error getting ZFS tunable parameters:', error.message);
+        log.monitoring.warn('Error getting ZFS tunable parameters', {
+            error: error.message
+        });
         // Return empty object if we can't get tunables - not critical for basic functionality
         return {};
     }
@@ -891,15 +916,14 @@ async function validateAllZFSSettings(settings, physicalMemoryBytes, currentConf
 async function applyRuntimeZFSSetting(parameter, value) {
     try {
         const command = `echo "${parameter}/W0t${value}" | pfexec mdb -kw`;
-        console.log(`Applying runtime ZFS setting: ${command}`);
+        log.app.info('Applying runtime ZFS setting', {
+            parameter: parameter,
+            value: value
+        });
         
         const { stdout, stderr } = await execProm(command, { timeout: 10000 });
         
-        if (stderr && stderr.trim()) {
-            console.warn(`Runtime ZFS setting stderr for ${parameter}:`, stderr);
-        }
-        
-        console.log(`Successfully applied runtime setting: ${parameter} = ${value}`);
+        // Remove verbose stderr logging
         
     } catch (error) {
         throw new Error(`Failed to apply runtime ZFS setting ${parameter}: ${error.message}`);
@@ -949,11 +973,11 @@ async function applyPersistentZFSSettings(settings) {
         const command = `echo '${configContent.replace(/'/g, "'\\''")}' | pfexec tee ${configPath}`;
         const { stdout, stderr } = await execProm(command, { timeout: 10000 });
         
-        if (stderr && stderr.trim()) {
-            console.warn(`Persistent ZFS config stderr: ${stderr}`);
-        }
+        // Remove verbose stderr logging
         
-        console.log(`Successfully created persistent ZFS configuration: ${configPath}`);
+        log.app.info('Successfully created persistent ZFS configuration', {
+            config_path: configPath
+        });
         
     } catch (error) {
         throw new Error(`Failed to create persistent ZFS configuration: ${error.message}`);

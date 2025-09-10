@@ -8,6 +8,7 @@
 import PCIDevices from "../models/PCIDeviceModel.js";
 import { Op } from "sequelize";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Determine if a device is capable of PCI passthrough
@@ -208,7 +209,12 @@ export const listDevices = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error listing devices:', error);
+        log.api.error('Error listing devices', {
+            error: error.message,
+            stack: error.stack,
+            hostname: hostname,
+            filters: { category, ppt_enabled, ppt_capable, driver_attached, available }
+        });
         res.status(500).json({ error: 'Failed to retrieve devices' });
     }
 };
@@ -272,7 +278,13 @@ export const listAvailableDevices = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error listing available devices:', error);
+        log.api.error('Error listing available devices', {
+            error: error.message,
+            stack: error.stack,
+            hostname: hostname,
+            category: category,
+            ppt_only: ppt_only
+        });
         res.status(500).json({ error: 'Failed to retrieve available devices' });
     }
 };
@@ -326,7 +338,12 @@ export const getDeviceDetails = async (req, res) => {
         res.json(device);
         
     } catch (error) {
-        console.error('Error getting device details:', error);
+        log.api.error('Error getting device details', {
+            error: error.message,
+            stack: error.stack,
+            device_id: deviceId,
+            hostname: hostname
+        });
         res.status(500).json({ error: 'Failed to retrieve device details' });
     }
 };
@@ -398,7 +415,11 @@ export const getDeviceCategories = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting device categories:', error);
+        log.api.error('Error getting device categories', {
+            error: error.message,
+            stack: error.stack,
+            hostname: hostname
+        });
         res.status(500).json({ error: 'Failed to retrieve device categories' });
     }
 };
@@ -470,7 +491,11 @@ export const getPPTStatus = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting PPT status:', error);
+        log.api.error('Error getting PPT status', {
+            error: error.message,
+            stack: error.stack,
+            hostname: hostname
+        });
         res.status(500).json({ error: 'Failed to retrieve PPT status' });
     }
 };
@@ -534,7 +559,11 @@ export const triggerDeviceDiscovery = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error triggering device discovery:', error);
+        log.api.error('Error triggering device discovery', {
+            error: error.message,
+            stack: error.stack,
+            hostname: hostname
+        });
         res.status(500).json({ 
             success: false,
             error: 'Failed to trigger device discovery',

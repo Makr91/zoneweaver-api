@@ -9,6 +9,7 @@ import { spawn } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import yj from "yieldable-json";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -196,7 +197,9 @@ export const checkForUpdates = async (req, res) => {
     try {
         const { format = 'structured' } = req.query;
         
-        console.log('🔍 Checking for system updates...');
+        log.monitoring.info('Checking for system updates', {
+            format: format
+        });
         const result = await executeCommand('pfexec pkg update -n');
         
         if (format === 'raw') {
@@ -242,7 +245,11 @@ export const checkForUpdates = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error checking for updates:', error);
+        log.monitoring.error('Error checking for updates', {
+            error: error.message,
+            stack: error.stack,
+            format: format
+        });
         res.status(500).json({ 
             error: 'Failed to check for updates',
             details: error.message 
@@ -356,7 +363,13 @@ export const installUpdates = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating update task:', error);
+        log.api.error('Error creating system update task', {
+            error: error.message,
+            stack: error.stack,
+            packages: packages,
+            backup_be: backup_be,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create system update task',
             details: error.message 
@@ -454,7 +467,12 @@ export const getUpdateHistory = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting update history:', error);
+        log.monitoring.error('Error getting update history', {
+            error: error.message,
+            stack: error.stack,
+            limit: limit,
+            operation: operation
+        });
         res.status(500).json({ 
             error: 'Failed to get update history',
             details: error.message 
@@ -545,7 +563,13 @@ export const refreshMetadata = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating refresh task:', error);
+        log.api.error('Error creating metadata refresh task', {
+            error: error.message,
+            stack: error.stack,
+            full: full,
+            publishers: publishers,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create metadata refresh task',
             details: error.message 

@@ -10,6 +10,7 @@ import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import yj from "yieldable-json";
 import fs from "fs";
 import path from "path";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -854,7 +855,10 @@ export const getTimeSyncConfig = async (req, res) => {
                 configExists = true;
             }
         } catch (error) {
-            console.warn(`Failed to read config file ${configFile}:`, error.message);
+            log.filesystem.warn('Failed to read time sync config file', {
+                config_file: configFile,
+                error: error.message
+            });
         }
         
         res.json({
@@ -867,9 +871,12 @@ export const getTimeSyncConfig = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting time sync config:', error);
+        log.api.error('Error getting time sync status', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
-            error: 'Failed to get time sync configuration',
+            error: 'Failed to get time sync status',
             details: error.message 
         });
     }
@@ -962,9 +969,12 @@ export const updateTimeSyncConfig = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error updating time sync config:', error);
+        log.api.error('Error getting time sync config', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
-            error: 'Failed to create time sync config update task',
+            error: 'Failed to get time sync configuration',
             details: error.message 
         });
     }
@@ -1044,9 +1054,13 @@ export const forceTimeSync = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error creating force time sync task:', error);
+        log.api.error('Error updating time sync config', {
+            error: error.message,
+            stack: error.stack,
+            service: serviceInfo?.service
+        });
         res.status(500).json({ 
-            error: 'Failed to create time sync task',
+            error: 'Failed to create time sync config update task',
             details: error.message 
         });
     }
@@ -1102,9 +1116,12 @@ export const getTimezone = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting timezone:', error);
+        log.api.error('Error creating force time sync task', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
-            error: 'Failed to get timezone',
+            error: 'Failed to create time sync task',
             details: error.message 
         });
     }
@@ -1191,9 +1208,12 @@ export const setTimezone = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error setting timezone:', error);
+        log.api.error('Error getting timezone', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
-            error: 'Failed to create timezone update task',
+            error: 'Failed to get timezone',
             details: error.message 
         });
     }
@@ -1288,9 +1308,13 @@ export const listTimezones = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error listing timezones:', error);
+        log.api.error('Error setting timezone', {
+            error: error.message,
+            stack: error.stack,
+            timezone: timezone
+        });
         res.status(500).json({ 
-            error: 'Failed to list timezones',
+            error: 'Failed to create timezone update task',
             details: error.message 
         });
     }
@@ -1355,9 +1379,12 @@ export const getAvailableTimeSyncSystems = async (req, res) => {
         res.json(systemsInfo);
         
     } catch (error) {
-        console.error('Error getting available time sync systems:', error);
+        log.api.error('Error listing timezones', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
-            error: 'Failed to get available time sync systems',
+            error: 'Failed to list timezones',
             details: error.message 
         });
     }
@@ -1495,7 +1522,11 @@ export const switchTimeSyncSystem = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error switching time sync system:', error);
+        log.api.error('Error switching time sync system', {
+            error: error.message,
+            stack: error.stack,
+            target_system: target_system
+        });
         res.status(500).json({ 
             error: 'Failed to create time sync system switch task',
             details: error.message 

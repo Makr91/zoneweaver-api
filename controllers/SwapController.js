@@ -13,6 +13,7 @@ import SwapArea from "../models/SwapAreaModel.js";
 import MemoryStats from "../models/MemoryStatsModel.js";
 import ZFSPools from "../models/ZFSPoolModel.js";
 import config from "../config/ConfigLoader.js";
+import { log } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -92,7 +93,12 @@ export const listSwapAreas = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error listing swap areas:', error);
+        log.api.error('Error listing swap areas', {
+            error: error.message,
+            stack: error.stack,
+            host: hostname,
+            filters: { pool, active_only }
+        });
         res.status(500).json({ 
             error: 'Failed to list swap areas',
             details: error.message 
@@ -265,7 +271,11 @@ export const getSwapSummary = async (req, res) => {
             } : null
         });
     } catch (error) {
-        console.error('Error getting swap summary:', error);
+        log.api.error('Error getting swap summary', {
+            error: error.message,
+            stack: error.stack,
+            host: hostname
+        });
         res.status(500).json({ 
             error: 'Failed to get swap summary',
             details: error.message 
@@ -341,7 +351,11 @@ export const addSwapArea = async (req, res) => {
                     }
                 }
             } catch (error) {
-                console.warn('Could not verify rpool space:', error.message);
+                log.monitoring.warn('Could not verify rpool space', {
+                    error: error.message,
+                    pool: 'rpool',
+                    path: path
+                });
             }
         }
 
@@ -350,14 +364,16 @@ export const addSwapArea = async (req, res) => {
         if (swaplow !== undefined) command += ` ${swaplow}`;
         if (swaplen !== undefined) command += ` ${swaplen}`;
 
-        console.log(`Executing: ${command}`);
+        log.app.info('Executing swap add command', {
+            command: command,
+            path: path,
+            pool: poolAssignment
+        });
         
         // Execute swap add command
         const { stdout, stderr } = await execProm(command, { timeout: 30000 });
         
-        if (stderr && stderr.trim()) {
-            console.warn('Swap add stderr:', stderr);
-        }
+        // Remove verbose stderr logging - swap commands output to stderr even on success
 
         // Verify the swap area was added by checking swap -l
         const { stdout: verifyOutput } = await execProm('pfexec swap -l', { timeout: 10000 });
@@ -377,7 +393,10 @@ export const addSwapArea = async (req, res) => {
             const collector = new SystemMetricsCollector();
             await collector.collectSwapAreas();
         } catch (collectionError) {
-            console.warn('Failed to immediately update swap area data:', collectionError.message);
+            log.monitoring.warn('Failed to immediately update swap area data', {
+                error: collectionError.message,
+                path: path
+            });
         }
 
         res.json({
@@ -390,7 +409,12 @@ export const addSwapArea = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error adding swap area:', error);
+        log.api.error('Error adding swap area', {
+            error: error.message,
+            stack: error.stack,
+            path: path,
+            poolAssignment: poolAssignment
+        });
         res.status(500).json({ 
             error: 'Failed to add swap area',
             details: error.message 
@@ -464,14 +488,15 @@ export const removeSwapArea = async (req, res) => {
         let command = `pfexec swap -d ${path}`;
         if (swaplow !== undefined) command += ` ${swaplow}`;
 
-        console.log(`Executing: ${command}`);
+        log.app.info('Executing swap remove command', {
+            command: command,
+            path: path
+        });
         
         // Execute swap remove command
         const { stdout, stderr } = await execProm(command, { timeout: 30000 });
         
-        if (stderr && stderr.trim()) {
-            console.warn('Swap remove stderr:', stderr);
-        }
+        // Remove verbose stderr logging - swap commands output to stderr even on success
 
         // Verify the swap area was removed
         const { stdout: verifyOutput } = await execProm('pfexec swap -l', { timeout: 10000 });
@@ -505,7 +530,11 @@ export const removeSwapArea = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error removing swap area:', error);
+        log.api.error('Error removing swap area', {
+            error: error.message,
+            stack: error.stack,
+            path: path
+        });
         res.status(500).json({ 
             error: 'Failed to remove swap area',
             details: error.message 
@@ -605,7 +634,11 @@ export const getHostsWithLowSwap = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting hosts with low swap:', error);
+        log.api.error('Error getting hosts with low swap', {
+            error: error.message,
+            stack: error.stack,
+            threshold: threshold
+        });
         res.status(500).json({ 
             error: 'Failed to get hosts with low swap',
             details: error.message 

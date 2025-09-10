@@ -878,7 +878,10 @@ class NetworkCollector {
                             });
                         }
                     } catch (lacpError) {
-                        console.warn(`⚠️  Failed to get LACP info for ${aggr.link}:`, lacpError.message);
+                        log.monitoring.warn('Failed to get LACP info for aggregate', {
+                            aggregate: aggr.link,
+                            error: lacpError.message
+                        });
                     }
 
                     // Update aggregate record with detailed information
@@ -898,14 +901,20 @@ class NetworkCollector {
                     }
 
                 } catch (detailError) {
-                    console.warn(`⚠️  Failed to get detailed info for aggregate ${aggr.link}:`, detailError.message);
+                    log.monitoring.warn('Failed to get detailed info for aggregate', {
+                        aggregate: aggr.link,
+                        error: detailError.message
+                    });
                 }
             }
 
             return aggrData;
 
         } catch (error) {
-            console.warn('⚠️  Failed to collect aggregate data:', error.message);
+            log.monitoring.warn('Failed to collect aggregate data', {
+                error: error.message,
+                hostname: this.hostname
+            });
             return [];
         }
     }
@@ -931,14 +940,20 @@ class NetworkCollector {
                 const vnicData = this.parseVnicParseable(vnicOutput);
                 allInterfaces.push(...vnicData);
             } catch (error) {
-                console.warn('⚠️  Failed to collect VNIC data with parseable format, trying legacy format:', error.message);
+                log.monitoring.warn('Failed to collect VNIC data with parseable format, trying legacy format', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
                 // Fallback to legacy format
                 try {
                     const { stdout: vnicOutput } = await execProm('pfexec dladm show-vnic', { timeout });
                     const vnicData = this.parseVnicOutput(vnicOutput);
                     allInterfaces.push(...vnicData);
                 } catch (fallbackError) {
-                    console.warn('⚠️  Failed to collect VNIC data with legacy format:', fallbackError.message);
+                    log.monitoring.warn('Failed to collect VNIC data with legacy format', {
+                        error: fallbackError.message,
+                        hostname: this.hostname
+                    });
                 }
             }
 
@@ -957,7 +972,10 @@ class NetworkCollector {
                     }
                 });
             } catch (error) {
-                console.warn('⚠️  Failed to collect Ethernet data:', error.message);
+                log.monitoring.warn('Failed to collect Ethernet data', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Collect Physical interface information
@@ -975,7 +993,10 @@ class NetworkCollector {
                     }
                 });
             } catch (error) {
-                console.warn('⚠️  Failed to collect Physical interface data:', error.message);
+                log.monitoring.warn('Failed to collect Physical interface data', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Collect Link information
@@ -1007,7 +1028,10 @@ class NetworkCollector {
                     }
                 });
             } catch (error) {
-                console.warn('⚠️  Failed to collect Link data:', error.message);
+                log.monitoring.warn('Failed to collect Link data', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Collect Aggregate information
@@ -1027,7 +1051,10 @@ class NetworkCollector {
                     allInterfaces.push(...filteredInterfaces); // Repopulate
                 }
             } catch (error) {
-                console.warn('⚠️  Failed to collect Aggregate data:', error.message);
+                log.monitoring.warn('Failed to collect Aggregate data', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Remove duplicate etherstubs, VLANs, and other interface types

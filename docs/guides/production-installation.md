@@ -204,12 +204,12 @@ pfexec svcadm refresh application/zoneweaver-api
 
 ### Log Files
 
-- **Application Log**: `/var/log/zoneweaver-api/zoneweaver-api.log`
+- **Application Log**: `/var/log/zoneweaver-api/application.log`
 - **SMF Service Log**: `/var/svc/log/application-zoneweaver-api:default.log`
 
 ```bash
 # Monitor application logs
-tail -f /var/log/zoneweaver-api/zoneweaver-api.log
+tail -f /var/log/zoneweaver-api/application.log
 
 # Monitor service logs
 tail -f /var/svc/log/application-zoneweaver-api:default.log
@@ -305,7 +305,7 @@ grep zoneweaver-api /etc/logadm.conf
 
 3. **Check application logs**:
    ```bash
-   tail -f /var/log/zoneweaver-api/zoneweaver-api.log
+   tail -f /var/log/zoneweaver-api/application.log
    ```
 
 ### Common Issues

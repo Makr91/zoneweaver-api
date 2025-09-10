@@ -56,7 +56,7 @@ svcadm enable system/virtualization/zoneweaver-api
 svcs system/virtualization/zoneweaver-api
 
 # View service logs
-tail -f /var/log/zoneweaver-api/zoneweaver-api.log
+tail -f /var/log/zoneweaver-api/application.log
 ```
 
 ## Configuration
@@ -111,7 +111,7 @@ svcs -l system/virtualization/zoneweaver-api
 ```
 
 ### Log Files
-- **Service Log**: `/var/log/zoneweaver-api/zoneweaver-api.log`
+- **Service Log**: `/var/log/zoneweaver-api/application.log`
 - **SMF Log**: `/var/svc/log/system-virtualization-zoneweaver-api:default.log`
 
 ## Build Process
@@ -130,7 +130,7 @@ The package is built automatically via GitHub Actions when a new release is crea
 ### Service Won't Start
 1. Check SMF service status: `svcs -xv system/virtualization/zoneweaver-api`
 2. Check service logs: `tail -f /var/svc/log/system-virtualization-zoneweaver-api:default.log`
-3. Check application logs: `tail -f /var/log/zoneweaver-api/zoneweaver-api.log`
+3. Check application logs: `tail -f /var/log/zoneweaver-api/application.log`
 4. Verify configuration: `/etc/zoneweaver-api/config.yaml`
 
 ### SSL Certificate Issues

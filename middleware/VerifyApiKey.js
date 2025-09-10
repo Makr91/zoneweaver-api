@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import Entities from "../models/EntityModel.js";
+import { log } from "../lib/Logger.js";
 
 /**
  * @fileoverview API Key verification middleware for Zoneweaver API
@@ -18,7 +19,7 @@ import Entities from "../models/EntityModel.js";
  * // Usage in routes
  * router.get('/protected', verifyApiKey, (req, res) => {
  *   // req.entity contains validated entity information
- *   console.log(req.entity.name); // Entity name
+ *   log.auth.info('Authenticated request', { entity: req.entity.name });
  * });
  * 
  * @example
@@ -69,7 +70,13 @@ export const verifyApiKey = async (req, res, next) => {
         
         next();
     } catch (error) {
-        console.log(error);
+        log.auth.error('API key validation failed', {
+            error: error.message,
+            stack: error.stack,
+            api_key_provided: !!apiKey,
+            request_path: req.path,
+            request_method: req.method
+        });
         return res.status(500).json({msg: "API key validation failed"});
     }
 };

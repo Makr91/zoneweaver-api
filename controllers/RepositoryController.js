@@ -9,6 +9,7 @@ import { spawn } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import yj from "yieldable-json";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -262,7 +263,13 @@ export const listRepositories = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error listing repositories:', error);
+        log.api.error('Error listing repositories', {
+            error: error.message,
+            stack: error.stack,
+            format: format,
+            enabled_only: enabled_only,
+            publisher: publisher
+        });
         res.status(500).json({ 
             error: 'Failed to list repositories',
             details: error.message 
@@ -431,7 +438,13 @@ export const addRepository = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating repository addition task:', error);
+        log.api.error('Error creating repository addition task', {
+            error: error.message,
+            stack: error.stack,
+            name: name,
+            origin: origin,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create repository addition task',
             details: error.message 
@@ -512,7 +525,12 @@ export const removeRepository = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating repository removal task:', error);
+        log.api.error('Error creating repository removal task', {
+            error: error.message,
+            stack: error.stack,
+            name: name,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create repository removal task',
             details: error.message 
@@ -685,7 +703,12 @@ export const modifyRepository = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating repository modification task:', error);
+        log.api.error('Error creating repository modification task', {
+            error: error.message,
+            stack: error.stack,
+            name: name,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create repository modification task',
             details: error.message 
@@ -764,7 +787,12 @@ export const enableRepository = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating repository enable task:', error);
+        log.api.error('Error creating repository enable task', {
+            error: error.message,
+            stack: error.stack,
+            name: name,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create repository enable task',
             details: error.message 
@@ -843,7 +871,12 @@ export const disableRepository = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating repository disable task:', error);
+        log.api.error('Error creating repository disable task', {
+            error: error.message,
+            stack: error.stack,
+            name: name,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create repository disable task',
             details: error.message 

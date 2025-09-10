@@ -14,6 +14,7 @@ import yj from "yieldable-json";
 import { setRebootRequired } from "../lib/RebootManager.js";
 import os from "os";
 import fs from "fs";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -83,7 +84,9 @@ export const getHostname = async (req, res) => {
                 nodenameFile = fs.readFileSync('/etc/nodename', 'utf8').trim();
             }
         } catch (error) {
-            console.warn('Could not read /etc/nodename:', error.message);
+            log.filesystem.warn('Could not read /etc/nodename', {
+                error: error.message
+            });
         }
 
         // Check for mismatch
@@ -100,7 +103,10 @@ export const getHostname = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting hostname:', error);
+        log.api.error('Error getting hostname', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to get hostname',
             details: error.message 
@@ -224,7 +230,11 @@ export const setHostname = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error setting hostname:', error);
+        log.api.error('Error setting hostname', {
+            error: error.message,
+            stack: error.stack,
+            hostname: hostname
+        });
         res.status(500).json({ 
             error: 'Failed to create hostname change task',
             details: error.message 
@@ -373,7 +383,12 @@ export const getIPAddresses = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error getting IP addresses:', error);
+        log.api.error('Error getting IP addresses', {
+            error: error.message,
+            stack: error.stack,
+            live: live,
+            interface: iface
+        });
         res.status(500).json({ 
             error: 'Failed to get IP addresses',
             details: error.message 
@@ -526,7 +541,13 @@ export const createIPAddress = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating IP address:', error);
+        log.api.error('Error creating IP address', {
+            error: error.message,
+            stack: error.stack,
+            interface: iface,
+            type: type,
+            addrobj: addrobj
+        });
         res.status(500).json({ 
             error: 'Failed to create IP address task',
             details: error.message 
@@ -584,34 +605,20 @@ export const createIPAddress = async (req, res) => {
  *         description: Failed to create IP address deletion task
  */
 export const deleteIPAddress = async (req, res) => {
-    console.log('🔧 === IP ADDRESS DELETION REQUEST STARTING ===');
-    console.log('📋 Raw req.params:', req.params);
-    console.log('📋 Query parameters:', req.query);
-    
     try {
         // With wildcard route (*), the addrobj is in req.params[0]
         const addrobj = req.params[0];
         const { release = false, created_by = 'api' } = req.query;
 
-        console.log('✅ IP address deletion - parsed parameters:');
-        console.log('   - addrobj (from wildcard):', addrobj);
-        console.log('   - release:', release);
-        console.log('   - created_by:', created_by);
-
         // Check if address object exists in current system
-        console.log('🔍 Checking if address object exists...');
         const result = await executeCommand(`pfexec ipadm show-addr ${addrobj}`);
-        console.log('📋 Address existence check result:', result.success ? 'EXISTS' : 'NOT FOUND');
         
         if (!result.success) {
-            console.log('❌ Address object not found, returning 404');
             return res.status(404).json({ 
                 error: `Address object ${addrobj} not found`,
                 details: result.error
             });
         }
-
-        console.log('✅ Address object exists, creating deletion task...');
 
         // Create task for IP address deletion
         const task = await Tasks.create({
@@ -631,10 +638,12 @@ export const deleteIPAddress = async (req, res) => {
             })
         });
 
-        console.log('✅ IP address deletion task created successfully:');
-        console.log('   - Task ID:', task.id);
-        console.log('   - Address object:', addrobj);
-        console.log('   - Release DHCP:', release);
+        log.app.info('IP address deletion task created', {
+            task_id: task.id,
+            addrobj: addrobj,
+            release: release === 'true' || release === true,
+            created_by: created_by
+        });
 
         res.status(202).json({
             success: true,
@@ -644,11 +653,12 @@ export const deleteIPAddress = async (req, res) => {
             release: release === 'true' || release === true
         });
 
-        console.log('✅ IP address deletion response sent successfully');
-
     } catch (error) {
-        console.error('❌ Error deleting IP address:', error);
-        console.error('❌ Error stack:', error.stack);
+        log.api.error('Error deleting IP address', {
+            error: error.message,
+            stack: error.stack,
+            addrobj: req.params[0]
+        });
         res.status(500).json({ 
             error: 'Failed to create IP address deletion task',
             details: error.message 
@@ -711,7 +721,11 @@ export const enableIPAddress = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error enabling IP address:', error);
+        log.api.error('Error enabling IP address', {
+            error: error.message,
+            stack: error.stack,
+            addrobj: req.params[0]
+        });
         res.status(500).json({ 
             error: 'Failed to create IP address enable task',
             details: error.message 
@@ -772,7 +786,11 @@ export const disableIPAddress = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error disabling IP address:', error);
+        log.api.error('Error disabling IP address', {
+            error: error.message,
+            stack: error.stack,
+            addrobj: req.params[0]
+        });
         res.status(500).json({ 
             error: 'Failed to create IP address disable task',
             details: error.message 

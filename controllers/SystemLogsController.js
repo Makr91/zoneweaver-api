@@ -10,6 +10,7 @@ import util from "util";
 import fs from "fs/promises";
 import path from "path";
 import config from "../config/ConfigLoader.js";
+import { log } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -73,7 +74,7 @@ export const listLogFiles = async (req, res) => {
                     // Skip binary files entirely
                     const isBinary = await isBinaryFile(fullPath);
                     if (isBinary) {
-                        console.debug(`Skipping binary file: ${fullPath}`);
+                        // Silently skip binary files - no need to log
                         continue;
                     }
                     
@@ -95,7 +96,10 @@ export const listLogFiles = async (req, res) => {
                 directories.push(dirInfo);
                 
             } catch (error) {
-                console.warn(`Warning: Could not read directory ${allowedPath}:`, error.message);
+                log.filesystem.warn('Could not read log directory', {
+                    directory: allowedPath,
+                    error: error.message
+                });
             }
         }
 
@@ -107,7 +111,10 @@ export const listLogFiles = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error listing log files:', error);
+        log.api.error('Error listing log files', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ 
             error: 'Failed to list log files',
             details: error.message 
@@ -229,9 +236,7 @@ export const getLogFile = async (req, res) => {
             maxBuffer: 10 * 1024 * 1024 // 10MB buffer
         });
 
-        if (stderr && stderr.trim()) {
-            console.warn(`Log read stderr for ${logname}:`, stderr);
-        }
+        // Remove verbose stderr logging - most commands output to stderr even on success
 
         const logLines = stdout.split('\n').filter(line => line.trim());
 
@@ -256,7 +261,12 @@ export const getLogFile = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`Error reading log file ${req.params.logname}:`, error);
+        log.api.error('Error reading log file', {
+            error: error.message,
+            stack: error.stack,
+            logname: req.params.logname,
+            path: logPath
+        });
         res.status(500).json({ 
             error: 'Failed to read log file',
             details: error.message 
@@ -353,9 +363,7 @@ export const getFaultManagerLogs = async (req, res) => {
             maxBuffer: 10 * 1024 * 1024 // 10MB buffer
         });
 
-        if (stderr && stderr.trim()) {
-            console.warn(`fmdump stderr for ${type}:`, stderr);
-        }
+        // Remove verbose stderr logging - fmdump outputs to stderr even on success
 
         const logLines = stdout.split('\n').filter(line => line.trim());
 
@@ -375,7 +383,11 @@ export const getFaultManagerLogs = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`Error reading fault manager logs (${req.params.type}):`, error);
+        log.api.error('Error reading fault manager logs', {
+            error: error.message,
+            stack: error.stack,
+            type: req.params.type
+        });
         res.status(500).json({ 
             error: 'Failed to read fault manager logs',
             details: error.message 
@@ -502,7 +514,6 @@ async function isBinaryFile(filePath) {
         
     } catch (error) {
         // If we can't read the file, assume it's binary to be safe
-        console.warn(`Cannot determine file type for ${filePath}:`, error.message);
         return true;
     }
 }

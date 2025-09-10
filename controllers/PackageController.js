@@ -9,6 +9,7 @@ import { execSync, spawn } from "child_process";
 import Tasks, { TaskPriority } from "../models/TaskModel.js";
 import yj from "yieldable-json";
 import os from "os";
+import { log } from "../lib/Logger.js";
 
 /**
  * Execute command safely with proper error handling
@@ -263,7 +264,13 @@ export const listPackages = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error listing packages:', error);
+        log.api.error('Error listing packages', {
+            error: error.message,
+            stack: error.stack,
+            filter: filter,
+            format: format,
+            all: all
+        });
         res.status(500).json({ 
             error: 'Failed to list packages',
             details: error.message 
@@ -371,7 +378,13 @@ export const searchPackages = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error searching packages:', error);
+        log.api.error('Error searching packages', {
+            error: error.message,
+            stack: error.stack,
+            query: query,
+            local: local,
+            remote: remote
+        });
         res.status(500).json({ 
             error: 'Failed to search packages',
             details: error.message 
@@ -453,7 +466,12 @@ export const getPackageInfo = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting package info:', error);
+        log.api.error('Error getting package info', {
+            error: error.message,
+            stack: error.stack,
+            package: pkgName,
+            remote: remote
+        });
         res.status(500).json({ 
             error: 'Failed to get package information',
             details: error.message 
@@ -567,7 +585,13 @@ export const installPackages = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error installing packages:', error);
+        log.api.error('Error installing packages', {
+            error: error.message,
+            stack: error.stack,
+            packages: packages,
+            dry_run: dry_run,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create package installation task',
             details: error.message 
@@ -660,7 +684,13 @@ export const uninstallPackages = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error uninstalling packages:', error);
+        log.api.error('Error uninstalling packages', {
+            error: error.message,
+            stack: error.stack,
+            packages: packages,
+            dry_run: dry_run,
+            created_by: created_by
+        });
         res.status(500).json({ 
             error: 'Failed to create package uninstallation task',
             details: error.message 
