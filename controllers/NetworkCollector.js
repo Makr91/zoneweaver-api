@@ -16,6 +16,7 @@ import NetworkUsage from "../models/NetworkUsageModel.js";
 import IPAddresses from "../models/IPAddressModel.js";
 import Routes from "../models/RoutingTableModel.js";
 import HostInfo from "../models/HostInfoModel.js";
+import { log, createTimer } from "../lib/Logger.js";
 
 const execProm = util.promisify(exec);
 
@@ -67,12 +68,19 @@ class NetworkCollector {
             if (enabled) {
                 return true;
             } else {
-                console.warn('⚠️  Network accounting enable command succeeded but verification failed');
+                log.monitoring.warn('Network accounting enable command succeeded but verification failed', {
+                    hostname: this.hostname,
+                    acct_file: acctFile
+                });
                 return false;
             }
 
         } catch (error) {
-            console.error('❌ Failed to initialize network accounting:', error.message);
+            log.monitoring.error('Failed to initialize network accounting', {
+                error: error.message,
+                hostname: this.hostname,
+                acct_file: this.hostMonitoringConfig.network_accounting_file
+            });
             await this.updateHostInfo({ 
                 network_acct_enabled: false,
                 last_error_message: `Network accounting init failed: ${error.message}`
@@ -98,7 +106,11 @@ class NetworkCollector {
                 updated_at: new Date()
             });
         } catch (error) {
-            console.error('❌ Failed to update host info:', error.message);
+            log.database.error('Failed to update host info', {
+                error: error.message,
+                hostname: this.hostname,
+                updates: Object.keys(updates)
+            });
         }
     }
 
@@ -123,7 +135,13 @@ class NetworkCollector {
         const maxErrors = this.hostMonitoringConfig.error_handling.max_consecutive_errors;
         const errorMessage = `${operation} failed: ${error.message}`;
         
-        console.error(`❌ Network collection error (${this.errorCount}/${maxErrors}): ${errorMessage}`);
+        log.monitoring.error('Network collection error', {
+            error: error.message,
+            operation: operation,
+            error_count: this.errorCount,
+            max_errors: maxErrors,
+            hostname: this.hostname
+        });
 
         await this.updateHostInfo({
             network_scan_errors: this.errorCount,
@@ -131,7 +149,12 @@ class NetworkCollector {
         });
 
         if (this.errorCount >= maxErrors) {
-            console.error(`🚫 Network collector disabled due to ${maxErrors} consecutive errors`);
+            log.monitoring.error('Network collector disabled due to consecutive errors', {
+                error_count: this.errorCount,
+                max_errors: maxErrors,
+                operation: operation,
+                hostname: this.hostname
+            });
             return false; // Signal to disable collector
         }
 
@@ -1218,7 +1241,12 @@ class NetworkCollector {
         
         // Validate inputs to prevent NaN
         if (isNaN(bytesNum) || isNaN(speedMbps) || isNaN(timePeriod)) {
-            console.warn('⚠️  Invalid inputs in bandwidth utilization calculation');
+            log.monitoring.debug('Invalid inputs in bandwidth utilization calculation', {
+                bytes: bytes,
+                speedMbps: speedMbps,
+                timePeriod: timePeriod,
+                hostname: this.hostname
+            });
             return null;
         }
         
@@ -1231,7 +1259,12 @@ class NetworkCollector {
         
         // Validate result to prevent NaN
         if (isNaN(utilization)) {
-            console.warn('⚠️  NaN result in bandwidth utilization calculation');
+            log.monitoring.warn('NaN result in bandwidth utilization calculation', {
+                bytes: bytes,
+                speedMbps: speedMbps,
+                timePeriod: timePeriod,
+                hostname: this.hostname
+            });
             return null;
         }
         
@@ -1260,7 +1293,11 @@ class NetworkCollector {
         const previousTime = new Date(previousStats.scan_timestamp).getTime();
         
         if (isNaN(currentTime) || isNaN(previousTime)) {
-            console.warn('⚠️  Invalid timestamps in bandwidth calculation');
+            log.monitoring.debug('Invalid timestamps in bandwidth calculation', {
+                current_time: currentTime,
+                previous_time: previousTime,
+                hostname: this.hostname
+            });
             return {
                 rx_bps: null,
                 tx_bps: null,
@@ -1452,7 +1489,11 @@ class NetworkCollector {
                 const safeValue = (value) => {
                     if (value === null || value === undefined) return null;
                     if (isNaN(value)) {
-                        console.warn(`⚠️  NaN value detected in usage record for interface ${currentStat.link}`);
+                        log.monitoring.debug('NaN value detected in usage record', {
+                            interface: currentStat.link,
+                            value: value,
+                            hostname: this.hostname
+                        });
                         return null;
                     }
                     return value;

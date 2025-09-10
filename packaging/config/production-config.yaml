@@ -71,6 +71,24 @@ host_monitoring:
     max_concurrent_scans: 3
     command_timeout: 30
     batch_size: 100
+logging:
+  level: warn  # info, warn, error, debug
+  console_enabled: false  # Disable console output in production
+  log_directory: /var/log/zoneweaver-api  # Configurable log directory
+  file_rotation:
+    max_size: 50  # MB
+    max_files: 5
+    compress: true
+  performance_threshold_ms: 1000  # Only log operations slower than this
+  categories:
+    monitoring: warn
+    database: warn  
+    tasks: info
+    performance: info
+    api_requests: info
+    filesystem: warn
+    auth: info
+    websocket: warn
 reconciliation:
   enabled: true
   interval: 3600
