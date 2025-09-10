@@ -29,6 +29,7 @@ import db from "../config/Database.js";
 import DatabaseMigrations from "../config/DatabaseMigrations.js";
 import { getRebootStatus, checkAndClearAfterReboot } from "../lib/RebootManager.js";
 import { getFaultStatusForHealth } from "./FaultManagementController.js";
+import { log, createTimer } from "../lib/Logger.js";
 import os from "os";
 
 /**
@@ -125,13 +126,19 @@ class HostMonitoringService {
                 }
             });
 
-            console.log('📋 Registered all cleanup tasks with CleanupService');
+            log.monitoring.info('Cleanup tasks registration completed', {
+                tasks_registered: 5,
+                cleanup_service_started: true
+            });
             
             // Start CleanupService now that all tasks are registered
             CleanupService.start();
             
         } catch (error) {
-            console.error('❌ Failed to register cleanup tasks:', error.message);
+            log.monitoring.error('Failed to register cleanup tasks', {
+                error: error.message,
+                stack: error.stack
+            });
         }
     }
 
@@ -154,12 +161,19 @@ class HostMonitoringService {
                 // Run database migrations first
                 await DatabaseMigrations.setupDatabase();
             } catch (error) {
-                console.warn('⚠️  Database migration warning:', error.message);
+                log.database.warn('Database migration warning', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
                 // Try basic sync as fallback
                 try {
                     await db.sync({ alter: false, force: false });
                 } catch (syncError) {
-                    console.error('❌ Database initialization failed:', syncError.message);
+                    log.database.error('Database initialization failed', {
+                        error: syncError.message,
+                        stack: syncError.stack,
+                        hostname: this.hostname
+                    });
                     throw syncError;
                 }
             }
@@ -181,35 +195,55 @@ class HostMonitoringService {
             // Initialize network accounting
             const networkAcctEnabled = await this.networkCollector.initializeNetworkAccounting();
             if (!networkAcctEnabled) {
-                console.warn('⚠️  Network accounting initialization failed or disabled');
+                log.monitoring.warn('Network accounting initialization failed or disabled', {
+                    hostname: this.hostname
+                });
             }
 
             // Perform initial data collection
             // Initial network config collection (async)
             this.networkCollector.collectNetworkConfig().catch(error => {
-                console.error('❌ Initial network config collection failed:', error.message);
+                log.monitoring.error('Initial network config collection failed', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             });
 
             // Initial storage collection (async)
             this.storageCollector.collectStorageData().catch(error => {
-                console.error('❌ Initial storage collection failed:', error.message);
+                log.monitoring.error('Initial storage collection failed', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             });
 
             // Initial system metrics collection (async)
             this.systemMetricsCollector.collectSystemMetrics().catch(error => {
-                console.error('❌ Initial system metrics collection failed:', error.message);
+                log.monitoring.error('Initial system metrics collection failed', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             });
 
             // Check and clear reboot flags if system has rebooted since flags were created
             try {
                 const rebootCheckResult = await checkAndClearAfterReboot();
                 if (rebootCheckResult.action === 'cleared') {
-                    console.log(`🔄 Cleared reboot flags on startup: ${rebootCheckResult.reasons_cleared?.join(', ')}`);
+                    log.monitoring.info('Reboot flags cleared on startup', {
+                        reasons_cleared: rebootCheckResult.reasons_cleared,
+                        hostname: this.hostname
+                    });
                 } else if (rebootCheckResult.action === 'kept') {
-                    console.log(`🔄 Keeping reboot flags (system not rebooted): age ${rebootCheckResult.flag_age_minutes}min`);
+                    log.monitoring.debug('Keeping reboot flags (system not rebooted)', {
+                        flag_age_minutes: rebootCheckResult.flag_age_minutes,
+                        hostname: this.hostname
+                    });
                 }
             } catch (error) {
-                console.warn('⚠️  Failed to check reboot flags on startup:', error.message);
+                log.monitoring.warn('Failed to check reboot flags on startup', {
+                    error: error.message,
+                    hostname: this.hostname
+                });
             }
 
             // Register cleanup tasks with CleanupService
@@ -219,7 +253,11 @@ class HostMonitoringService {
             return true;
 
         } catch (error) {
-            console.error('❌ Failed to initialize host monitoring service:', error.message);
+            log.monitoring.error('Failed to initialize host monitoring service', {
+                error: error.message,
+                stack: error.stack,
+                hostname: this.hostname
+            });
             return false;
         }
     }
@@ -232,7 +270,9 @@ class HostMonitoringService {
         if (!this.isInitialized) {
             const initialized = await this.initialize();
             if (!initialized) {
-                console.error('❌ Cannot start host monitoring - initialization failed');
+                log.monitoring.error('Cannot start host monitoring - initialization failed', {
+                    hostname: this.hostname
+                });
                 return false;
             }
         }
@@ -248,28 +288,53 @@ class HostMonitoringService {
             this.intervals.networkConfig = setInterval(async () => {
                 try {
                     this.stats.networkConfigRuns++;
+                    const timer = createTimer('network_config_collection');
                     const success = await this.networkCollector.collectNetworkConfig();
+                    const duration = timer.end();
+                    
                     if (success) {
                         this.stats.lastNetworkConfigSuccess = new Date();
+                        if (duration > 5000) { // Log slow collections
+                            log.performance.warn('Slow network config collection', {
+                                duration_ms: duration,
+                                hostname: this.hostname
+                            });
+                        }
                     }
                 } catch (error) {
                     this.stats.totalErrors++;
-                    console.error('❌ Scheduled network config collection failed:', error.message);
+                    log.monitoring.error('Scheduled network config collection failed', {
+                        error: error.message,
+                        hostname: this.hostname,
+                        run_count: this.stats.networkConfigRuns
+                    });
                 }
             }, intervals.network_config * 1000);
-
 
             // Network usage collection (10 seconds default)
             this.intervals.networkUsage = setInterval(async () => {
                 try {
                     this.stats.networkUsageRuns++;
+                    const timer = createTimer('network_usage_collection');
                     const success = await this.networkCollector.collectNetworkUsage();
+                    const duration = timer.end();
+                    
                     if (success) {
                         this.stats.lastNetworkUsageSuccess = new Date();
+                        if (duration > 3000) { // Log slow collections (this runs frequently)
+                            log.performance.warn('Slow network usage collection', {
+                                duration_ms: duration,
+                                hostname: this.hostname
+                            });
+                        }
                     }
                 } catch (error) {
                     this.stats.totalErrors++;
-                    console.error('❌ Scheduled network usage collection failed:', error.message);
+                    log.monitoring.error('Scheduled network usage collection failed', {
+                        error: error.message,
+                        hostname: this.hostname,
+                        run_count: this.stats.networkUsageRuns
+                    });
                 }
             }, intervals.network_usage * 1000);
 
@@ -277,40 +342,77 @@ class HostMonitoringService {
             this.intervals.storage = setInterval(async () => {
                 try {
                     this.stats.storageRuns++;
+                    const timer = createTimer('storage_collection');
                     const success = await this.storageCollector.collectStorageData();
+                    const duration = timer.end();
+                    
                     if (success) {
                         this.stats.lastStorageSuccess = new Date();
+                        if (duration > 10000) { // Log slow collections
+                            log.performance.warn('Slow storage collection', {
+                                duration_ms: duration,
+                                hostname: this.hostname
+                            });
+                        }
                     }
                 } catch (error) {
                     this.stats.totalErrors++;
-                    console.error('❌ Scheduled storage collection failed:', error.message);
+                    log.monitoring.error('Scheduled storage collection failed', {
+                        error: error.message,
+                        hostname: this.hostname,
+                        run_count: this.stats.storageRuns
+                    });
                 }
             }, intervals.storage * 1000);
 
             // Frequent storage metrics collection (10 seconds for disk I/O, 60 seconds for ARC)
             this.intervals.storageFrequent = setInterval(async () => {
                 try {
+                    const timer = createTimer('frequent_storage_collection');
                     const success = await this.storageCollector.collectFrequentStorageMetrics();
+                    const duration = timer.end();
+                    
                     if (!success) {
                         this.stats.totalErrors++;
+                    } else if (duration > 2000) { // Log slow frequent collections
+                        log.performance.warn('Slow frequent storage collection', {
+                            duration_ms: duration,
+                            hostname: this.hostname
+                        });
                     }
                 } catch (error) {
                     this.stats.totalErrors++;
-                    console.error('❌ Scheduled frequent storage collection failed:', error.message);
+                    log.monitoring.error('Scheduled frequent storage collection failed', {
+                        error: error.message,
+                        hostname: this.hostname
+                    });
                 }
-            }, intervals.storage_frequent * 1000); // Configurable frequent storage interval
+            }, intervals.storage_frequent * 1000);
 
             // Device discovery collection (1 minute default)
             this.intervals.deviceDiscovery = setInterval(async () => {
                 try {
                     this.stats.deviceRuns++;
+                    const timer = createTimer('device_discovery_collection');
                     const success = await this.deviceCollector.collectPCIDevices();
+                    const duration = timer.end();
+                    
                     if (success) {
                         this.stats.lastDeviceSuccess = new Date();
+                        if (duration > 5000) { // Log slow collections
+                            log.performance.warn('Slow device discovery collection', {
+                                duration_ms: duration,
+                                hostname: this.hostname
+                            });
+                        }
                     }
                 } catch (error) {
                     this.stats.totalErrors++;
-                    console.error('❌ Scheduled device discovery failed:', error.message);
+                    log.monitoring.error('Scheduled device discovery failed', {
+                        error: error.message,
+                        hostname: this.hostname,
+                        run_count: this.stats.deviceRuns
+                    });
                 }
             }, intervals.device_discovery * 1000);
 
@@ -318,13 +420,26 @@ class HostMonitoringService {
             this.intervals.systemMetrics = setInterval(async () => {
                 try {
                     this.stats.systemMetricsRuns++;
+                    const timer = createTimer('system_metrics_collection');
                     const success = await this.systemMetricsCollector.collectSystemMetrics();
+                    const duration = timer.end();
+                    
                     if (success) {
                         this.stats.lastSystemMetricsSuccess = new Date();
+                        if (duration > 3000) { // Log slow collections
+                            log.performance.warn('Slow system metrics collection', {
+                                duration_ms: duration,
+                                hostname: this.hostname
+                            });
+                        }
                     }
                 } catch (error) {
                     this.stats.totalErrors++;
-                    console.error('❌ Scheduled system metrics collection failed:', error.message);
+                    log.monitoring.error('Scheduled system metrics collection failed', {
+                        error: error.message,
+                        hostname: this.hostname,
+                        run_count: this.stats.systemMetricsRuns
+                    });
                 }
             }, intervals.system_metrics * 1000);
 
@@ -332,7 +447,11 @@ class HostMonitoringService {
             return true;
 
         } catch (error) {
-            console.error('❌ Failed to start host monitoring service:', error.message);
+            log.monitoring.error('Failed to start host monitoring service', {
+                error: error.message,
+                stack: error.stack,
+                hostname: this.hostname
+            });
             this.stop(); // Cleanup any partial initialization
             return false;
         }
@@ -447,7 +566,11 @@ class HostMonitoringService {
             return results;
 
         } catch (error) {
-            console.error(`❌ Immediate ${type} collection failed:`, error.message);
+            log.monitoring.error('Immediate collection failed', {
+                error: error.message,
+                type: type,
+                hostname: this.hostname
+            });
             results.errors.push(`General error: ${error.message}`);
             return results;
         }
@@ -470,7 +593,11 @@ class HostMonitoringService {
             return true;
 
         } catch (error) {
-            console.error('❌ Failed to update configuration:', error.message);
+            log.monitoring.error('Failed to update configuration', {
+                error: error.message,
+                stack: error.stack,
+                hostname: this.hostname
+            });
             return false;
         }
     }

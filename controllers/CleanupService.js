@@ -1,5 +1,6 @@
 import config from '../config/ConfigLoader.js';
 import { Op } from 'sequelize';
+import { log, createTimer } from '../lib/Logger.js';
 
 class CleanupService {
     constructor() {
@@ -44,7 +45,10 @@ class CleanupService {
             lastError: null
         });
         
-        console.log(`📋 Registered cleanup task: ${task.name}`);
+        log.monitoring.debug('Cleanup task registered', {
+            task_name: task.name,
+            description: task.description || task.name
+        });
     }
 
     /**
@@ -52,21 +56,29 @@ class CleanupService {
      */
     async run() {
         if (this.isRunning) {
-            console.log('⚠️  Cleanup already in progress, skipping this cycle');
+            log.monitoring.warn('Cleanup already in progress, skipping cycle', {
+                cycle_number: this.stats.totalRuns + 1
+            });
             return;
         }
 
         this.isRunning = true;
-        const startTime = Date.now();
+        const timer = createTimer('cleanup_cycle');
         
         try {
             this.stats.totalRuns++;
-            console.log(`🧹 Running cleanup cycle #${this.stats.totalRuns} with ${this.tasks.length} tasks...`);
+            log.monitoring.info('Starting cleanup cycle', {
+                cycle_number: this.stats.totalRuns,
+                task_count: this.tasks.length,
+                interval_seconds: this.cleanupConfig.interval
+            });
             
             let tasksCompleted = 0;
             let tasksWithErrors = 0;
+            let totalRecordsDeleted = 0;
             
             for (const task of this.tasks) {
+                const taskTimer = createTimer(`cleanup_task_${task.name}`);
                 try {
                     task.runs++;
                     
@@ -79,7 +91,13 @@ class CleanupService {
                         // Model-based task (original format)
                         result = await task.model.destroy({ where: task.where });
                         if (result > 0) {
-                            console.log(`🧹 ${task.name}: Cleaned up ${result} records from ${task.model.name}`);
+                            totalRecordsDeleted += result;
+                            log.database.info('Database cleanup completed', {
+                                task_name: task.name,
+                                model_name: task.model.name,
+                                records_deleted: result,
+                                duration_ms: taskTimer.end()
+                            });
                         }
                     } else {
                         throw new Error('Invalid task configuration');
@@ -95,25 +113,48 @@ class CleanupService {
                     this.stats.totalErrors++;
                     this.stats.lastError = `${task.name}: ${error.message}`;
                     
-                    console.error(`❌ Cleanup task '${task.name}' failed:`, error.message);
+                    log.database.error('Cleanup task failed', {
+                        task_name: task.name,
+                        error: error.message,
+                        duration_ms: taskTimer.end()
+                    });
                 }
             }
             
-            const duration = Date.now() - startTime;
+            const duration = timer.end();
             this.stats.lastRunTime = new Date();
             this.stats.lastRunDuration = duration;
             this.stats.totalTasksProcessed += tasksCompleted;
             
             if (tasksWithErrors > 0) {
-                console.log(`⚠️  Cleanup completed with errors: ${tasksCompleted}/${this.tasks.length} tasks successful (${duration}ms)`);
+                log.monitoring.warn('Cleanup cycle completed with errors', {
+                    cycle_number: this.stats.totalRuns,
+                    tasks_completed: tasksCompleted,
+                    tasks_with_errors: tasksWithErrors,
+                    total_tasks: this.tasks.length,
+                    total_records_deleted: totalRecordsDeleted,
+                    duration_ms: duration
+                });
             } else {
-                console.log(`✅ Cleanup completed successfully: ${tasksCompleted}/${this.tasks.length} tasks completed (${duration}ms)`);
+                log.monitoring.info('Cleanup cycle completed successfully', {
+                    cycle_number: this.stats.totalRuns,
+                    tasks_completed: tasksCompleted,
+                    total_tasks: this.tasks.length,
+                    total_records_deleted: totalRecordsDeleted,
+                    duration_ms: duration
+                });
             }
             
         } catch (error) {
             this.stats.totalErrors++;
             this.stats.lastError = error.message;
-            console.error('❌ Cleanup cycle failed:', error.message);
+            const duration = timer.end();
+            log.monitoring.error('Cleanup cycle failed', {
+                cycle_number: this.stats.totalRuns,
+                error: error.message,
+                stack: error.stack,
+                duration_ms: duration
+            });
         } finally {
             this.isRunning = false;
         }
@@ -123,7 +164,11 @@ class CleanupService {
      * Start the cleanup service with interval scheduling
      */
     start() {
-        console.log(`🧹 Starting cleanup service with ${this.cleanupConfig.interval}s interval...`);
+        log.monitoring.info('Starting cleanup service', {
+            interval_seconds: this.cleanupConfig.interval,
+            retention_days: this.cleanupConfig.retention_days,
+            registered_tasks: this.tasks.length
+        });
         
         // Run immediately on startup
         this.run();

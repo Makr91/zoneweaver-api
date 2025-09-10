@@ -16,6 +16,7 @@ import {
     restartService,
     refreshService
 } from "../lib/ServiceManager.js";
+import { log, createTimer } from "../lib/Logger.js";
 
 /**
  * @fileoverview Task Queue controller for Zoneweaver API
@@ -110,9 +111,9 @@ const TASK_TIMEOUT = 5 * 60 * 1000;
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
 const executeCommand = async (command, timeout = TASK_TIMEOUT) => {
+    const timer = createTimer(`executeCommand: ${command.substring(0, 50)}`);
+    
     return new Promise((resolve) => {
-        console.log(`🔧 Executing command: ${command}`);
-        
         const child = spawn('sh', ['-c', command], {
             stdio: ['ignore', 'pipe', 'pipe']
         });
@@ -126,7 +127,12 @@ const executeCommand = async (command, timeout = TASK_TIMEOUT) => {
             if (!completed) {
                 completed = true;
                 child.kill('SIGTERM');
-                console.error(`Command timed out: ${command}`);
+                log.task.error('Command execution timeout', { 
+                    command: command.substring(0, 100),
+                    timeout_ms: timeout,
+                    stdout_preview: stdout.substring(0, 200)
+                });
+                timer.end();
                 resolve({
                     success: false,
                     error: `Command timed out after ${timeout}ms`,
@@ -149,14 +155,28 @@ const executeCommand = async (command, timeout = TASK_TIMEOUT) => {
             if (!completed) {
                 completed = true;
                 clearTimeout(timeoutId);
+                const duration = timer.end();
                 
                 if (code === 0) {
+                    // Log performance info if command took >1000ms
+                    if (duration > 1000) {
+                        log.performance.info('Slow command execution', {
+                            command: command.substring(0, 100),
+                            duration_ms: duration,
+                            stdout_size: stdout.length
+                        });
+                    }
                     resolve({
                         success: true,
                         output: stdout.trim()
                     });
                 } else {
-                    console.error(`Command failed: ${command}`, stderr.trim());
+                    log.task.error('Command execution failed', {
+                        command: command.substring(0, 100),
+                        exit_code: code,
+                        stderr: stderr.trim().substring(0, 200),
+                        duration_ms: duration
+                    });
                     resolve({
                         success: false,
                         error: stderr.trim() || `Command exited with code ${code}`,
@@ -171,7 +191,12 @@ const executeCommand = async (command, timeout = TASK_TIMEOUT) => {
             if (!completed) {
                 completed = true;
                 clearTimeout(timeoutId);
-                console.error(`Command error: ${command}`, error.message);
+                const duration = timer.end();
+                log.task.error('Command execution error', {
+                    command: command.substring(0, 100),
+                    error: error.message,
+                    duration_ms: duration
+                });
                 resolve({
                     success: false,
                     error: error.message,
@@ -296,7 +321,12 @@ const executeTask = async (task) => {
                 return { success: false, error: `Unknown operation: ${operation}` };
         }
     } catch (error) {
-        console.error(`Task execution failed for ${operation} on ${zone_name}:`, error);
+        log.task.error('Task execution failed', {
+            operation,
+            zone_name,
+            error: error.message,
+            stack: error.stack
+        });
         return { success: false, error: error.message };
     }
 };
@@ -560,13 +590,20 @@ const terminateVncSession = async (zoneName) => {
             try {
                 process.kill(session.process_id, 'SIGTERM');
             } catch (error) {
-                console.warn(`Failed to kill VNC process ${session.process_id}:`, error.message);
+                log.task.warn('Failed to kill VNC process', {
+                    zone_name: zoneName,
+                    process_id: session.process_id,
+                    error: error.message
+                });
             }
             
             await session.update({ status: 'stopped' });
         }
     } catch (error) {
-        console.warn(`Failed to terminate VNC session for ${zoneName}:`, error.message);
+        log.task.warn('Failed to terminate VNC session', {
+            zone_name: zoneName,
+            error: error.message
+        });
     }
 };
 
@@ -606,7 +643,12 @@ const processNextTask = async () => {
         // Check for operation category conflicts
         const operationCategory = OPERATION_CATEGORIES[task.operation];
         if (operationCategory && runningCategories.has(operationCategory)) {
-            console.log(`⏳ Task ${task.id} (${task.operation}) waiting - category '${operationCategory}' already running`);
+            log.task.warn('Task waiting for category lock', {
+                task_id: task.id,
+                operation: task.operation,
+                category: operationCategory,
+                zone_name: task.zone_name
+            });
             return; // Cannot start this task due to category conflict
         }
         
@@ -621,22 +663,23 @@ const processNextTask = async () => {
         // Add operation category to running set if it has one
         if (operationCategory) {
             runningCategories.add(operationCategory);
-            console.log(`🔒 Task ${task.id}: Acquired category lock '${operationCategory}'`);
+            log.task.debug('Acquired category lock', {
+                task_id: task.id,
+                category: operationCategory
+            });
         }
         
-        console.log(`🚀 Starting task ${task.id}: ${task.operation} on ${task.zone_name}`);
-        console.log(`📋 Task object:`, {
-            id: task.id,
+        log.task.info('Task started', {
+            task_id: task.id,
             operation: task.operation,
             zone_name: task.zone_name,
-            category: operationCategory || 'none',
-            metadata: task.metadata,
-            metadata_type: typeof task.metadata,
-            metadata_length: task.metadata ? task.metadata.length : 'N/A'
+            category: operationCategory || 'none'
         });
         
-        // Execute task
+        // Execute task with performance timing
+        const taskTimer = createTimer(`Task execution: ${task.operation}`);
         const result = await executeTask(task);
+        const executionTime = taskTimer.end();
         
         // Update task status
         await task.update({
@@ -650,17 +693,40 @@ const processNextTask = async () => {
         // Release operation category lock if it had one
         if (operationCategory) {
             runningCategories.delete(operationCategory);
-            console.log(`🔓 Task ${task.id}: Released category lock '${operationCategory}'`);
+            log.task.debug('Released category lock', {
+                task_id: task.id,
+                category: operationCategory
+            });
         }
         
         if (result.success) {
-            console.log(`✅ Task ${task.id} completed successfully: ${result.message}`);
+            // Only log slow tasks to reduce noise
+            if (executionTime > 5000) {
+                log.performance.warn('Slow task execution', {
+                    task_id: task.id,
+                    operation: task.operation,
+                    zone_name: task.zone_name,
+                    duration_ms: executionTime,
+                    message: result.message
+                });
+            }
         } else {
-            console.error(`❌ Task ${task.id} failed: ${result.error}`);
+            log.task.error('Task execution failed', {
+                task_id: task.id,
+                operation: task.operation,
+                zone_name: task.zone_name,
+                duration_ms: executionTime,
+                error: result.error
+            });
         }
         
     } catch (error) {
-        console.error('Error processing task:', error);
+        log.task.error('Task processing error', {
+            error: error.message,
+            stack: error.stack,
+            running_task_count: runningTasks.size,
+            running_categories: Array.from(runningCategories)
+        });
         
         // Make sure to clean up category lock on error
         const task = await Tasks.findOne({
@@ -672,7 +738,11 @@ const processNextTask = async () => {
             const operationCategory = OPERATION_CATEGORIES[task.operation];
             if (operationCategory && runningCategories.has(operationCategory)) {
                 runningCategories.delete(operationCategory);
-                console.log(`🔓 Emergency cleanup: Released category lock '${operationCategory}' for task ${task.id}`);
+                log.task.warn('Emergency category lock cleanup', {
+                    task_id: task.id,
+                    category: operationCategory,
+                    reason: 'Task processing error'
+                });
             }
         }
     }
@@ -834,7 +904,11 @@ export const listTasks = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error listing tasks:', error);
+        log.database.error('Database error listing tasks', {
+            error: error.message,
+            stack: error.stack,
+            query_params: req.query
+        });
         res.status(500).json({ error: 'Failed to retrieve tasks' });
     }
 };
@@ -877,7 +951,11 @@ export const getTaskDetails = async (req, res) => {
         res.json(task);
         
     } catch (error) {
-        console.error('Error getting task details:', error);
+        log.database.error('Database error getting task details', {
+            error: error.message,
+            stack: error.stack,
+            task_id: req.params.taskId
+        });
         res.status(500).json({ error: 'Failed to retrieve task details' });
     }
 };
@@ -931,7 +1009,11 @@ export const cancelTask = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error cancelling task:', error);
+        log.database.error('Database error cancelling task', {
+            error: error.message,
+            stack: error.stack,
+            task_id: req.params.taskId
+        });
         res.status(500).json({ error: 'Failed to cancel task' });
     }
 };
@@ -992,7 +1074,10 @@ export const getTaskStats = async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error getting task stats:', error);
+        log.database.error('Database error getting task stats', {
+            error: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ error: 'Failed to retrieve task statistics' });
     }
 };
@@ -3750,6 +3835,7 @@ const executeFileArchiveExtractTask = async (metadataJson) => {
  * @description Removes completed, failed, and cancelled tasks older than the configured retention period
  */
 export const cleanupOldTasks = async () => {
+    const timer = createTimer('cleanup old tasks');
     try {
         const hostMonitoringConfig = config.getHostMonitoring();
         const retentionConfig = hostMonitoringConfig.retention;
@@ -3764,11 +3850,21 @@ export const cleanupOldTasks = async () => {
             }
         });
 
+        const duration = timer.end();
+        
         if (deletedTasks > 0) {
-            console.log(`🧹 Tasks cleanup completed: ${deletedTasks} old tasks deleted (older than ${retentionConfig.tasks} days)`);
+            log.database.info('Tasks cleanup completed', {
+                deleted_count: deletedTasks,
+                retention_days: retentionConfig.tasks,
+                duration_ms: duration
+            });
         }
 
     } catch (error) {
-        console.error('❌ Failed to cleanup old tasks:', error.message);
+        timer.end();
+        log.database.error('Failed to cleanup old tasks', {
+            error: error.message,
+            stack: error.stack
+        });
     }
 };

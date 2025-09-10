@@ -17,6 +17,7 @@ import {
 } from '../lib/FileSystemManager.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import config from '../config/ConfigLoader.js';
+import { log, createRequestLogger, createTimer } from '../lib/Logger.js';
 import yj from 'yieldable-json';
 import path from 'path';
 import fs from 'fs';
@@ -319,32 +320,22 @@ export const createFolder = async (req, res) => {
  *         description: Upload failed
  */
 export const uploadFile = async (req, res) => {
-    const startTime = Date.now();
-    const requestId = `upload-${startTime}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    // REQUEST ACCESS LOG
-    console.log(`🌐 [ACCESS] ${requestId} - POST /filesystem/upload - START`, {
-        timestamp: new Date().toISOString(),
-        user: req.entity?.name || 'unknown',
-        ip: req.ip || req.connection?.remoteAddress,
-        userAgent: req.get('User-Agent'),
-        contentLength: req.get('Content-Length')
-    });
+    const requestId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const timer = createTimer('file_upload');
+    const requestLogger = createRequestLogger(requestId, req);
     
     try {
         const fileBrowserConfig = config.getFileBrowser();
         
         if (!fileBrowserConfig?.enabled) {
-            const duration = Date.now() - startTime;
-            console.log(`🌐 [ACCESS] ${requestId} - POST /filesystem/upload - 503 - ${duration}ms - File browser disabled`);
+            requestLogger.error(503, 'File browser disabled');
             return res.status(503).json({
                 error: 'File browser is disabled'
             });
         }
 
         if (!req.file) {
-            const duration = Date.now() - startTime;
-            console.log(`🌐 [ACCESS] ${requestId} - POST /filesystem/upload - 400 - ${duration}ms - No file uploaded`);
+            requestLogger.error(400, 'No file uploaded');
             return res.status(400).json({
                 error: 'No file uploaded'
             });
@@ -356,7 +347,8 @@ export const uploadFile = async (req, res) => {
         const filePath = req.file.path;
         const filename = req.file.filename;
         
-        console.log(`📁 [UPLOAD] ${requestId} - File upload details:`, {
+        log.filesystem.info('File upload processing', {
+            requestId,
             filename: req.file.originalname,
             sanitizedName: filename,
             size: req.file.size,
@@ -376,14 +368,14 @@ export const uploadFile = async (req, res) => {
             const uidVal = parseInt(uid) || -1;
             const gidVal = parseInt(gid) || -1;
             executeCommand(`pfexec chown ${uidVal}:${gidVal} "${filePath}"`).catch(err => 
-                console.warn(`Failed to set ownership: ${err.message}`)
+                log.filesystem.warn('Failed to set ownership', { requestId, filePath, error: err.message })
             );
         }
         
         if (mode !== undefined) {
             const { executeCommand } = await import('../lib/FileSystemManager.js');
             executeCommand(`pfexec chmod ${mode} "${filePath}"`).catch(err => 
-                console.warn(`Failed to set permissions: ${err.message}`)
+                log.filesystem.warn('Failed to set permissions', { requestId, filePath, mode, error: err.message })
             );
         }
 
@@ -397,42 +389,52 @@ export const uploadFile = async (req, res) => {
             originalname: req.file.originalname
         };
 
-        console.log(`✅ [UPLOAD] Upload completed: ${filename} (${req.file.size} bytes)`);
+        const duration = timer.end({
+            filename: req.file.originalname,
+            fileSize: req.file.size,
+            destination: filePath
+        });
 
-        const duration = Date.now() - startTime;
+        log.filesystem.info('File upload completed', {
+            requestId,
+            filename: req.file.originalname,
+            fileSize: req.file.size,
+            duration_ms: duration
+        });
+
         const response = {
             success: true,
             message: `File '${filename}' uploaded successfully`,
             file: basicItemInfo
         };
 
-        // RESPONSE ACCESS LOG
-        console.log(`🌐 [ACCESS] ${requestId} - POST /filesystem/upload - 201 - ${duration}ms - SUCCESS`, {
-            timestamp: new Date().toISOString(),
+        requestLogger.success(201, {
             filename: req.file.originalname,
             fileSize: req.file.size,
-            destination: filePath,
-            user: req.entity.name,
-            duration_ms: duration
+            destination: filePath
         });
 
         res.status(201).json(response);
 
     } catch (error) {
-        const duration = Date.now() - startTime;
-        console.error(`❌ [UPLOAD] ${requestId} - Error uploading file:`, error);
+        timer.end({ error: error.message });
+        log.filesystem.error('File upload failed', {
+            requestId,
+            error: error.message,
+            stack: error.stack
+        });
         
         if (error.message.includes('already exists')) {
-            console.log(`🌐 [ACCESS] ${requestId} - POST /filesystem/upload - 409 - ${duration}ms - File exists`);
+            requestLogger.error(409, 'File already exists');
             return res.status(409).json({ error: error.message });
         }
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
-            console.log(`🌐 [ACCESS] ${requestId} - POST /filesystem/upload - 403 - ${duration}ms - Forbidden`);
+            requestLogger.error(403, 'Access forbidden');
             return res.status(403).json({ error: error.message });
         }
         
-        console.log(`🌐 [ACCESS] ${requestId} - POST /filesystem/upload - 500 - ${duration}ms - Server error`);
+        requestLogger.error(500, error.message);
         res.status(500).json({ 
             error: 'Failed to upload file',
             details: error.message 
@@ -1061,24 +1063,15 @@ export const renameItem = async (req, res) => {
  *         description: Failed to delete item
  */
 export const deleteFileItem = async (req, res) => {
-    const startTime = Date.now();
-    const requestId = `delete-${startTime}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    // REQUEST ACCESS LOG
-    console.log(`🌐 [ACCESS] ${requestId} - DELETE /filesystem - START`, {
-        timestamp: new Date().toISOString(),
-        user: req.entity?.name || 'unknown',
-        ip: req.ip || req.connection?.remoteAddress,
-        userAgent: req.get('User-Agent'),
-        contentType: req.get('Content-Type')
-    });
+    const requestId = `delete-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const timer = createTimer('file_delete');
+    const requestLogger = createRequestLogger(requestId, req);
     
     try {
         const fileBrowserConfig = config.getFileBrowser();
         
         if (!fileBrowserConfig?.enabled) {
-            const duration = Date.now() - startTime;
-            console.log(`🌐 [ACCESS] ${requestId} - DELETE /filesystem - 503 - ${duration}ms - File browser disabled`);
+            requestLogger.error(503, 'File browser disabled');
             return res.status(503).json({
                 error: 'File browser is disabled'
             });
@@ -1087,14 +1080,14 @@ export const deleteFileItem = async (req, res) => {
         const { path: itemPath, recursive = false, force = false } = req.body;
         
         if (!itemPath) {
-            const duration = Date.now() - startTime;
-            console.log(`🌐 [ACCESS] ${requestId} - DELETE /filesystem - 400 - ${duration}ms - Path required`);
+            requestLogger.error(400, 'Path required');
             return res.status(400).json({
                 error: 'path is required'
             });
         }
 
-        console.log(`🗑️ [DELETE] ${requestId} - File deletion details:`, {
+        log.filesystem.info('File deletion started', {
+            requestId,
             path: itemPath,
             recursive: recursive,
             force: force,
@@ -1104,8 +1097,7 @@ export const deleteFileItem = async (req, res) => {
         // Fast path validation without expensive operations
         const validation = validatePath(itemPath);
         if (!validation.valid) {
-            const duration = Date.now() - startTime;
-            console.log(`🌐 [ACCESS] ${requestId} - DELETE /filesystem - 403 - ${duration}ms - Path validation failed`);
+            requestLogger.error(403, 'Path validation failed');
             return res.status(403).json({ error: validation.error });
         }
 
@@ -1119,9 +1111,19 @@ export const deleteFileItem = async (req, res) => {
                 isDirectory: stats.isDirectory(),
                 size: stats.isDirectory() ? null : stats.size
             };
-            console.log(`🗑️ [DELETE] Item: ${itemInfo.isDirectory ? 'directory' : 'file'} (${itemInfo.size || 'N/A'} bytes)`);
+            
+            log.filesystem.debug('Item info retrieved', {
+                requestId,
+                name: itemInfo.name,
+                isDirectory: itemInfo.isDirectory,
+                size: itemInfo.size
+            });
         } catch (infoError) {
-            console.warn(`⚠️ [DELETE] Could not stat ${itemPath}: ${infoError.message}`);
+            log.filesystem.warn('Could not stat file before deletion', {
+                requestId,
+                path: itemPath,
+                error: infoError.message
+            });
             itemInfo = { 
                 name: path.basename(itemPath), 
                 isDirectory: false, 
@@ -1133,45 +1135,57 @@ export const deleteFileItem = async (req, res) => {
         // Perform the actual deletion immediately
         await deleteItem(itemPath, { recursive, force });
 
-        console.log(`✅ [DELETE] Successfully deleted ${itemInfo.isDirectory ? 'directory' : 'file'}: ${itemPath}`);
+        const duration = timer.end({
+            itemName: itemInfo.name,
+            itemType: itemInfo.isDirectory ? 'directory' : 'file',
+            size: itemInfo.size
+        });
 
-        const duration = Date.now() - startTime;
-        const response = {
-            success: true,
-            message: `${itemInfo.isDirectory ? 'Directory' : 'File'} '${itemInfo.name}' deleted successfully`,
-            deleted_item: itemInfo
-        };
-
-        // RESPONSE ACCESS LOG
-        console.log(`🌐 [ACCESS] ${requestId} - DELETE /filesystem - 200 - ${duration}ms - SUCCESS`, {
-            timestamp: new Date().toISOString(),
+        log.filesystem.info('File deletion completed', {
+            requestId,
             path: itemPath,
             itemName: itemInfo.name,
             itemType: itemInfo.isDirectory ? 'directory' : 'file',
             size: itemInfo.size,
             recursive: recursive,
             force: force,
-            user: req.entity.name,
             duration_ms: duration
+        });
+
+        const response = {
+            success: true,
+            message: `${itemInfo.isDirectory ? 'Directory' : 'File'} '${itemInfo.name}' deleted successfully`,
+            deleted_item: itemInfo
+        };
+
+        requestLogger.success(200, {
+            itemName: itemInfo.name,
+            itemType: itemInfo.isDirectory ? 'directory' : 'file',
+            size: itemInfo.size
         });
 
         res.json(response);
 
     } catch (error) {
-        const duration = Date.now() - startTime;
-        console.error(`❌ [DELETE] ${requestId} - Error deleting item:`, error);
+        timer.end({ error: error.message });
+        log.filesystem.error('File deletion failed', {
+            requestId,
+            path: req.body.path,
+            error: error.message,
+            stack: error.stack
+        });
         
         if (error.message.includes('forbidden') || error.message.includes('not allowed')) {
-            console.log(`🌐 [ACCESS] ${requestId} - DELETE /filesystem - 403 - ${duration}ms - Forbidden`);
+            requestLogger.error(403, 'Access forbidden');
             return res.status(403).json({ error: error.message });
         }
         
         if (error.message.includes('not found') || error.message.includes('ENOENT')) {
-            console.log(`🌐 [ACCESS] ${requestId} - DELETE /filesystem - 404 - ${duration}ms - Not found`);
+            requestLogger.error(404, 'Item not found');
             return res.status(404).json({ error: 'Item not found' });
         }
         
-        console.log(`🌐 [ACCESS] ${requestId} - DELETE /filesystem - 500 - ${duration}ms - Server error`);
+        requestLogger.error(500, error.message);
         res.status(500).json({ 
             error: 'Failed to delete item',
             details: error.message 
