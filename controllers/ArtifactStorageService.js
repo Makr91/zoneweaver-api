@@ -118,8 +118,9 @@ class ArtifactStorageService {
             log.artifact.warn('Failed to create storage directory - marking as disabled', {
               name: pathConfig.name,
               path: pathConfig.path,
-              original_error: error.message,
-              create_error: createError.message,
+              original_error: error?.message || 'Unknown error',
+              create_error: createError?.message || 'Unknown create error',
+              create_error_type: typeof createError,
             });
             
             // Mark as disabled since we couldn't create the directory
@@ -174,8 +175,10 @@ class ArtifactStorageService {
     } catch (error) {
       timer.end();
       log.artifact.error('Failed to synchronize configuration', {
-        error: error.message,
-        stack: error.stack,
+        error: error?.message || 'Unknown error',
+        stack: error?.stack || 'No stack trace available',
+        error_type: typeof error,
+        raw_error: error,
       });
       throw error;
     }
@@ -219,8 +222,9 @@ class ArtifactStorageService {
 
     } catch (error) {
       log.artifact.error('Failed to create initial scan task', {
-        error: error.message,
-        stack: error.stack,
+        error: error?.message || 'Unknown error',
+        stack: error?.stack || 'No stack trace available',
+        error_type: typeof error,
       });
     }
   }
@@ -388,8 +392,10 @@ class ArtifactStorageService {
 
     } catch (error) {
       log.artifact.error('Failed to initialize artifact storage service', {
-        error: error.message,
-        stack: error.stack,
+        error: error?.message || 'Unknown error',
+        stack: error?.stack || 'No stack trace available',
+        error_type: typeof error,
+        raw_error: error,
       });
       return false;
     }
