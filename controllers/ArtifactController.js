@@ -14,7 +14,7 @@ import Artifact from '../models/ArtifactModel.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { getArtifactStorageService } from './ArtifactStorageService.js';
 import { log, createTimer, createRequestLogger } from '../lib/Logger.js';
-import { validatePath, getMimeType } from '../lib/FileSystemManager.js';
+import { validatePath, getMimeType, executeCommand } from '../lib/FileSystemManager.js';
 import { Op } from 'sequelize';
 import yj from 'yieldable-json';
 
@@ -94,7 +94,6 @@ export const listStoragePaths = async (req, res) => {
       let diskUsage = null;
       try {
         if (fs.existsSync(storagePath.path)) {
-          const { executeCommand } = await import('../lib/FileSystemManager.js');
           const dfResult = await executeCommand(`df -h "${storagePath.path}"`);
           if (dfResult.success) {
             const lines = dfResult.output.split('\n');
@@ -244,8 +243,18 @@ export const createStoragePath = async (req, res) => {
       await fs.promises.access(normalizedPath);
     } catch (error) {
       try {
-        await fs.promises.mkdir(normalizedPath, { recursive: true });
-        log.artifact.info('Created storage directory', {
+        log.artifact.info('Creating storage directory with pfexec', {
+          path: normalizedPath,
+          name,
+        });
+
+        const mkdirResult = await executeCommand(`pfexec mkdir -p "${normalizedPath}"`);
+
+        if (!mkdirResult.success) {
+          throw new Error(`mkdir failed: ${mkdirResult.error}`);
+        }
+
+        log.artifact.info('Storage directory created successfully', {
           path: normalizedPath,
           name,
         });

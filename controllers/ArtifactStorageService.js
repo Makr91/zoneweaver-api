@@ -14,7 +14,7 @@ import Artifact from '../models/ArtifactModel.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import CleanupService from './CleanupService.js';
 import { log, createTimer } from '../lib/Logger.js';
-import { validatePath, getMimeType } from '../lib/FileSystemManager.js';
+import { validatePath, getMimeType, executeCommand } from '../lib/FileSystemManager.js';
 import { Op } from 'sequelize';
 import yj from 'yieldable-json';
 
@@ -103,7 +103,6 @@ class ArtifactStorageService {
               path: validation.normalizedPath,
             });
 
-            const { executeCommand } = await import('../lib/FileSystemManager.js');
             const mkdirResult = await executeCommand(`pfexec mkdir -p "${validation.normalizedPath}"`);
 
             if (!mkdirResult.success) {
