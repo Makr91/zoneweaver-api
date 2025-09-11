@@ -30,7 +30,7 @@
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "express": "^4.19.2",
+    "express": "^5.1.0",
     "js-yaml": "^4.1.0",
     "mime-types": "^3.0.1",
     "multer": "^2.0.2",
