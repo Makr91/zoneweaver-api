@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import yaml from 'js-yaml';
 import config from '../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../models/ArtifactStorageLocationModel.js';
 import Artifact from '../models/ArtifactModel.js';
@@ -17,6 +18,53 @@ import { log, createTimer, createRequestLogger } from '../lib/Logger.js';
 import { validatePath, getMimeType, executeCommand } from '../lib/FileSystemManager.js';
 import { Op } from 'sequelize';
 import yj from 'yieldable-json';
+
+/**
+ * Update config.yaml with new storage path
+ * @param {Object} pathConfig - New path configuration
+ * @returns {Promise<void>}
+ */
+const updateConfigWithNewPath = async (pathConfig) => {
+  const configPath = process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+  
+  // Read current config
+  const fileContents = await fs.promises.readFile(configPath, 'utf8');
+  const fullConfig = yaml.load(fileContents);
+  const currentConfig = fullConfig.zoneweaver_api_backend || fullConfig;
+  
+  // Ensure artifact_storage.paths array exists
+  if (!currentConfig.artifact_storage) {
+    currentConfig.artifact_storage = {};
+  }
+  if (!currentConfig.artifact_storage.paths) {
+    currentConfig.artifact_storage.paths = [];
+  }
+  
+  // Add new path to config
+  currentConfig.artifact_storage.paths.push({
+    name: pathConfig.name,
+    path: pathConfig.path,
+    type: pathConfig.type,
+    enabled: pathConfig.enabled,
+  });
+  
+  // Write updated config to temp file first
+  const tempConfigPath = `${configPath}.tmp`;
+  const updatedYaml = yaml.dump(fullConfig.zoneweaver_api_backend ? fullConfig : currentConfig);
+  await fs.promises.writeFile(tempConfigPath, updatedYaml, 'utf8');
+  
+  // Atomically replace the old config
+  await fs.promises.rename(tempConfigPath, configPath);
+  
+  // Reload configuration
+  config.load();
+  
+  log.artifact.info('Config file updated with new storage path', {
+    config_path: configPath,
+    path_name: pathConfig.name,
+    path_location: pathConfig.path,
+  });
+};
 
 /**
  * @swagger
@@ -280,8 +328,23 @@ export const createStoragePath = async (req, res) => {
       total_size: 0,
     });
 
-    // TODO: Update config.yaml with new path
-    // This would require implementing config file update functionality
+    // Update config.yaml with new path
+    try {
+      await updateConfigWithNewPath({ name, path: normalizedPath, type, enabled });
+      log.artifact.info('Storage path added to config.yaml successfully', {
+        id: storageLocation.id,
+        name,
+        path: normalizedPath,
+        type,
+        enabled,
+      });
+    } catch (configError) {
+      log.artifact.warn('Failed to update config.yaml - path only exists in database', {
+        id: storageLocation.id,
+        error: configError.message,
+      });
+    }
+
     log.artifact.info('Storage path created successfully', {
       id: storageLocation.id,
       name,
