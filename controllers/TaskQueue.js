@@ -737,12 +737,23 @@ const processNextTask = async () => {
     const result = await executeTask(task);
     const executionTime = taskTimer.end();
 
-    // Update task status
-    await task.update({
+    // Update task status with progress
+    const updateData = {
       status: result.success ? 'completed' : 'failed',
       completed_at: new Date(),
       error_message: result.error || null,
-    });
+    };
+
+    // Set progress to 100% for successful tasks (unless already set by task execution)
+    if (result.success && task.progress_percent < 100) {
+      updateData.progress_percent = 100;
+      updateData.progress_info = {
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      };
+    }
+
+    await task.update(updateData);
 
     runningTasks.delete(task.id);
 
@@ -5631,22 +5642,50 @@ const executeArtifactDownloadTask = async metadataJson => {
       const startTime = Date.now();
 
       // Set up progress tracking for large files
-      const progressInterval = setInterval(() => {
-        if (fileSize) {
-          const progress = ((downloadedBytes / fileSize) * 100).toFixed(1);
-          log.task.debug('Download progress', {
-            url,
-            progress_percent: progress,
-            downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
-            total_mb: Math.round(fileSize / 1024 / 1024),
-          });
-        } else {
-          log.task.debug('Download progress', {
-            url,
-            downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
+      const progressInterval = setInterval(async () => {
+        try {
+          if (fileSize) {
+            const progress = ((downloadedBytes / fileSize) * 100);
+            const speedKbps = downloadedBytes / 1024 / ((Date.now() - startTime) / 1000);
+            const remainingBytes = fileSize - downloadedBytes;
+            const etaSeconds = remainingBytes / (downloadedBytes / ((Date.now() - startTime) / 1000));
+
+            // Update task progress in database
+            const taskToUpdate = await Tasks.findOne({
+              where: {
+                operation: 'artifact_download_url',
+                status: 'running',
+                metadata: { [Op.like]: `%${url.substring(0, 50)}%` }
+              }
+            });
+
+            if (taskToUpdate) {
+              await taskToUpdate.update({
+                progress_percent: Math.round(progress * 100) / 100,
+                progress_info: {
+                  downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
+                  total_mb: Math.round(fileSize / 1024 / 1024),
+                  speed_kbps: Math.round(speedKbps),
+                  eta_seconds: isFinite(etaSeconds) ? Math.round(etaSeconds) : null,
+                  status: 'downloading',
+                },
+              });
+
+              log.task.debug('Download progress updated', {
+                task_id: taskToUpdate.id,
+                progress_percent: progress.toFixed(1),
+                downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
+                total_mb: Math.round(fileSize / 1024 / 1024),
+                speed_kbps: Math.round(speedKbps),
+              });
+            }
+          }
+        } catch (progressError) {
+          log.task.warn('Failed to update download progress', {
+            error: progressError.message,
           });
         }
-      }, 10000); // Log every 10 seconds
+      }, 5000); // Update every 5 seconds
 
       // Stream data to file and hash
       const reader = response.body.getReader();
@@ -6304,12 +6343,44 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       };
     }
 
-    // Calculate checksum
+    // Calculate checksum with progress tracking
     log.task.debug('Calculating checksum');
+    
+    const taskToUpdate = await Tasks.findOne({
+      where: {
+        operation: 'artifact_upload_process',
+        status: 'running',
+        metadata: { [Op.like]: `%${original_name}%` }
+      }
+    });
+
     const hash = crypto.createHash(checksum_algorithm);
     const fileBuffer = await fs.readFile(temp_path);
+    
+    // Update progress for checksum calculation
+    if (taskToUpdate) {
+      await taskToUpdate.update({
+        progress_percent: 50,
+        progress_info: {
+          status: 'calculating_checksum',
+          file_size_mb: Math.round(size / 1024 / 1024),
+        },
+      });
+    }
+
     hash.update(fileBuffer);
     const calculatedChecksum = hash.digest('hex');
+    
+    // Update progress after checksum
+    if (taskToUpdate) {
+      await taskToUpdate.update({
+        progress_percent: 80,
+        progress_info: {
+          status: 'checksum_complete',
+          calculated_checksum: calculatedChecksum.substring(0, 16) + '...',
+        },
+      });
+    }
 
     log.task.debug('Checksum calculated', {
       algorithm: checksum_algorithm,
@@ -6371,6 +6442,18 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     await storageLocation.increment('file_count', { by: 1 });
     await storageLocation.increment('total_size', { by: size });
     await storageLocation.update({ last_scan_at: new Date() });
+
+    // Final progress update
+    if (taskToUpdate) {
+      await taskToUpdate.update({
+        progress_percent: 100,
+        progress_info: {
+          status: 'completed',
+          final_path: finalPath,
+          checksum_verified: checksumVerified,
+        },
+      });
+    }
 
     log.task.info('Artifact upload processing completed', {
       filename: original_name,

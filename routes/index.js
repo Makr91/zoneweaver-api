@@ -272,7 +272,8 @@ import {
   listImageArtifacts,
   getArtifactDetails,
   downloadFromUrl,
-  uploadArtifact,
+  prepareArtifactUpload,
+  uploadArtifactToTask,
   downloadArtifact,
   scanArtifacts,
   deleteArtifacts,
@@ -572,14 +573,15 @@ router.get('/artifacts/iso', verifyApiKey, listISOArtifacts); // List ISO artifa
 router.get('/artifacts/image', verifyApiKey, listImageArtifacts); // List image artifacts
 router.get('/artifacts/:id', verifyApiKey, getArtifactDetails); // Get artifact details
 router.post('/artifacts/download', verifyApiKey, downloadFromUrl); // Download artifact from URL (async task)
+router.post('/artifacts/upload/prepare', verifyApiKey, prepareArtifactUpload); // Prepare upload (returns task_id and upload_url)
 router.post(
-  '/artifacts/upload',
+  '/artifacts/upload/:taskId',
   verifyApiKey,
   validateUploadRequest,
   uploadSingle('file'),
-  uploadArtifact,
+  uploadArtifactToTask,
   handleUploadError
-); // Upload artifact file (async task)
+); // Upload artifact file to prepared task
 router.get('/artifacts/:id/download', verifyApiKey, downloadArtifact); // Stream download artifact file
 router.post('/artifacts/scan', verifyApiKey, scanArtifacts); // Scan storage locations (async task)
 router.delete('/artifacts/files', verifyApiKey, deleteArtifacts); // Delete artifact files (async task)

@@ -147,6 +147,17 @@ const Tasks = db.define(
       allowNull: true,
       comment: 'JSON metadata for task execution (networking parameters, etc.)',
     },
+    progress_percent: {
+      type: DataTypes.DECIMAL(5, 2),
+      defaultValue: 0,
+      allowNull: false,
+      comment: 'Task completion percentage (0.00 to 100.00)',
+    },
+    progress_info: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'Detailed progress information (transferred bytes, speed, ETA, etc.)',
+    },
   },
   {
     freezeTableName: true,
