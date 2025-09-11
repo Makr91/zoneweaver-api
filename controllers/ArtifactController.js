@@ -1109,27 +1109,33 @@ export const downloadFromUrl = async (req, res) => {
 
 /**
  * @swagger
- * /artifacts/upload:
+ * /artifacts/upload/prepare:
  *   post:
- *     summary: Upload artifact file
- *     description: Upload an artifact file to specified storage location
+ *     summary: Prepare artifact upload
+ *     description: Creates an upload task and returns upload URL for efficient large file handling
  *     tags: [Artifact Storage]
  *     security:
  *       - ApiKeyAuth: []
  *     requestBody:
  *       required: true
  *       content:
- *         multipart/form-data:
+ *         application/json:
  *           schema:
  *             type: object
  *             required:
- *               - file
+ *               - filename
+ *               - size
  *               - storage_path_id
  *             properties:
- *               file:
+ *               filename:
  *                 type: string
- *                 format: binary
- *                 description: Artifact file to upload
+ *                 description: Original filename
+ *                 example: "ubuntu-22.04-server-amd64.iso"
+ *               size:
+ *                 type: integer
+ *                 format: int64
+ *                 description: File size in bytes
+ *                 example: 4294967296
  *               storage_path_id:
  *                 type: string
  *                 format: uuid
@@ -1147,18 +1153,222 @@ export const downloadFromUrl = async (req, res) => {
  *                 default: false
  *                 description: Whether to overwrite existing files
  *     responses:
- *       202:
- *         description: Upload task created successfully
+ *       200:
+ *         description: Upload prepared successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 task_id:
+ *                   type: string
+ *                   format: uuid
+ *                 upload_url:
+ *                   type: string
+ *                 expires_at:
+ *                   type: string
+ *                   format: date-time
  *       400:
- *         description: Invalid upload request
+ *         description: Invalid request
  *       404:
  *         description: Storage location not found
+ */
+export const prepareArtifactUpload = async (req, res) => {
+  try {
+    const artifactConfig = config.getArtifactStorage();
+
+    if (!artifactConfig?.enabled) {
+      return res.status(503).json({
+        error: 'Artifact storage is disabled',
+      });
+    }
+
+    const {
+      filename,
+      size,
+      storage_path_id,
+      expected_checksum,
+      checksum_algorithm = 'sha256',
+      overwrite_existing = false,
+    } = req.body;
+
+    if (!filename || !size || !storage_path_id) {
+      return res.status(400).json({
+        error: 'filename, size, and storage_path_id are required',
+      });
+    }
+
+    // Check file size limit
+    const maxUploadSize = (artifactConfig.security?.max_upload_size_gb || 50) * 1024 * 1024 * 1024;
+    if (size > maxUploadSize) {
+      return res.status(400).json({
+        error: `File size ${Math.round(size / 1024 / 1024)}MB exceeds maximum upload size of ${artifactConfig.security?.max_upload_size_gb || 50}GB`,
+      });
+    }
+
+    // Verify storage location exists and is enabled
+    const storageLocation = await ArtifactStorageLocation.findByPk(storage_path_id);
+    if (!storageLocation) {
+      return res.status(404).json({
+        error: 'Storage location not found',
+      });
+    }
+
+    if (!storageLocation.enabled) {
+      return res.status(400).json({
+        error: 'Storage location is disabled',
+      });
+    }
+
+    // Create upload processing task
+    const task = await Tasks.create({
+      zone_name: 'artifact',
+      operation: 'artifact_upload_process',
+      priority: TaskPriority.MEDIUM,
+      created_by: req.entity.name,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            original_name: filename,
+            size: parseInt(size),
+            storage_location_id: storage_path_id,
+            expected_checksum,
+            checksum_algorithm,
+            overwrite_existing,
+            upload_prepared: true,
+          },
+          (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          }
+        );
+      }),
+    });
+
+    // Generate upload URL and expiration
+    const uploadUrl = `/artifacts/upload/${task.id}`;
+    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours from now
+
+    log.artifact.info('Upload prepared successfully', {
+      task_id: task.id,
+      filename,
+      size_mb: Math.round(size / 1024 / 1024),
+      storage_location: storageLocation.name,
+      expires_at: expiresAt,
+    });
+
+    res.json({
+      success: true,
+      task_id: task.id,
+      upload_url: uploadUrl,
+      expires_at: expiresAt.toISOString(),
+      storage_location: {
+        id: storageLocation.id,
+        name: storageLocation.name,
+        path: storageLocation.path,
+      },
+    });
+  } catch (error) {
+    log.api.error('Error preparing upload', {
+      error: error.message,
+      stack: error.stack,
+      filename,
+      size,
+      storage_path_id,
+    });
+    res.status(500).json({
+      error: 'Failed to prepare upload',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /artifacts/upload/{taskId}:
+ *   post:
+ *     summary: Upload artifact file to prepared task
+ *     description: Upload file directly to final storage location using prepared task
+ *     tags: [Artifact Storage]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Upload task ID from prepare endpoint
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Artifact file to upload
+ *     responses:
+ *       202:
+ *         description: File uploaded successfully, processing started
+ *       400:
+ *         description: Invalid upload or task
+ *       404:
+ *         description: Task not found
  *       413:
  *         description: File too large
  *       500:
- *         description: Failed to process upload
+ *         description: Upload failed
  */
-export const uploadArtifact = async (req, res) => {
+/**
+ * @swagger
+ * /artifacts/upload/{taskId}:
+ *   post:
+ *     summary: Upload artifact file to prepared task
+ *     description: Upload file directly to final storage location using prepared task
+ *     tags: [Artifact Storage]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Upload task ID from prepare endpoint
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Artifact file to upload
+ *     responses:
+ *       202:
+ *         description: File uploaded successfully, processing started
+ *       400:
+ *         description: Invalid upload or task
+ *       404:
+ *         description: Task not found
+ *       413:
+ *         description: File too large
+ *       500:
+ *         description: Upload failed
+ */
+export const uploadArtifactToTask = async (req, res) => {
   const requestId = `artifact-upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const timer = createTimer('artifact_upload');
   const requestLogger = createRequestLogger(requestId, req);

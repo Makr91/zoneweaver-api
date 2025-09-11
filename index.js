@@ -79,8 +79,14 @@ const corsOptions = {
 app.use(cookieParser());
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+// Get artifact storage configuration for upload limits
+const artifactConfig = config.getArtifactStorage?.() || {};
+const maxUploadGB = artifactConfig.security?.max_upload_size_gb || 50;
+const maxUploadSize = `${maxUploadGB}gb`;
+
 app.set('trust proxy', 1);
-app.use(express.json());
+app.use(express.json({ limit: maxUploadSize }));
+app.use(express.urlencoded({ limit: maxUploadSize, extended: true }));
 
 /**
  * API routes

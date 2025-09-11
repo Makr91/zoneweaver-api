@@ -192,6 +192,8 @@ artifact_storage:
   security:
     max_download_size_gb: 50  # Maximum URL download size
     download_timeout_minutes: 60
+    max_upload_size_gb: 50  # Maximum file upload size
+    upload_timeout_minutes: 120  # Timeout for large uploads
   cleanup:
     enabled: true
     orphaned_files_retention_days: 30
