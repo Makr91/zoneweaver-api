@@ -32,6 +32,7 @@ import CleanupService from './controllers/CleanupService.js';
 import { startHostMonitoring } from './controllers/HostMonitoringService.js';
 import { checkAndInstallPackages } from './controllers/ProvisioningController.js';
 import ReconciliationService from './controllers/ReconciliationService.js';
+import { initializeArtifactStorage, startArtifactStorage } from './controllers/ArtifactStorageService.js';
 import TerminalSessions from './models/TerminalSessionModel.js';
 import ZloginSessions from './models/ZloginSessionModel.js';
 import yj from 'yieldable-json';
@@ -628,6 +629,10 @@ httpServer.listen(httpPort, () => {
         // Start reconciliation service
         ReconciliationService.start();
 
+        // Initialize and start artifact storage service
+        await initializeArtifactStorage();
+        await startArtifactStorage();
+
         log.app.info('Zoneweaver API fully initialized and ready for zone management', {
           services_started: [
             'task_processor',
@@ -635,6 +640,7 @@ httpServer.listen(httpPort, () => {
             'cleanup_service',
             'host_monitoring',
             'reconciliation_service',
+            'artifact_storage_service',
           ],
           ready: true,
         });

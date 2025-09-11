@@ -262,6 +262,23 @@ import {
   validateUploadRequest,
   handleUploadError,
 } from '../middleware/FileUpload.js';
+import {
+  listStoragePaths,
+  createStoragePath,
+  updateStoragePath,
+  deleteStoragePath,
+  listArtifacts,
+  listISOArtifacts,
+  listImageArtifacts,
+  getArtifactDetails,
+  downloadFromUrl,
+  uploadArtifact,
+  downloadArtifact,
+  scanArtifacts,
+  deleteArtifacts,
+  getArtifactStats,
+  getArtifactServiceStatus,
+} from '../controllers/ArtifactController.js';
 import config from '../config/ConfigLoader.js';
 
 const router = express.Router();
@@ -544,6 +561,30 @@ router.get('/system/rbac/profiles', verifyApiKey, getAvailableProfiles); // List
 router.get('/system/rbac/roles', verifyApiKey, getAvailableRoles); // List available RBAC roles for assignment
 router.get('/system/user-lookup', verifyApiKey, lookupUser); // Lookup user by UID or username
 router.get('/system/group-lookup', verifyApiKey, lookupGroup); // Lookup group by GID or name
+
+// Artifact Storage Management Routes
+router.get('/artifacts/storage/paths', verifyApiKey, listStoragePaths); // List storage paths
+router.post('/artifacts/storage/paths', verifyApiKey, createStoragePath); // Create storage path
+router.put('/artifacts/storage/paths/:id', verifyApiKey, updateStoragePath); // Update storage path
+router.delete('/artifacts/storage/paths/:id', verifyApiKey, deleteStoragePath); // Delete storage path
+router.get('/artifacts', verifyApiKey, listArtifacts); // List all artifacts
+router.get('/artifacts/iso', verifyApiKey, listISOArtifacts); // List ISO artifacts
+router.get('/artifacts/image', verifyApiKey, listImageArtifacts); // List image artifacts
+router.get('/artifacts/:id', verifyApiKey, getArtifactDetails); // Get artifact details
+router.post('/artifacts/download', verifyApiKey, downloadFromUrl); // Download artifact from URL (async task)
+router.post(
+  '/artifacts/upload',
+  verifyApiKey,
+  validateUploadRequest,
+  uploadSingle('file'),
+  uploadArtifact,
+  handleUploadError
+); // Upload artifact file (async task)
+router.get('/artifacts/:id/download', verifyApiKey, downloadArtifact); // Stream download artifact file
+router.post('/artifacts/scan', verifyApiKey, scanArtifacts); // Scan storage locations (async task)
+router.delete('/artifacts/files', verifyApiKey, deleteArtifacts); // Delete artifact files (async task)
+router.get('/artifacts/stats', verifyApiKey, getArtifactStats); // Get artifact statistics
+router.get('/artifacts/service/status', verifyApiKey, getArtifactServiceStatus); // Get service status
 
 // File System Management Routes
 router.get('/filesystem', verifyApiKey, browseDirectory); // Browse directory contents

@@ -166,3 +166,33 @@ file_browser:
     enabled: true
     max_archive_size_mb: 10240  # 10GB max archive size
     supported_formats: ["zip", "tar", "tar.gz", "tar.bz2", "gz"]
+artifact_storage:
+  enabled: true
+  checksums:
+    enabled: true
+    algorithm: "sha256"  # md5, sha1, sha256
+    detect_duplicates: true
+    skip_duplicate_uploads: false  # warn vs reject duplicates
+  scanning:
+    auto_scan_after_upload: true
+    auto_scan_after_download: true  
+    periodic_scan_interval: 300  # seconds (5 minutes)
+    supported_extensions:
+      iso: [".iso"]
+      image: [".vmdk", ".raw", ".vdi", ".qcow2", ".img", ".ova", ".ovf"]
+  paths:
+    - name: "Primary ISO Storage"
+      path: "/data/isos"
+      type: iso
+      enabled: true
+    - name: "Image Storage"
+      path: "/data/images" 
+      type: image
+      enabled: true
+  security:
+    max_download_size_gb: 50  # Maximum URL download size
+    download_timeout_minutes: 60
+  cleanup:
+    enabled: true
+    orphaned_files_retention_days: 30
+    failed_downloads_cleanup: true

@@ -248,6 +248,21 @@ class ConfigLoader {
   getFileBrowser() {
     return this.config.file_browser;
   }
+
+  /**
+   * Gets artifact storage configuration
+   * @description Returns artifact storage configuration for ISOs and VM images
+   * @returns {Object} Artifact storage configuration object
+   * @returns {boolean} returns.enabled - Whether artifact storage is enabled
+   * @returns {Object} returns.checksums - Checksum calculation settings
+   * @returns {Object} returns.scanning - Filesystem scanning configuration
+   * @returns {Array} returns.paths - Array of storage path configurations
+   * @returns {Object} returns.security - Security restrictions and limits
+   * @returns {Object} returns.cleanup - Cleanup and retention settings
+   */
+  getArtifactStorage() {
+    return this.config.artifact_storage;
+  }
 }
 
 // Export singleton instance

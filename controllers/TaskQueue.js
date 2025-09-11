@@ -90,6 +90,10 @@ const OPERATION_CATEGORIES = {
 
   // Service operations (safe to run concurrently - no category)
   // service_enable, service_disable, service_restart, service_refresh - no category = no conflicts
+
+  // Artifact operations (safe to run concurrently - no category)
+  // artifact_download_url, artifact_scan_all, artifact_scan_location, artifact_delete_file, 
+  // artifact_delete_folder, artifact_upload_process - no category = no conflicts
 };
 
 /**
@@ -355,6 +359,18 @@ const executeTask = async task => {
         return await executeRoleModifyTask(task.metadata);
       case 'role_delete':
         return await executeRoleDeleteTask(task.metadata);
+      case 'artifact_download_url':
+        return await executeArtifactDownloadTask(task.metadata);
+      case 'artifact_scan_all':
+        return await executeArtifactScanAllTask(task.metadata);
+      case 'artifact_scan_location':
+        return await executeArtifactScanLocationTask(task.metadata);
+      case 'artifact_delete_file':
+        return await executeArtifactDeleteFileTask(task.metadata);
+      case 'artifact_delete_folder':
+        return await executeArtifactDeleteFolderTask(task.metadata);
+      case 'artifact_upload_process':
+        return await executeArtifactUploadProcessTask(task.metadata);
       default:
         return { success: false, error: `Unknown operation: ${operation}` };
     }
@@ -5505,6 +5521,1039 @@ const executeRoleDeleteTask = async metadataJson => {
       stack: error.stack,
     });
     return { success: false, error: `Role deletion task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute artifact download from URL task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeArtifactDownloadTask = async metadataJson => {
+  log.task.debug('Artifact download task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { 
+      url, 
+      storage_location_id, 
+      filename, 
+      expected_checksum, 
+      checksum_algorithm = 'sha256',
+      overwrite_existing = false 
+    } = metadata;
+
+    log.task.debug('Artifact download task parameters', {
+      url,
+      storage_location_id,
+      filename,
+      has_expected_checksum: !!expected_checksum,
+      checksum_algorithm,
+      overwrite_existing,
+    });
+
+    // Get storage location
+    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
+    const storageLocation = await ArtifactStorageLocation.findByPk(storage_location_id);
+    
+    if (!storageLocation || !storageLocation.enabled) {
+      return {
+        success: false,
+        error: `Storage location not found or disabled: ${storage_location_id}`,
+      };
+    }
+
+    // Import required modules
+    const crypto = await import('crypto');
+    const fs = await import('fs');
+    const path = await import('path');
+    const { v4: uuid } = await import('crypto');
+
+    // Determine filename from URL if not provided
+    let finalFilename = filename;
+    if (!finalFilename) {
+      const urlPath = new URL(url).pathname;
+      finalFilename = path.basename(urlPath) || `download_${Date.now()}`;
+    }
+
+    const finalPath = path.join(storageLocation.path, finalFilename);
+
+    // Check if file already exists
+    if (!overwrite_existing && fs.existsSync(finalPath)) {
+      return {
+        success: false,
+        error: `File already exists: ${finalFilename}. Use overwrite_existing=true to replace.`,
+      };
+    }
+
+    log.task.info('Starting download', {
+      url,
+      destination: finalPath,
+      storage_location: storageLocation.name,
+    });
+
+    // Create temporary file for download
+    const tempPath = `/tmp/artifact_${crypto.randomUUID()}_${finalFilename}`;
+
+    try {
+      // Fetch the file with streaming
+      const response = await fetch(url, {
+        timeout: 60000, // 1 minute timeout for initial response
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const contentLength = response.headers.get('content-length');
+      const fileSize = contentLength ? parseInt(contentLength) : null;
+
+      log.task.info('Download response received', {
+        status: response.status,
+        content_length: fileSize ? `${Math.round(fileSize / 1024 / 1024)}MB` : 'unknown',
+        content_type: response.headers.get('content-type'),
+      });
+
+      // Create write stream and hash calculator
+      const fileStream = fs.createWriteStream(tempPath);
+      const hash = crypto.createHash(checksum_algorithm);
+      
+      let downloadedBytes = 0;
+      const startTime = Date.now();
+
+      // Set up progress tracking for large files
+      const progressInterval = setInterval(() => {
+        if (fileSize) {
+          const progress = ((downloadedBytes / fileSize) * 100).toFixed(1);
+          log.task.debug('Download progress', {
+            url,
+            progress_percent: progress,
+            downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
+            total_mb: Math.round(fileSize / 1024 / 1024),
+          });
+        } else {
+          log.task.debug('Download progress', {
+            url,
+            downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
+          });
+        }
+      }, 10000); // Log every 10 seconds
+
+      // Stream data to file and hash
+      const reader = response.body.getReader();
+      
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            break;
+          }
+
+          downloadedBytes += value.length;
+          fileStream.write(value);
+          hash.update(value);
+        }
+      } finally {
+        clearInterval(progressInterval);
+        fileStream.end();
+      }
+
+      // Wait for file write to complete
+      await new Promise((resolve, reject) => {
+        fileStream.on('finish', resolve);
+        fileStream.on('error', reject);
+      });
+
+      const calculatedChecksum = hash.digest('hex');
+      const downloadTime = Date.now() - startTime;
+
+      log.task.info('Download completed', {
+        url,
+        downloaded_bytes: downloadedBytes,
+        downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
+        duration_ms: downloadTime,
+        calculated_checksum: calculatedChecksum.substring(0, 16) + '...',
+      });
+
+      // Verify checksum if provided
+      let checksumVerified = false;
+      if (expected_checksum) {
+        checksumVerified = calculatedChecksum === expected_checksum;
+        if (!checksumVerified) {
+          // Clean up temp file
+          try {
+            await fs.unlink(tempPath);
+          } catch (cleanupError) {
+            log.task.warn('Failed to cleanup temp file after checksum mismatch', {
+              temp_path: tempPath,
+              error: cleanupError.message,
+            });
+          }
+          
+          return {
+            success: false,
+            error: `Checksum verification failed. Expected: ${expected_checksum}, Got: ${calculatedChecksum}`,
+            expected_checksum,
+            calculated_checksum,
+          };
+        }
+        log.task.info('Checksum verification passed');
+      }
+
+      // Move to final location
+      await fs.rename(tempPath, finalPath);
+
+      // Create artifact database record
+      const { default: Artifact } = await import('../models/ArtifactModel.js');
+      const { getMimeType } = await import('../lib/FileSystemManager.js');
+
+      const extension = path.extname(finalFilename).toLowerCase();
+      const mimeType = getMimeType(finalPath);
+      
+      await Artifact.create({
+        storage_location_id: storage_location_id,
+        filename: finalFilename,
+        path: finalPath,
+        size: downloadedBytes,
+        file_type: storageLocation.type,
+        extension,
+        mime_type: mimeType,
+        user_provided_checksum: expected_checksum || null,
+        calculated_checksum: calculatedChecksum,
+        checksum_verified: checksumVerified,
+        checksum_algorithm,
+        source_url: url,
+        discovered_at: new Date(),
+        last_verified: new Date(),
+      });
+
+      // Update storage location stats
+      await storageLocation.increment('file_count', { by: 1 });
+      await storageLocation.increment('total_size', { by: downloadedBytes });
+      await storageLocation.update({ last_scan_at: new Date() });
+
+      return {
+        success: true,
+        message: `Successfully downloaded ${finalFilename} (${Math.round(downloadedBytes / 1024 / 1024)}MB)${checksumVerified ? ' with verified checksum' : ''}`,
+        downloaded_bytes: downloadedBytes,
+        checksum_verified: checksumVerified,
+        calculated_checksum: calculatedChecksum,
+        final_path: finalPath,
+        duration_ms: downloadTime,
+      };
+
+    } catch (downloadError) {
+      // Clean up temp file if it exists
+      try {
+        if (fs.existsSync(tempPath)) {
+          await fs.unlink(tempPath);
+        }
+      } catch (cleanupError) {
+        log.task.warn('Failed to cleanup temp file after download error', {
+          temp_path: tempPath,
+          cleanup_error: cleanupError.message,
+        });
+      }
+      throw downloadError;
+    }
+
+  } catch (error) {
+    log.task.error('Artifact download task exception', {
+      error: error.message,
+      stack: error.stack,
+      url,
+    });
+    return { success: false, error: `Download failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute scan all artifact locations task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeArtifactScanAllTask = async metadataJson => {
+  log.task.debug('Artifact scan all task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { verify_checksums = false, remove_orphaned = false, source = 'manual' } = metadata;
+
+    log.task.debug('Scan all task parameters', {
+      verify_checksums,
+      remove_orphaned,
+      source,
+    });
+
+    // Import required models
+    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
+    const { default: Artifact } = await import('../models/ArtifactModel.js');
+
+    // Get all enabled storage locations
+    const locations = await ArtifactStorageLocation.findAll({
+      where: { enabled: true },
+    });
+
+    let totalScanned = 0;
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    let errors = [];
+
+    for (const location of locations) {
+      try {
+        const scanResult = await scanStorageLocation(location, {
+          verify_checksums,
+          remove_orphaned,
+        });
+
+        totalScanned += scanResult.scanned;
+        totalAdded += scanResult.added;
+        totalRemoved += scanResult.removed;
+
+        // Update location stats
+        await location.update({
+          last_scan_at: new Date(),
+          scan_errors: 0,
+          last_error_message: null,
+        });
+
+      } catch (locationError) {
+        const errorMsg = `Failed to scan ${location.name}: ${locationError.message}`;
+        errors.push(errorMsg);
+        
+        await location.update({
+          scan_errors: location.scan_errors + 1,
+          last_error_message: locationError.message,
+        });
+
+        log.task.warn('Storage location scan failed', {
+          location_id: location.id,
+          location_name: location.name,
+          error: locationError.message,
+        });
+      }
+    }
+
+    if (errors.length > 0 && errors.length === locations.length) {
+      // All locations failed
+      return {
+        success: false,
+        error: `All ${locations.length} storage locations failed to scan`,
+        errors,
+      };
+    }
+
+    const successCount = locations.length - errors.length;
+    let message = `Scan completed: ${totalScanned} files scanned, ${totalAdded} added, ${totalRemoved} removed across ${successCount}/${locations.length} locations`;
+
+    if (errors.length > 0) {
+      message += ` (${errors.length} locations had errors)`;
+    }
+
+    log.task.info('Artifact scan all completed', {
+      locations_scanned: successCount,
+      locations_failed: errors.length,
+      total_scanned: totalScanned,
+      total_added: totalAdded,
+      total_removed: totalRemoved,
+      source,
+    });
+
+    return {
+      success: true,
+      message,
+      stats: {
+        locations_scanned: successCount,
+        locations_failed: errors.length,
+        files_scanned: totalScanned,
+        files_added: totalAdded,
+        files_removed: totalRemoved,
+      },
+      errors: errors.length > 0 ? errors : undefined,
+    };
+
+  } catch (error) {
+    log.task.error('Artifact scan all task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Scan all task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute scan specific location task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeArtifactScanLocationTask = async metadataJson => {
+  log.task.debug('Artifact scan location task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { 
+      storage_location_id, 
+      verify_checksums = false, 
+      remove_orphaned = false 
+    } = metadata;
+
+    log.task.debug('Scan location task parameters', {
+      storage_location_id,
+      verify_checksums,
+      remove_orphaned,
+    });
+
+    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
+
+    const location = await ArtifactStorageLocation.findByPk(storage_location_id);
+    if (!location) {
+      return {
+        success: false,
+        error: `Storage location not found: ${storage_location_id}`,
+      };
+    }
+
+    const scanResult = await scanStorageLocation(location, {
+      verify_checksums,
+      remove_orphaned,
+    });
+
+    // Update location stats and status
+    await location.update({
+      last_scan_at: new Date(),
+      scan_errors: 0,
+      last_error_message: null,
+    });
+
+    log.task.info('Storage location scan completed', {
+      location_id: location.id,
+      location_name: location.name,
+      files_scanned: scanResult.scanned,
+      files_added: scanResult.added,
+      files_removed: scanResult.removed,
+    });
+
+    return {
+      success: true,
+      message: `Scan completed for ${location.name}: ${scanResult.scanned} files scanned, ${scanResult.added} added, ${scanResult.removed} removed`,
+      stats: scanResult,
+      location: {
+        id: location.id,
+        name: location.name,
+        path: location.path,
+      },
+    };
+
+  } catch (error) {
+    log.task.error('Artifact scan location task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Scan location task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute artifact file deletion task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeArtifactDeleteFileTask = async metadataJson => {
+  log.task.debug('Artifact delete file task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { artifact_ids, delete_files = true, force = false } = metadata;
+
+    log.task.debug('Delete file task parameters', {
+      artifact_count: artifact_ids.length,
+      delete_files,
+      force,
+    });
+
+    const { default: Artifact } = await import('../models/ArtifactModel.js');
+    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
+    const fs = await import('fs');
+
+    const artifacts = await Artifact.findAll({
+      where: { id: artifact_ids },
+      include: [{ 
+        model: ArtifactStorageLocation, 
+        as: 'storage_location' 
+      }],
+    });
+
+    if (artifacts.length === 0) {
+      return {
+        success: false,
+        error: 'No artifacts found for the provided IDs',
+      };
+    }
+
+    let filesDeleted = 0;
+    let recordsRemoved = 0;
+    let errors = [];
+
+    for (const artifact of artifacts) {
+      try {
+        // Delete physical file if requested
+        if (delete_files) {
+          if (fs.existsSync(artifact.path)) {
+            if (force) {
+              await executeCommand(`pfexec rm -f "${artifact.path}"`);
+            } else {
+              await executeCommand(`pfexec rm "${artifact.path}"`);
+            }
+            filesDeleted++;
+            log.task.debug('Deleted artifact file', {
+              filename: artifact.filename,
+              path: artifact.path,
+            });
+          } else {
+            log.task.warn('Artifact file not found on disk', {
+              filename: artifact.filename,
+              path: artifact.path,
+            });
+          }
+        }
+
+        // Remove database record
+        await artifact.destroy();
+        recordsRemoved++;
+
+        // Update storage location stats
+        if (artifact.storage_location) {
+          await artifact.storage_location.decrement('file_count', { by: 1 });
+          await artifact.storage_location.decrement('total_size', { by: artifact.size });
+        }
+
+      } catch (deleteError) {
+        const errorMsg = `Failed to delete ${artifact.filename}: ${deleteError.message}`;
+        errors.push(errorMsg);
+        log.task.warn('Artifact deletion failed', {
+          artifact_id: artifact.id,
+          filename: artifact.filename,
+          error: deleteError.message,
+        });
+      }
+    }
+
+    if (errors.length > 0 && errors.length === artifacts.length) {
+      return {
+        success: false,
+        error: `Failed to delete all ${artifacts.length} artifacts`,
+        errors,
+      };
+    }
+
+    const successCount = artifacts.length - errors.length;
+    let message = `Successfully deleted ${successCount}/${artifacts.length} artifacts`;
+    
+    if (delete_files) {
+      message += ` (${filesDeleted} files removed from disk)`;
+    }
+    
+    if (errors.length > 0) {
+      message += ` (${errors.length} had errors)`;
+    }
+
+    log.task.info('Artifact deletion completed', {
+      total_artifacts: artifacts.length,
+      successful_deletions: successCount,
+      files_deleted: filesDeleted,
+      records_removed: recordsRemoved,
+      errors_count: errors.length,
+    });
+
+    return {
+      success: true,
+      message,
+      stats: {
+        total_artifacts: artifacts.length,
+        successful_deletions: successCount,
+        files_deleted: filesDeleted,
+        records_removed: recordsRemoved,
+      },
+      errors: errors.length > 0 ? errors : undefined,
+    };
+
+  } catch (error) {
+    log.task.error('Artifact delete file task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Delete file task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute artifact folder deletion task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeArtifactDeleteFolderTask = async metadataJson => {
+  log.task.debug('Artifact delete folder task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { 
+      storage_location_id, 
+      recursive = true, 
+      remove_db_records = true, 
+      force = false 
+    } = metadata;
+
+    log.task.debug('Delete folder task parameters', {
+      storage_location_id,
+      recursive,
+      remove_db_records,
+      force,
+    });
+
+    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
+    const { default: Artifact } = await import('../models/ArtifactModel.js');
+
+    const location = await ArtifactStorageLocation.findByPk(storage_location_id);
+    if (!location) {
+      return {
+        success: false,
+        error: `Storage location not found: ${storage_location_id}`,
+      };
+    }
+
+    log.task.info('Starting folder deletion', {
+      location_name: location.name,
+      location_path: location.path,
+      recursive,
+      remove_db_records,
+    });
+
+    let removedFiles = 0;
+    let removedRecords = 0;
+
+    // Remove database records first if requested
+    if (remove_db_records) {
+      const artifacts = await Artifact.findAll({
+        where: { storage_location_id: location.id },
+      });
+
+      removedRecords = artifacts.length;
+      if (removedRecords > 0) {
+        await Artifact.destroy({
+          where: { storage_location_id: location.id },
+        });
+        log.task.info('Removed artifact database records', {
+          count: removedRecords,
+        });
+      }
+    }
+
+    // Delete physical folder and contents
+    let command = `pfexec rm`;
+    
+    if (recursive && force) {
+      command += ` -rf`;
+    } else if (recursive) {
+      command += ` -r`;
+    } else if (force) {
+      command += ` -f`;
+    }
+    
+    command += ` "${location.path}"/*`; // Delete contents, not the folder itself
+
+    const result = await executeCommand(command);
+
+    if (result.success || (force && result.error.includes('No such file'))) {
+      // Count as success even if no files were found (empty directory)
+      log.task.info('Folder contents deleted successfully');
+      
+      // Reset location stats
+      await location.update({
+        file_count: 0,
+        total_size: 0,
+        last_scan_at: new Date(),
+        scan_errors: 0,
+        last_error_message: null,
+      });
+
+      return {
+        success: true,
+        message: `Successfully deleted folder contents for ${location.name}${remove_db_records ? ` (${removedRecords} database records removed)` : ''}`,
+        location: {
+          name: location.name,
+          path: location.path,
+        },
+        stats: {
+          removed_records: removedRecords,
+          folder_cleared: true,
+        },
+      };
+    }
+
+    return {
+      success: false,
+      error: `Failed to delete folder contents: ${result.error}`,
+    };
+
+  } catch (error) {
+    log.task.error('Artifact delete folder task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Delete folder task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute artifact upload processing task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeArtifactUploadProcessTask = async metadataJson => {
+  log.task.debug('Artifact upload process task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const {
+      temp_path,
+      original_name,
+      size,
+      storage_location_id,
+      expected_checksum,
+      checksum_algorithm = 'sha256',
+    } = metadata;
+
+    log.task.debug('Upload process task parameters', {
+      temp_path,
+      original_name,
+      size,
+      storage_location_id,
+      has_expected_checksum: !!expected_checksum,
+    });
+
+    // Import required modules
+    const crypto = await import('crypto');
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
+    const { default: Artifact } = await import('../models/ArtifactModel.js');
+    const { getMimeType } = await import('../lib/FileSystemManager.js');
+
+    // Get storage location
+    const storageLocation = await ArtifactStorageLocation.findByPk(storage_location_id);
+    if (!storageLocation) {
+      return {
+        success: false,
+        error: `Storage location not found: ${storage_location_id}`,
+      };
+    }
+
+    // Calculate checksum
+    log.task.debug('Calculating checksum');
+    const hash = crypto.createHash(checksum_algorithm);
+    const fileBuffer = await fs.readFile(temp_path);
+    hash.update(fileBuffer);
+    const calculatedChecksum = hash.digest('hex');
+
+    log.task.debug('Checksum calculated', {
+      algorithm: checksum_algorithm,
+      checksum: calculatedChecksum.substring(0, 16) + '...',
+    });
+
+    // Verify checksum if provided
+    let checksumVerified = false;
+    if (expected_checksum) {
+      checksumVerified = calculatedChecksum === expected_checksum;
+      if (!checksumVerified) {
+        // Clean up temp file
+        try {
+          await fs.unlink(temp_path);
+        } catch (cleanupError) {
+          log.task.warn('Failed to cleanup temp file after checksum failure', {
+            temp_path,
+            error: cleanupError.message,
+          });
+        }
+
+        return {
+          success: false,
+          error: `Checksum verification failed. Expected: ${expected_checksum}, Got: ${calculatedChecksum}`,
+          expected_checksum,
+          calculated_checksum,
+        };
+      }
+      log.task.info('Upload checksum verification passed');
+    }
+
+    // Move file to final location
+    const finalPath = path.join(storageLocation.path, original_name);
+    await fs.rename(temp_path, finalPath);
+
+    // Determine file details
+    const extension = path.extname(original_name).toLowerCase();
+    const mimeType = getMimeType(finalPath);
+
+    // Create artifact database record
+    await Artifact.create({
+      storage_location_id: storageLocation.id,
+      filename: original_name,
+      path: finalPath,
+      size: size,
+      file_type: storageLocation.type,
+      extension,
+      mime_type: mimeType,
+      user_provided_checksum: expected_checksum || null,
+      calculated_checksum: calculatedChecksum,
+      checksum_verified: checksumVerified,
+      checksum_algorithm,
+      source_url: null, // This was an upload, not a download
+      discovered_at: new Date(),
+      last_verified: new Date(),
+    });
+
+    // Update storage location stats
+    await storageLocation.increment('file_count', { by: 1 });
+    await storageLocation.increment('total_size', { by: size });
+    await storageLocation.update({ last_scan_at: new Date() });
+
+    log.task.info('Artifact upload processing completed', {
+      filename: original_name,
+      size_mb: Math.round(size / 1024 / 1024),
+      storage_location: storageLocation.name,
+      checksum_verified: checksumVerified,
+    });
+
+    return {
+      success: true,
+      message: `Successfully processed upload for ${original_name} (${Math.round(size / 1024 / 1024)}MB)${checksumVerified ? ' with verified checksum' : ''}`,
+      artifact: {
+        filename: original_name,
+        size,
+        final_path: finalPath,
+        checksum_verified: checksumVerified,
+        calculated_checksum: calculatedChecksum,
+      },
+    };
+
+  } catch (error) {
+    // Clean up temp file if processing failed
+    try {
+      const fs = await import('fs');
+      if (fs.existsSync(metadata?.temp_path)) {
+        await fs.unlink(metadata.temp_path);
+      }
+    } catch (cleanupError) {
+      log.task.warn('Failed to cleanup temp file after processing error', {
+        temp_path: metadata?.temp_path,
+        cleanup_error: cleanupError.message,
+      });
+    }
+
+    log.task.error('Artifact upload process task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Upload processing failed: ${error.message}` };
+  }
+};
+
+/**
+ * Scan a storage location for artifacts
+ * @param {Object} location - Storage location object
+ * @param {Object} options - Scan options
+ * @returns {Promise<{scanned: number, added: number, removed: number}>}
+ */
+const scanStorageLocation = async (location, options = {}) => {
+  const { verify_checksums = false, remove_orphaned = false } = options;
+  
+  log.artifact.debug('Scanning storage location', {
+    location_id: location.id,
+    location_name: location.name,
+    location_path: location.path,
+    verify_checksums,
+    remove_orphaned,
+  });
+
+  const { default: Artifact } = await import('../models/ArtifactModel.js');
+  const { listDirectory, getMimeType } = await import('../lib/FileSystemManager.js');
+  const path = await import('path');
+  const fs = await import('fs');
+  const config = await import('../config/ConfigLoader.js');
+
+  try {
+    // Get supported extensions for this location type
+    const artifactConfig = config.default.getArtifactStorage();
+    const supportedExtensions = artifactConfig?.scanning?.supported_extensions?.[location.type] || [];
+
+    // List directory contents
+    const items = await listDirectory(location.path);
+    const files = items.filter(item => !item.isDirectory);
+
+    // Filter files by supported extensions
+    const artifactFiles = files.filter(file => 
+      supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext.toLowerCase()))
+    );
+
+    log.artifact.debug('Found potential artifacts', {
+      total_files: files.length,
+      artifact_files: artifactFiles.length,
+      supported_extensions: supportedExtensions,
+    });
+
+    // Get existing database records for this location
+    const existingArtifacts = await Artifact.findAll({
+      where: { storage_location_id: location.id },
+    });
+
+    const existingPaths = new Set(existingArtifacts.map(a => a.path));
+    const currentPaths = new Set(artifactFiles.map(f => f.path));
+
+    let scanned = 0;
+    let added = 0;
+    let removed = 0;
+
+    // Add new artifacts
+    for (const file of artifactFiles) {
+      if (!existingPaths.has(file.path)) {
+        // New artifact found
+        const extension = path.extname(file.name).toLowerCase();
+        const mimeType = getMimeType(file.path);
+
+        await Artifact.create({
+          storage_location_id: location.id,
+          filename: file.name,
+          path: file.path,
+          size: file.size || 0,
+          file_type: location.type,
+          extension,
+          mime_type: mimeType,
+          user_provided_checksum: null,
+          calculated_checksum: null,
+          checksum_verified: false,
+          checksum_algorithm: null,
+          source_url: null,
+          discovered_at: new Date(),
+          last_verified: new Date(),
+        });
+
+        added++;
+        log.artifact.debug('Added new artifact', {
+          filename: file.name,
+          path: file.path,
+          size: file.size,
+        });
+      } else {
+        // Update last_verified for existing artifacts
+        await Artifact.update(
+          { last_verified: new Date() },
+          { where: { path: file.path } }
+        );
+      }
+      scanned++;
+    }
+
+    // Remove orphaned artifacts if requested
+    if (remove_orphaned) {
+      for (const existingArtifact of existingArtifacts) {
+        if (!currentPaths.has(existingArtifact.path)) {
+          await existingArtifact.destroy();
+          removed++;
+          log.artifact.debug('Removed orphaned artifact', {
+            filename: existingArtifact.filename,
+            path: existingArtifact.path,
+          });
+        }
+      }
+    }
+
+    // Update storage location stats
+    const totalFiles = await Artifact.count({
+      where: { storage_location_id: location.id },
+    });
+
+    const totalSize = await Artifact.sum('size', {
+      where: { storage_location_id: location.id },
+    }) || 0;
+
+    await location.update({
+      file_count: totalFiles,
+      total_size: totalSize,
+    });
+
+    log.artifact.info('Storage location scan completed', {
+      location_name: location.name,
+      scanned,
+      added,
+      removed,
+      total_files: totalFiles,
+    });
+
+    return { scanned, added, removed };
+
+  } catch (error) {
+    log.artifact.error('Storage location scan failed', {
+      location_id: location.id,
+      location_name: location.name,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
   }
 };
 
