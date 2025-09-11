@@ -239,6 +239,23 @@ import {
   getSystemGroups,
   lookupUser,
   lookupGroup,
+  createSystemUser,
+  deleteSystemUser,
+  modifySystemUser,
+  createSystemGroup,
+  deleteSystemGroup,
+  modifySystemGroup,
+  setUserPassword,
+  lockUserAccount,
+  unlockUserAccount,
+  getSystemRoles,
+  createSystemRole,
+  deleteSystemRole,
+  modifySystemRole,
+  getAvailableAuthorizations,
+  getAvailableProfiles,
+  getAvailableRoles,
+  getUserAttributes,
 } from '../controllers/SystemUserController.js';
 import {
   uploadSingle,
@@ -507,7 +524,24 @@ router.get('/system/processes/:pid/limits', verifyApiKey, getProcessLimitsContro
 // System User Management Routes
 router.get('/system/user-info', verifyApiKey, getCurrentUserInfo); // Get current API user information
 router.get('/system/users', verifyApiKey, getSystemUsers); // List system users
+router.post('/system/users', verifyApiKey, createSystemUser); // Create new system user
+router.put('/system/users/:username', verifyApiKey, modifySystemUser); // Modify system user
+router.delete('/system/users/:username', verifyApiKey, deleteSystemUser); // Delete system user
+router.post('/system/users/:username/password', verifyApiKey, setUserPassword); // Set user password
+router.post('/system/users/:username/lock', verifyApiKey, lockUserAccount); // Lock user account
+router.post('/system/users/:username/unlock', verifyApiKey, unlockUserAccount); // Unlock user account
+router.get('/system/users/:username/attributes', verifyApiKey, getUserAttributes); // Get user RBAC attributes
 router.get('/system/groups', verifyApiKey, getSystemGroups); // List system groups
+router.post('/system/groups', verifyApiKey, createSystemGroup); // Create new system group
+router.put('/system/groups/:groupname', verifyApiKey, modifySystemGroup); // Modify system group
+router.delete('/system/groups/:groupname', verifyApiKey, deleteSystemGroup); // Delete system group
+router.get('/system/roles', verifyApiKey, getSystemRoles); // List system roles
+router.post('/system/roles', verifyApiKey, createSystemRole); // Create new system role
+router.put('/system/roles/:rolename', verifyApiKey, modifySystemRole); // Modify system role
+router.delete('/system/roles/:rolename', verifyApiKey, deleteSystemRole); // Delete system role
+router.get('/system/rbac/authorizations', verifyApiKey, getAvailableAuthorizations); // List available RBAC authorizations
+router.get('/system/rbac/profiles', verifyApiKey, getAvailableProfiles); // List available RBAC profiles
+router.get('/system/rbac/roles', verifyApiKey, getAvailableRoles); // List available RBAC roles for assignment
 router.get('/system/user-lookup', verifyApiKey, lookupUser); // Lookup user by UID or username
 router.get('/system/group-lookup', verifyApiKey, lookupGroup); // Lookup group by GID or name
 

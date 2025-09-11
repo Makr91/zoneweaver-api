@@ -71,6 +71,20 @@ const OPERATION_CATEGORIES = {
   force_time_sync: 'system_config',
   set_timezone: 'system_config',
 
+  // User management operations (serialized)
+  user_create: 'user_management',
+  user_modify: 'user_management',
+  user_delete: 'user_management',
+  user_set_password: 'user_management',
+  user_lock: 'user_management',
+  user_unlock: 'user_management',
+  group_create: 'user_management',
+  group_modify: 'user_management',
+  group_delete: 'user_management',
+  role_create: 'user_management',
+  role_modify: 'user_management',
+  role_delete: 'user_management',
+
   // Zone operations (safe to run concurrently - no category)
   // start, stop, restart, delete, discover - no category = no conflicts
 
@@ -317,6 +331,30 @@ const executeTask = async task => {
         return await executeFileArchiveCreateTask(task.metadata);
       case 'file_archive_extract':
         return await executeFileArchiveExtractTask(task.metadata);
+      case 'user_create':
+        return await executeUserCreateTask(task.metadata);
+      case 'user_modify':
+        return await executeUserModifyTask(task.metadata);
+      case 'user_delete':
+        return await executeUserDeleteTask(task.metadata);
+      case 'user_set_password':
+        return await executeUserSetPasswordTask(task.metadata);
+      case 'user_lock':
+        return await executeUserLockTask(task.metadata);
+      case 'user_unlock':
+        return await executeUserUnlockTask(task.metadata);
+      case 'group_create':
+        return await executeGroupCreateTask(task.metadata);
+      case 'group_modify':
+        return await executeGroupModifyTask(task.metadata);
+      case 'group_delete':
+        return await executeGroupDeleteTask(task.metadata);
+      case 'role_create':
+        return await executeRoleCreateTask(task.metadata);
+      case 'role_modify':
+        return await executeRoleModifyTask(task.metadata);
+      case 'role_delete':
+        return await executeRoleDeleteTask(task.metadata);
       default:
         return { success: false, error: `Unknown operation: ${operation}` };
     }
@@ -4233,6 +4271,1240 @@ const executeFileArchiveExtractTask = async metadataJson => {
       stack: error.stack,
     });
     return { success: false, error: `Archive extraction task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute user creation task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeUserCreateTask = async metadataJson => {
+  log.task.debug('User creation task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const {
+      username,
+      uid,
+      gid,
+      groups = [],
+      comment,
+      home_directory,
+      shell = '/bin/bash',
+      create_home = true,
+      skeleton_dir,
+      expire_date,
+      inactive_days,
+      authorizations = [],
+      profiles = [],
+      roles = [],
+      project,
+      create_personal_group = true,
+      force_zfs = false,
+      prevent_zfs = false,
+    } = metadata;
+
+    log.task.debug('User creation task parameters', {
+      username,
+      uid,
+      gid,
+      create_personal_group,
+      has_rbac: authorizations.length > 0 || profiles.length > 0 || roles.length > 0,
+    });
+
+    let warnings = [];
+    let createdGroup = null;
+
+    // Step 1: Create personal group if requested and no gid specified
+    if (create_personal_group && !gid) {
+      log.task.debug('Creating personal group', { groupname: username });
+      
+      let groupCommand = `pfexec groupadd`;
+      if (uid) {
+        groupCommand += ` -g ${uid}`;
+      }
+      groupCommand += ` ${username}`;
+
+      const groupResult = await executeCommand(groupCommand);
+      
+      if (groupResult.success) {
+        createdGroup = username;
+        log.task.info('Personal group created', { groupname: username, gid: uid });
+      } else {
+        // Check if it's just a warning about name length
+        if (groupResult.error && groupResult.error.includes('name too long')) {
+          warnings.push(`Group name '${username}' is longer than recommended but was created`);
+          createdGroup = username;
+        } else {
+          log.task.warn('Failed to create personal group, continuing without it', {
+            groupname: username,
+            error: groupResult.error,
+          });
+          warnings.push(`Failed to create personal group '${username}': ${groupResult.error}`);
+        }
+      }
+    }
+
+    // Step 2: Build useradd command
+    let command = `pfexec useradd`;
+
+    // Add UID
+    if (uid) {
+      command += ` -u ${uid}`;
+    }
+
+    // Add primary group (personal group if created, or specified gid)
+    if (createdGroup) {
+      command += ` -g ${createdGroup}`;
+    } else if (gid) {
+      command += ` -g ${gid}`;
+    }
+
+    // Add supplementary groups
+    if (groups && groups.length > 0) {
+      command += ` -G ${groups.join(',')}`;
+    }
+
+    // Add comment
+    if (comment) {
+      command += ` -c "${comment}"`;
+    }
+
+    // Add home directory
+    if (home_directory) {
+      command += ` -d "${home_directory}"`;
+    }
+
+    // Add shell
+    if (shell && shell !== '/bin/sh') {
+      command += ` -s "${shell}"`;
+    }
+
+    // Add home directory creation with ZFS options
+    if (create_home) {
+      if (force_zfs) {
+        command += ` -m -z`;
+      } else if (prevent_zfs) {
+        command += ` -m -Z`;
+      } else {
+        command += ` -m`; // Let system decide based on MANAGE_ZFS setting
+      }
+
+      // Add skeleton directory
+      if (skeleton_dir) {
+        command += ` -k "${skeleton_dir}"`;
+      }
+    }
+
+    // Add expiration date
+    if (expire_date) {
+      command += ` -e "${expire_date}"`;
+    }
+
+    // Add inactive days
+    if (inactive_days) {
+      command += ` -f ${inactive_days}`;
+    }
+
+    // Add project
+    if (project) {
+      command += ` -p "${project}"`;
+    }
+
+    // Add RBAC authorizations
+    if (authorizations && authorizations.length > 0) {
+      command += ` -A "${authorizations.join(',')}"`;
+    }
+
+    // Add RBAC profiles
+    if (profiles && profiles.length > 0) {
+      command += ` -P "${profiles.join(',')}"`;
+    }
+
+    // Add RBAC roles
+    if (roles && roles.length > 0) {
+      command += ` -R "${roles.join(',')}"`;
+    }
+
+    // Add username
+    command += ` ${username}`;
+
+    log.task.debug('Executing user creation command', { command });
+
+    // Execute user creation
+    const result = await executeCommand(command);
+
+    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+      // Handle success or success with warnings
+      if (result.stderr && result.stderr.includes('name too long')) {
+        warnings.push(`Username '${username}' is longer than traditional 8-character limit`);
+      }
+
+      log.task.info('User created successfully', {
+        username,
+        uid: uid || 'auto-assigned',
+        personal_group_created: !!createdGroup,
+        warnings: warnings.length,
+      });
+
+      const message = `User ${username} created successfully${createdGroup ? ` with personal group '${createdGroup}'` : ''}${warnings.length > 0 ? ' (with warnings)' : ''}`;
+
+      return {
+        success: true,
+        message,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        created_group: createdGroup,
+        system_output: result.output,
+      };
+    } else {
+      log.task.error('User creation command failed', {
+        username,
+        error: result.error,
+        created_group: createdGroup,
+      });
+
+      // If we created a group but user creation failed, clean up the group
+      if (createdGroup) {
+        log.task.debug('Cleaning up created group due to user creation failure');
+        await executeCommand(`pfexec groupdel ${createdGroup}`);
+      }
+
+      return {
+        success: false,
+        error: `Failed to create user ${username}: ${result.error}`,
+        group_cleanup_performed: !!createdGroup,
+      };
+    }
+  } catch (error) {
+    log.task.error('User creation task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `User creation task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute user modification task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeUserModifyTask = async metadataJson => {
+  log.task.debug('User modification task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const {
+      username,
+      new_username,
+      new_uid,
+      new_gid,
+      new_groups = [],
+      new_comment,
+      new_home_directory,
+      move_home = false,
+      new_shell,
+      new_expire_date,
+      new_inactive_days,
+      new_authorizations = [],
+      new_profiles = [],
+      new_roles = [],
+      new_project,
+      force_zfs = false,
+      prevent_zfs = false,
+    } = metadata;
+
+    log.task.debug('User modification task parameters', {
+      username,
+      new_username,
+      new_uid,
+      move_home,
+      has_rbac: new_authorizations.length > 0 || new_profiles.length > 0 || new_roles.length > 0,
+    });
+
+    // Build usermod command
+    let command = `pfexec usermod`;
+
+    // Add new UID
+    if (new_uid) {
+      command += ` -u ${new_uid}`;
+    }
+
+    // Add new primary group
+    if (new_gid) {
+      command += ` -g ${new_gid}`;
+    }
+
+    // Add new supplementary groups
+    if (new_groups && new_groups.length > 0) {
+      command += ` -G ${new_groups.join(',')}`;
+    }
+
+    // Add new comment
+    if (new_comment !== undefined) {
+      command += ` -c "${new_comment}"`;
+    }
+
+    // Add new home directory with move option
+    if (new_home_directory) {
+      command += ` -d "${new_home_directory}"`;
+      
+      if (move_home) {
+        if (force_zfs) {
+          command += ` -m -z`;
+        } else if (prevent_zfs) {
+          command += ` -m -Z`;
+        } else {
+          command += ` -m`;
+        }
+      }
+    }
+
+    // Add new shell
+    if (new_shell) {
+      command += ` -s "${new_shell}"`;
+    }
+
+    // Add new expiration date
+    if (new_expire_date !== undefined) {
+      command += ` -e "${new_expire_date}"`;
+    }
+
+    // Add new inactive days
+    if (new_inactive_days !== undefined) {
+      command += ` -f ${new_inactive_days}`;
+    }
+
+    // Add new project
+    if (new_project) {
+      command += ` -p "${new_project}"`;
+    }
+
+    // Add new RBAC authorizations
+    if (new_authorizations && new_authorizations.length > 0) {
+      command += ` -A "${new_authorizations.join(',')}"`;
+    }
+
+    // Add new RBAC profiles
+    if (new_profiles && new_profiles.length > 0) {
+      command += ` -P "${new_profiles.join(',')}"`;
+    }
+
+    // Add new RBAC roles
+    if (new_roles && new_roles.length > 0) {
+      command += ` -R "${new_roles.join(',')}"`;
+    }
+
+    // Add new username (must be last for usermod -l)
+    if (new_username) {
+      command += ` -l ${new_username}`;
+    }
+
+    // Add current username
+    command += ` ${username}`;
+
+    log.task.debug('Executing user modification command', { command });
+
+    const result = await executeCommand(command);
+    
+    let warnings = [];
+    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+      // Handle success or success with warnings
+      if (result.stderr && result.stderr.includes('name too long')) {
+        warnings.push(`Username '${new_username || username}' is longer than traditional 8-character limit`);
+      }
+
+      log.task.info('User modified successfully', {
+        username,
+        new_username: new_username || username,
+        move_home,
+        warnings: warnings.length,
+      });
+
+      return {
+        success: true,
+        message: `User ${username}${new_username ? ` renamed to ${new_username}` : ''} modified successfully${warnings.length > 0 ? ' (with warnings)' : ''}`,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        final_username: new_username || username,
+      };
+    } else {
+      log.task.error('User modification command failed', {
+        username,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to modify user ${username}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('User modification task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `User modification task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute user deletion task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeUserDeleteTask = async metadataJson => {
+  log.task.debug('User deletion task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { username, remove_home = false, delete_personal_group = false } = metadata;
+
+    log.task.debug('User deletion task parameters', {
+      username,
+      remove_home,
+      delete_personal_group,
+    });
+
+    // Build userdel command
+    let command = `pfexec userdel`;
+    
+    if (remove_home) {
+      command += ` -r`;
+    }
+    
+    command += ` ${username}`;
+
+    log.task.debug('Executing user deletion command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      let groupDeleted = false;
+      
+      // Step 2: Delete personal group if requested and it exists
+      if (delete_personal_group) {
+        log.task.debug('Attempting to delete personal group', { groupname: username });
+        
+        const groupDelResult = await executeCommand(`pfexec groupdel ${username}`);
+        
+        if (groupDelResult.success) {
+          groupDeleted = true;
+          log.task.info('Personal group deleted', { groupname: username });
+        } else {
+          log.task.debug('Personal group deletion failed (may not exist)', {
+            groupname: username,
+            error: groupDelResult.error,
+          });
+        }
+      }
+
+      log.task.info('User deleted successfully', {
+        username,
+        home_removed: remove_home,
+        group_deleted: groupDeleted,
+      });
+
+      return {
+        success: true,
+        message: `User ${username} deleted successfully${remove_home ? ' (home directory removed)' : ''}${groupDeleted ? ` (personal group '${username}' also deleted)` : ''}`,
+        home_removed: remove_home,
+        group_deleted: groupDeleted,
+      };
+    } else {
+      log.task.error('User deletion command failed', {
+        username,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to delete user ${username}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('User deletion task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `User deletion task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute group creation task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeGroupCreateTask = async metadataJson => {
+  log.task.debug('Group creation task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { groupname, gid } = metadata;
+
+    log.task.debug('Group creation task parameters', {
+      groupname,
+      gid,
+    });
+
+    // Build groupadd command
+    let command = `pfexec groupadd`;
+
+    if (gid) {
+      command += ` -g ${gid}`;
+    }
+
+    command += ` ${groupname}`;
+
+    log.task.debug('Executing group creation command', { command });
+
+    const result = await executeCommand(command);
+
+    let warnings = [];
+    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+      // Handle success or success with warnings
+      if (result.stderr && result.stderr.includes('name too long')) {
+        warnings.push(`Group name '${groupname}' is longer than traditional limit`);
+      }
+
+      log.task.info('Group created successfully', {
+        groupname,
+        gid: gid || 'auto-assigned',
+        warnings: warnings.length,
+      });
+
+      return {
+        success: true,
+        message: `Group ${groupname} created successfully${warnings.length > 0 ? ' (with warnings)' : ''}`,
+        warnings: warnings.length > 0 ? warnings : undefined,
+      };
+    } else {
+      log.task.error('Group creation command failed', {
+        groupname,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to create group ${groupname}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Group creation task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Group creation task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute group modification task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeGroupModifyTask = async metadataJson => {
+  log.task.debug('Group modification task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { groupname, new_groupname, new_gid } = metadata;
+
+    log.task.debug('Group modification task parameters', {
+      groupname,
+      new_groupname,
+      new_gid,
+    });
+
+    // Build groupmod command
+    let command = `pfexec groupmod`;
+
+    if (new_gid) {
+      command += ` -g ${new_gid}`;
+    }
+
+    if (new_groupname) {
+      command += ` -n ${new_groupname}`;
+    }
+
+    command += ` ${groupname}`;
+
+    log.task.debug('Executing group modification command', { command });
+
+    const result = await executeCommand(command);
+
+    let warnings = [];
+    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+      // Handle success or success with warnings
+      if (result.stderr && result.stderr.includes('name too long')) {
+        warnings.push(`Group name '${new_groupname || groupname}' is longer than traditional limit`);
+      }
+
+      log.task.info('Group modified successfully', {
+        groupname,
+        new_groupname: new_groupname || groupname,
+        new_gid,
+        warnings: warnings.length,
+      });
+
+      return {
+        success: true,
+        message: `Group ${groupname}${new_groupname ? ` renamed to ${new_groupname}` : ''} modified successfully${warnings.length > 0 ? ' (with warnings)' : ''}`,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        final_groupname: new_groupname || groupname,
+      };
+    } else {
+      log.task.error('Group modification command failed', {
+        groupname,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to modify group ${groupname}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Group modification task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Group modification task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute group deletion task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeGroupDeleteTask = async metadataJson => {
+  log.task.debug('Group deletion task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { groupname } = metadata;
+
+    log.task.debug('Group deletion task parameters', {
+      groupname,
+    });
+
+    const command = `pfexec groupdel ${groupname}`;
+
+    log.task.debug('Executing group deletion command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.info('Group deleted successfully', {
+        groupname,
+      });
+
+      return {
+        success: true,
+        message: `Group ${groupname} deleted successfully`,
+      };
+    } else {
+      log.task.error('Group deletion command failed', {
+        groupname,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to delete group ${groupname}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Group deletion task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Group deletion task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute user password setting task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeUserSetPasswordTask = async metadataJson => {
+  log.task.debug('User password setting task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { username, password, force_change = false, unlock_account = true } = metadata;
+
+    log.task.debug('User password setting task parameters', {
+      username,
+      force_change,
+      unlock_account,
+      password_length: password ? password.length : 0,
+    });
+
+    // Set password using passwd command with echo
+    const command = `echo "${password}" | pfexec passwd --stdin ${username}`;
+    log.task.debug('Executing password setting command', { 
+      command: command.replace(password, '[REDACTED]') 
+    });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.info('Password set successfully', {
+        username,
+        force_change,
+        unlock_account,
+      });
+
+      // Force password change on next login if requested
+      if (force_change) {
+        const expireResult = await executeCommand(`pfexec passwd -f ${username}`);
+        if (!expireResult.success) {
+          log.task.warn('Password set but failed to force change on next login', {
+            username,
+            error: expireResult.error,
+          });
+        }
+      }
+
+      // Unlock account if requested (passwords are typically set for locked accounts)
+      if (unlock_account) {
+        const unlockResult = await executeCommand(`pfexec passwd -u ${username}`);
+        if (!unlockResult.success) {
+          log.task.warn('Password set but failed to unlock account', {
+            username,
+            error: unlockResult.error,
+          });
+        }
+      }
+
+      return {
+        success: true,
+        message: `Password set successfully for user ${username}${force_change ? ' (must change on next login)' : ''}${unlock_account ? ' (account unlocked)' : ''}`,
+        force_change,
+        unlock_account,
+      };
+    } else {
+      log.task.error('Password setting command failed', {
+        username,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to set password for user ${username}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('User password setting task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `User password setting task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute user account lock task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeUserLockTask = async metadataJson => {
+  log.task.debug('User account lock task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { username } = metadata;
+
+    log.task.debug('User account lock task parameters', {
+      username,
+    });
+
+    const command = `pfexec passwd -l ${username}`;
+
+    log.task.debug('Executing user account lock command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.info('User account locked successfully', {
+        username,
+      });
+
+      return {
+        success: true,
+        message: `User account ${username} locked successfully`,
+      };
+    } else {
+      log.task.error('User account lock command failed', {
+        username,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to lock user account ${username}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('User account lock task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `User account lock task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute user account unlock task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeUserUnlockTask = async metadataJson => {
+  log.task.debug('User account unlock task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { username } = metadata;
+
+    log.task.debug('User account unlock task parameters', {
+      username,
+    });
+
+    const command = `pfexec passwd -u ${username}`;
+
+    log.task.debug('Executing user account unlock command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.info('User account unlocked successfully', {
+        username,
+      });
+
+      return {
+        success: true,
+        message: `User account ${username} unlocked successfully`,
+      };
+    } else {
+      log.task.error('User account unlock command failed', {
+        username,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to unlock user account ${username}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('User account unlock task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `User account unlock task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute role creation task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeRoleCreateTask = async metadataJson => {
+  log.task.debug('Role creation task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const {
+      rolename,
+      uid,
+      gid,
+      comment,
+      home_directory,
+      shell = '/bin/pfsh',
+      create_home = false,
+      authorizations = [],
+      profiles = [],
+      project,
+    } = metadata;
+
+    log.task.debug('Role creation task parameters', {
+      rolename,
+      uid,
+      gid,
+      create_home,
+      has_rbac: authorizations.length > 0 || profiles.length > 0,
+    });
+
+    // Build roleadd command
+    let command = `pfexec roleadd`;
+
+    // Add UID
+    if (uid) {
+      command += ` -u ${uid}`;
+    }
+
+    // Add primary group
+    if (gid) {
+      command += ` -g ${gid}`;
+    }
+
+    // Add comment
+    if (comment) {
+      command += ` -c "${comment}"`;
+    }
+
+    // Add home directory
+    if (home_directory) {
+      command += ` -d "${home_directory}"`;
+    }
+
+    // Add shell (defaults to /bin/pfsh for roles)
+    if (shell && shell !== '/bin/pfsh') {
+      command += ` -s "${shell}"`;
+    }
+
+    // Add home directory creation
+    if (create_home) {
+      command += ` -m`;
+    }
+
+    // Add project
+    if (project) {
+      command += ` -p "${project}"`;
+    }
+
+    // Add RBAC authorizations
+    if (authorizations && authorizations.length > 0) {
+      command += ` -A "${authorizations.join(',')}"`;
+    }
+
+    // Add RBAC profiles
+    if (profiles && profiles.length > 0) {
+      command += ` -P "${profiles.join(',')}"`;
+    }
+
+    // Add role name
+    command += ` ${rolename}`;
+
+    log.task.debug('Executing role creation command', { command });
+
+    const result = await executeCommand(command);
+
+    let warnings = [];
+    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+      // Handle success or success with warnings
+      if (result.stderr && result.stderr.includes('name too long')) {
+        warnings.push(`Role name '${rolename}' is longer than traditional 8-character limit`);
+      }
+
+      log.task.info('Role created successfully', {
+        rolename,
+        uid: uid || 'auto-assigned',
+        warnings: warnings.length,
+      });
+
+      return {
+        success: true,
+        message: `Role ${rolename} created successfully${warnings.length > 0 ? ' (with warnings)' : ''}`,
+        warnings: warnings.length > 0 ? warnings : undefined,
+      };
+    } else {
+      log.task.error('Role creation command failed', {
+        rolename,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to create role ${rolename}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Role creation task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Role creation task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute role modification task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeRoleModifyTask = async metadataJson => {
+  log.task.debug('Role modification task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const {
+      rolename,
+      new_rolename,
+      new_uid,
+      new_gid,
+      new_comment,
+      new_authorizations = [],
+      new_profiles = [],
+    } = metadata;
+
+    log.task.debug('Role modification task parameters', {
+      rolename,
+      new_rolename,
+      new_uid,
+      has_rbac: new_authorizations.length > 0 || new_profiles.length > 0,
+    });
+
+    // Build rolemod command
+    let command = `pfexec rolemod`;
+
+    // Add new UID
+    if (new_uid) {
+      command += ` -u ${new_uid}`;
+    }
+
+    // Add new primary group
+    if (new_gid) {
+      command += ` -g ${new_gid}`;
+    }
+
+    // Add new comment
+    if (new_comment !== undefined) {
+      command += ` -c "${new_comment}"`;
+    }
+
+    // Add new RBAC authorizations
+    if (new_authorizations && new_authorizations.length > 0) {
+      command += ` -A "${new_authorizations.join(',')}"`;
+    }
+
+    // Add new RBAC profiles
+    if (new_profiles && new_profiles.length > 0) {
+      command += ` -P "${new_profiles.join(',')}"`;
+    }
+
+    // Add new role name (must be last for rolemod -l)
+    if (new_rolename) {
+      command += ` -l ${new_rolename}`;
+    }
+
+    // Add current role name
+    command += ` ${rolename}`;
+
+    log.task.debug('Executing role modification command', { command });
+
+    const result = await executeCommand(command);
+    
+    let warnings = [];
+    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+      // Handle success or success with warnings
+      if (result.stderr && result.stderr.includes('name too long')) {
+        warnings.push(`Role name '${new_rolename || rolename}' is longer than traditional 8-character limit`);
+      }
+
+      log.task.info('Role modified successfully', {
+        rolename,
+        new_rolename: new_rolename || rolename,
+        warnings: warnings.length,
+      });
+
+      return {
+        success: true,
+        message: `Role ${rolename}${new_rolename ? ` renamed to ${new_rolename}` : ''} modified successfully${warnings.length > 0 ? ' (with warnings)' : ''}`,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        final_rolename: new_rolename || rolename,
+      };
+    } else {
+      log.task.error('Role modification command failed', {
+        rolename,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to modify role ${rolename}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Role modification task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Role modification task failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute role deletion task
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeRoleDeleteTask = async metadataJson => {
+  log.task.debug('Role deletion task starting');
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { rolename, remove_home = false } = metadata;
+
+    log.task.debug('Role deletion task parameters', {
+      rolename,
+      remove_home,
+    });
+
+    // Build roledel command
+    let command = `pfexec roledel`;
+    
+    if (remove_home) {
+      command += ` -r`;
+    }
+    
+    command += ` ${rolename}`;
+
+    log.task.debug('Executing role deletion command', { command });
+
+    const result = await executeCommand(command);
+
+    if (result.success) {
+      log.task.info('Role deleted successfully', {
+        rolename,
+        home_removed: remove_home,
+      });
+
+      return {
+        success: true,
+        message: `Role ${rolename} deleted successfully${remove_home ? ' (home directory removed)' : ''}`,
+        home_removed: remove_home,
+      };
+    } else {
+      log.task.error('Role deletion command failed', {
+        rolename,
+        error: result.error,
+      });
+
+      return {
+        success: false,
+        error: `Failed to delete role ${rolename}: ${result.error}`,
+      };
+    }
+  } catch (error) {
+    log.task.error('Role deletion task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Role deletion task failed: ${error.message}` };
   }
 };
 
