@@ -26,6 +26,7 @@ import { log, createTimer } from '../lib/Logger.js';
 /**
  * Operation categories for conflict detection
  * Operations in the same category cannot run simultaneously
+ * NEVER EVER STORE THINGS IN /TMP, we always prefer to store things in the final directory WITHOUT using a intermediary temp folder and then moving, that is bad and slow
  */
 const OPERATION_CATEGORIES = {
   // Package management operations (conflict with each other)
@@ -5596,10 +5597,10 @@ const executeArtifactDownloadTask = async metadataJson => {
       finalFilename = path.basename(urlPath) || `download_${Date.now()}`;
     }
 
-    const finalPath = path.join(storageLocation.path, finalFilename);
+    const final_path = path.join(storageLocation.path, finalFilename);
 
     // Check if file already exists
-    if (!overwrite_existing && fs.existsSync(finalPath)) {
+    if (!overwrite_existing && fs.existsSync(final_path)) {
       return {
         success: false,
         error: `File already exists: ${finalFilename}. Use overwrite_existing=true to replace.`,
@@ -5608,12 +5609,9 @@ const executeArtifactDownloadTask = async metadataJson => {
 
     log.task.info('Starting download', {
       url,
-      destination: finalPath,
+      destination: final_path,
       storage_location: storageLocation.name,
     });
-
-    // Create temporary file for download
-    const tempPath = `/tmp/artifact_${crypto.randomUUID()}_${finalFilename}`;
 
     try {
       // Fetch the file with streaming
@@ -5635,7 +5633,7 @@ const executeArtifactDownloadTask = async metadataJson => {
       });
 
       // Create write stream and hash calculator
-      const fileStream = fs.createWriteStream(tempPath);
+      const fileStream = fs.createWriteStream(final_path);
       const hash = crypto.createHash(checksum_algorithm);
       
       let downloadedBytes = 0;
@@ -5729,15 +5727,6 @@ const executeArtifactDownloadTask = async metadataJson => {
       if (expected_checksum) {
         checksumVerified = calculatedChecksum === expected_checksum;
         if (!checksumVerified) {
-          // Clean up temp file
-          try {
-            await fs.unlink(tempPath);
-          } catch (cleanupError) {
-            log.task.warn('Failed to cleanup temp file after checksum mismatch', {
-              temp_path: tempPath,
-              error: cleanupError.message,
-            });
-          }
           
           return {
             success: false,
@@ -5749,20 +5738,17 @@ const executeArtifactDownloadTask = async metadataJson => {
         log.task.info('Checksum verification passed');
       }
 
-      // Move to final location
-      await fs.rename(tempPath, finalPath);
-
       // Create artifact database record
       const { default: Artifact } = await import('../models/ArtifactModel.js');
       const { getMimeType } = await import('../lib/FileSystemManager.js');
 
       const extension = path.extname(finalFilename).toLowerCase();
-      const mimeType = getMimeType(finalPath);
+      const mimeType = getMimeType(final_path);
       
       await Artifact.create({
         storage_location_id: storage_location_id,
         filename: finalFilename,
-        path: finalPath,
+        path: final_path,
         size: downloadedBytes,
         file_type: storageLocation.type,
         extension,
@@ -5787,22 +5773,11 @@ const executeArtifactDownloadTask = async metadataJson => {
         downloaded_bytes: downloadedBytes,
         checksum_verified: checksumVerified,
         calculated_checksum: calculatedChecksum,
-        final_path: finalPath,
+        final_path: final_path,
         duration_ms: downloadTime,
       };
 
     } catch (downloadError) {
-      // Clean up temp file if it exists
-      try {
-        if (fs.existsSync(tempPath)) {
-          await fs.unlink(tempPath);
-        }
-      } catch (cleanupError) {
-        log.task.warn('Failed to cleanup temp file after download error', {
-          temp_path: tempPath,
-          cleanup_error: cleanupError.message,
-        });
-      }
       throw downloadError;
     }
 
@@ -5810,7 +5785,7 @@ const executeArtifactDownloadTask = async metadataJson => {
     log.task.error('Artifact download task exception', {
       error: error.message,
       stack: error.stack,
-      url,
+      url: metadata?.url || 'unknown',
     });
     return { success: false, error: `Download failed: ${error.message}` };
   }
@@ -6309,7 +6284,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     });
 
     const {
-      temp_path,
+      final_path,
       original_name,
       size,
       storage_location_id,
@@ -6318,7 +6293,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     } = metadata;
 
     log.task.debug('Upload process task parameters', {
-      temp_path,
+      final_path,
       original_name,
       size,
       storage_location_id,
@@ -6355,7 +6330,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     });
 
     const hash = crypto.createHash(checksum_algorithm);
-    const fileBuffer = await fs.readFile(temp_path);
+    const fileBuffer = await fs.readFile(final_path);
     
     // Update progress for checksum calculation
     if (taskToUpdate) {
@@ -6392,15 +6367,6 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     if (expected_checksum) {
       checksumVerified = calculatedChecksum === expected_checksum;
       if (!checksumVerified) {
-        // Clean up temp file
-        try {
-          await fs.unlink(temp_path);
-        } catch (cleanupError) {
-          log.task.warn('Failed to cleanup temp file after checksum failure', {
-            temp_path,
-            error: cleanupError.message,
-          });
-        }
 
         return {
           success: false,
@@ -6412,19 +6378,15 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       log.task.info('Upload checksum verification passed');
     }
 
-    // Move file to final location
-    const finalPath = path.join(storageLocation.path, original_name);
-    await fs.rename(temp_path, finalPath);
-
     // Determine file details
     const extension = path.extname(original_name).toLowerCase();
-    const mimeType = getMimeType(finalPath);
+    const mimeType = getMimeType(final_path);
 
     // Create artifact database record
     await Artifact.create({
       storage_location_id: storageLocation.id,
       filename: original_name,
-      path: finalPath,
+      path: final_path,
       size: size,
       file_type: storageLocation.type,
       extension,
@@ -6449,7 +6411,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
         progress_percent: 100,
         progress_info: {
           status: 'completed',
-          final_path: finalPath,
+          final_path: final_path,
           checksum_verified: checksumVerified,
         },
       });
@@ -6468,7 +6430,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       artifact: {
         filename: original_name,
         size,
-        final_path: finalPath,
+        final_path: final_path,
         checksum_verified: checksumVerified,
         calculated_checksum: calculatedChecksum,
       },
@@ -6478,12 +6440,11 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     // Clean up temp file if processing failed
     try {
       const fs = await import('fs');
-      if (fs.existsSync(metadata?.temp_path)) {
-        await fs.unlink(metadata.temp_path);
-      }
+    // CHANGE TO:
+    // No cleanup needed - file is already in final location
     } catch (cleanupError) {
       log.task.warn('Failed to cleanup temp file after processing error', {
-        temp_path: metadata?.temp_path,
+        final_path: metadata?.final_path,
         cleanup_error: cleanupError.message,
       });
     }
