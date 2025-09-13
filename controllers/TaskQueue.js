@@ -5632,6 +5632,24 @@ const executeArtifactDownloadTask = async metadataJson => {
         content_type: response.headers.get('content-type'),
       });
 
+      // Pre-create file with pfexec and set writable permissions (same pattern as uploads)
+      log.task.debug('Pre-creating download file with pfexec', {
+        final_path,
+      });
+
+      const createResult = await executeCommand(`pfexec touch "${final_path}"`);
+      if (!createResult.success) {
+        throw new Error(`Failed to pre-create file: ${createResult.error}`);
+      }
+
+      // Set permissions so service user can write to the file
+      const chmodResult = await executeCommand(`pfexec chmod 666 "${final_path}"`);
+      if (!chmodResult.success) {
+        throw new Error(`Failed to set file permissions: ${chmodResult.error}`);
+      }
+
+      log.task.debug('File pre-created successfully with proper permissions');
+
       // Create write stream and hash calculator
       const fileStream = fs.createWriteStream(final_path);
       const hash = crypto.createHash(checksum_algorithm);
