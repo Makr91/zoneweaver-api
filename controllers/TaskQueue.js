@@ -954,7 +954,7 @@ export const listTasks = async (req, res) => {
   try {
     const zonesConfig = config.getZones();
     const defaultLimit = zonesConfig.default_pagination_limit || 50;
-    const { limit = defaultLimit, status, zone_name, operation, operation_ne, since } = req.query;
+    const { limit = defaultLimit, status, zone_name, operation, operation_ne, since, include_count } = req.query;
     const whereClause = {};
 
     if (status) {
@@ -970,7 +970,8 @@ export const listTasks = async (req, res) => {
       whereClause.operation = { [Op.ne]: operation_ne };
     }
     if (since) {
-      whereClause.created_at = { [Op.gte]: new Date(since) };
+      // Fix: Use updatedAt instead of created_at for incremental updates
+      whereClause.updatedAt = { [Op.gte]: new Date(since) };
     }
 
     const tasks = await Tasks.findAll({
@@ -979,13 +980,19 @@ export const listTasks = async (req, res) => {
       limit: parseInt(limit),
     });
 
-    const total = await Tasks.count({ where: whereClause });
-
-    res.json({
+    // Only run expensive count query if explicitly requested
+    const response = {
       tasks,
-      total,
       running_count: runningTasks.size,
-    });
+    };
+
+    // Add total count only if requested (for performance)
+    if (include_count === 'true') {
+      const total = await Tasks.count({ where: whereClause });
+      response.total = total;
+    }
+
+    res.json(response);
   } catch (error) {
     log.database.error('Database error listing tasks', {
       error: error.message,
