@@ -168,6 +168,9 @@ file_browser:
     supported_formats: ["zip", "tar", "tar.gz", "tar.bz2", "gz"]
 artifact_storage:
   enabled: true
+  download:
+    timeout_seconds: 1500          # Download timeout (5 minutes for your high-speed connection)
+    progress_update_seconds: 10   # Progress updates every 10 seconds
   checksums:
     enabled: true
     algorithm: "sha256"  # md5, sha1, sha256
