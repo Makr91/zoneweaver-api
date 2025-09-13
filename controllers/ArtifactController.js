@@ -1221,13 +1221,13 @@ export const prepareArtifactUpload = async (req, res) => {
       });
     }
 
-    // Create upload processing task
+    // Create upload processing task (prepared status prevents TaskQueue from processing before upload)
     const task = await Tasks.create({
       zone_name: 'artifact',
       operation: 'artifact_upload_process',
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
-      status: 'pending',
+      status: 'prepared',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
           {
@@ -1249,7 +1249,7 @@ export const prepareArtifactUpload = async (req, res) => {
 
     // Generate upload URL and expiration
     const uploadUrl = `/artifacts/upload/${task.id}`;
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours from now
+    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // THIS SHOULD BE MOVED TO CONFIG.YML!
 
     log.artifact.info('Upload prepared successfully', {
       task_id: task.id,
@@ -1408,10 +1408,10 @@ export const uploadArtifactToTask = async (req, res) => {
       });
     }
 
-    if (task.status !== 'pending') {
-      requestLogger.error(400, 'Task not pending');
+    if (task.status !== 'prepared') {
+      requestLogger.error(400, 'Task not prepared');
       return res.status(400).json({
-        error: 'Task is not in pending state',
+        error: 'Task is not in prepared state',
       });
     }
 
@@ -1513,7 +1513,7 @@ export const uploadArtifactToTask = async (req, res) => {
             else resolve(result);
           });
         }),
-        status: 'running', // Mark as running so task queue will process it
+        status: 'pending', // Mark as pending so task queue will process it
       });
 
       const duration = timer.end({
