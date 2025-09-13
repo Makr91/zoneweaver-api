@@ -969,7 +969,7 @@ export const getArtifactDetails = async (req, res) => {
  *                 type: string
  *                 description: Override filename (optional)
  *                 example: "ubuntu-22.04-server.iso"
- *               expected_checksum:
+ *               checksum:
  *                 type: string
  *                 description: Expected checksum for verification
  *                 example: "abc123def456..."
@@ -1006,7 +1006,7 @@ export const downloadFromUrl = async (req, res) => {
       url,
       storage_path_id,
       filename,
-      expected_checksum,
+      checksum,
       checksum_algorithm = 'sha256',
       overwrite_existing = false,
     } = req.body;
@@ -1060,7 +1060,7 @@ export const downloadFromUrl = async (req, res) => {
             url,
             storage_location_id: storage_path_id,
             filename,
-            expected_checksum,
+            checksum,
             checksum_algorithm,
             overwrite_existing,
           },
@@ -1080,7 +1080,7 @@ export const downloadFromUrl = async (req, res) => {
       url,
       storage_location: storageLocation.name,
       filename: displayFilename,
-      has_checksum: !!expected_checksum,
+      has_checksum: !!checksum,
     });
 
     res.status(202).json({
@@ -1142,7 +1142,7 @@ export const downloadFromUrl = async (req, res) => {
  *                 type: string
  *                 format: uuid
  *                 description: Target storage location ID
- *               expected_checksum:
+ *               checksum:
  *                 type: string
  *                 description: Expected checksum for verification
  *               checksum_algorithm:
@@ -1189,7 +1189,7 @@ export const prepareArtifactUpload = async (req, res) => {
       filename,
       size,
       storage_path_id,
-      expected_checksum,
+      checksum,
       checksum_algorithm = 'sha256',
       overwrite_existing = false,
     } = req.body;
@@ -1235,7 +1235,7 @@ export const prepareArtifactUpload = async (req, res) => {
             original_name: filename,
             size: parseInt(size),
             storage_location_id: storage_path_id,
-            expected_checksum,
+            checksum,
             checksum_algorithm,
             overwrite_existing,
             upload_prepared: true,
@@ -1472,7 +1472,7 @@ export const uploadArtifactToTask = async (req, res) => {
           original_name: taskMetadata.original_name,
           size: taskMetadata.size,
           storage_location_id: taskMetadata.storage_location_id,
-          expected_checksum: taskMetadata.expected_checksum ? 'present' : 'none',
+          checksum: taskMetadata.checksum ? 'present' : 'none',
           checksum_algorithm: taskMetadata.checksum_algorithm,
           overwrite_existing: taskMetadata.overwrite_existing,
           upload_prepared: taskMetadata.upload_prepared,
@@ -1696,7 +1696,7 @@ export const uploadArtifactToTask = async (req, res) => {
         size: req.file.size,
         storage_location: storageLocation.name,
         final_path: finalPath,
-        has_expected_checksum: !!taskMetadata.expected_checksum,
+        has_checksum: !!taskMetadata.checksum,
       });
 
       // Update task metadata with final upload information

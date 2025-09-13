@@ -52,21 +52,13 @@ const { DataTypes } = Sequelize;
  *           type: string
  *           description: MIME type of the file
  *           example: "application/x-iso9660-image"
- *         user_provided_checksum:
+ *         checksum:
  *           type: string
- *           description: Checksum provided by user during upload/download
+ *           description: File checksum (provided by user or calculated by system)
  *           example: "abc123def456..."
- *         calculated_checksum:
- *           type: string
- *           description: Checksum calculated by the system
- *           example: "abc123def456..."
- *         checksum_verified:
- *           type: boolean
- *           description: Whether user provided checksum matches calculated
- *           example: true
  *         checksum_algorithm:
  *           type: string
- *           description: Algorithm used for checksum
+ *           description: Algorithm used for checksum calculation
  *           enum: [md5, sha1, sha256]
  *           example: "sha256"
  *         source_url:
@@ -148,20 +140,10 @@ const Artifact = db.define(
       allowNull: true,
       comment: 'MIME type of the file',
     },
-    user_provided_checksum: {
+    checksum: {
       type: DataTypes.STRING,
       allowNull: true,
-      comment: 'Checksum provided by user during upload/download',
-    },
-    calculated_checksum: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      comment: 'Checksum calculated by the system',
-    },
-    checksum_verified: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-      comment: 'Whether user provided checksum matches calculated',
+      comment: 'File checksum (provided by user or calculated by system)',
     },
     checksum_algorithm: {
       type: DataTypes.STRING,
@@ -217,7 +199,7 @@ const Artifact = db.define(
         name: 'idx_artifact_size',
       },
       {
-        fields: ['calculated_checksum'],
+        fields: ['checksum'],
         name: 'idx_artifact_checksum',
       },
       {

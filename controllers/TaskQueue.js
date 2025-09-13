@@ -5559,7 +5559,7 @@ const executeArtifactDownloadTask = async metadataJson => {
       url, 
       storage_location_id, 
       filename, 
-      expected_checksum, 
+      checksum, 
       checksum_algorithm = 'sha256',
       overwrite_existing = false 
     } = metadata;
@@ -5568,7 +5568,7 @@ const executeArtifactDownloadTask = async metadataJson => {
       url,
       storage_location_id,
       filename,
-      has_expected_checksum: !!expected_checksum,
+      has_checksum: !!checksum,
       checksum_algorithm,
       overwrite_existing,
     });
@@ -5719,20 +5719,20 @@ const executeArtifactDownloadTask = async metadataJson => {
         downloaded_bytes: downloadedBytes,
         downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
         duration_ms: downloadTime,
-        calculated_checksum: calculatedChecksum.substring(0, 16) + '...',
+        checksum: calculatedChecksum.substring(0, 16) + '...',
       });
 
       // Verify checksum if provided
       let checksumVerified = false;
-      if (expected_checksum) {
-        checksumVerified = calculatedChecksum === expected_checksum;
+      if (checksum) {
+        checksumVerified = calculatedChecksum === checksum;
         if (!checksumVerified) {
           
           return {
             success: false,
-            error: `Checksum verification failed. Expected: ${expected_checksum}, Got: ${calculatedChecksum}`,
-            expected_checksum,
-            calculated_checksum,
+            error: `Checksum verification failed. Expected: ${checksum}, Got: ${calculatedChecksum}`,
+            checksum,
+            checksum,
           };
         }
         log.task.info('Checksum verification passed');
@@ -5753,9 +5753,7 @@ const executeArtifactDownloadTask = async metadataJson => {
         file_type: storageLocation.type,
         extension,
         mime_type: mimeType,
-        user_provided_checksum: expected_checksum || null,
-        calculated_checksum: calculatedChecksum,
-        checksum_verified: checksumVerified,
+        checksum: calculatedChecksum,
         checksum_algorithm,
         source_url: url,
         discovered_at: new Date(),
@@ -5772,7 +5770,7 @@ const executeArtifactDownloadTask = async metadataJson => {
         message: `Successfully downloaded ${finalFilename} (${Math.round(downloadedBytes / 1024 / 1024)}MB)${checksumVerified ? ' with verified checksum' : ''}`,
         downloaded_bytes: downloadedBytes,
         checksum_verified: checksumVerified,
-        calculated_checksum: calculatedChecksum,
+        checksum: calculatedChecksum,
         final_path: final_path,
         duration_ms: downloadTime,
       };
@@ -6288,7 +6286,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       original_name,
       size,
       storage_location_id,
-      expected_checksum,
+      checksum,
       checksum_algorithm = 'sha256',
     } = metadata;
 
@@ -6307,7 +6305,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       original_name,
       size,
       storage_location_id,
-      has_expected_checksum: !!expected_checksum,
+      has_checksum: !!checksum,
     });
 
     // Import required modules
@@ -6362,7 +6360,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
         progress_percent: 80,
         progress_info: {
           status: 'checksum_complete',
-          calculated_checksum: calculatedChecksum.substring(0, 16) + '...',
+          checksum: calculatedChecksum.substring(0, 16) + '...',
         },
       });
     }
@@ -6373,11 +6371,11 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     });
 
     // Scenario 1: User provided checksum - verify and fail if mismatch
-    if (expected_checksum) {
-      if (calculatedChecksum !== expected_checksum) {
+    if (checksum) {
+      if (calculatedChecksum !== checksum) {
         return {
           success: false,
-          error: `Checksum verification failed. Expected: ${expected_checksum}, Got: ${calculatedChecksum}`,
+          error: `Checksum verification failed. Expected: ${checksum}, Got: ${calculatedChecksum}`,
         };
       }
       log.task.info('Upload checksum verification passed');
@@ -6387,7 +6385,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     const extension = path.extname(original_name).toLowerCase();
     const mimeType = getMimeType(final_path);
 
-    // Create artifact database record with simplified checksum logic
+    // Create artifact database record with single checksum field
     await Artifact.create({
       storage_location_id: storageLocation.id,
       filename: original_name,
@@ -6396,9 +6394,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       file_type: storageLocation.type,
       extension,
       mime_type: mimeType,
-      user_provided_checksum: expected_checksum || null,
-      calculated_checksum: calculatedChecksum,
-      checksum_verified: !!expected_checksum,
+      checksum: calculatedChecksum,
       checksum_algorithm,
       source_url: null,
       discovered_at: new Date(),
@@ -6417,7 +6413,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
         progress_info: {
           status: 'completed',
           final_path: final_path,
-          checksum_verified: !!expected_checksum,
+          checksum_verified: !!checksum,
         },
       });
     }
@@ -6426,18 +6422,18 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       filename: original_name,
       size_mb: Math.round(size / 1024 / 1024),
       storage_location: storageLocation.name,
-      checksum_verified: !!expected_checksum,
+      checksum_verified: !!checksum,
     });
 
     return {
       success: true,
-      message: `Successfully processed upload for ${original_name} (${Math.round(size / 1024 / 1024)}MB)${expected_checksum ? ' with verified checksum' : ''}`,
+      message: `Successfully processed upload for ${original_name} (${Math.round(size / 1024 / 1024)}MB)${checksum ? ' with verified checksum' : ''}`,
       artifact: {
         filename: original_name,
         size,
         final_path: final_path,
-        checksum_verified: !!expected_checksum,
-        calculated_checksum: calculatedChecksum,
+        checksum_verified: !!checksum,
+        checksum: calculatedChecksum,
       },
     };
 
@@ -6532,9 +6528,7 @@ const scanStorageLocation = async (location, options = {}) => {
           file_type: location.type,
           extension,
           mime_type: mimeType,
-          user_provided_checksum: null,
-          calculated_checksum: null,
-          checksum_verified: false,
+          checksum: null,
           checksum_algorithm: null,
           source_url: null,
           discovered_at: new Date(),
