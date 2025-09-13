@@ -1,10 +1,16 @@
 import { execSync, spawn } from 'child_process';
+import { Readable } from 'stream';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import Zones from '../models/ZoneModel.js';
 import VncSessions from '../models/VncSessionModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../models/NetworkUsageModel.js';
 import IPAddresses from '../models/IPAddressModel.js';
+import ArtifactStorageLocation from '../models/ArtifactStorageLocationModel.js';
+import Artifact from '../models/ArtifactModel.js';
 import yj from 'yieldable-json';
 import { Op } from 'sequelize';
 import os from 'os';
@@ -17,10 +23,18 @@ import {
   refreshService,
 } from '../lib/ServiceManager.js';
 import { log, createTimer } from '../lib/Logger.js';
+import { listDirectory, getMimeType, moveItem, copyItem, createArchive, extractArchive } from '../lib/FileSystemManager.js';
 
 /**
  * @fileoverview Task Queue controller for Zoneweaver API
  * @description Manages task execution, prioritization, and conflict resolution for zone operations
+ * 
+ * ⚠️  **CRITICAL IMPORT RULE** ⚠️
+ * =================================
+ * ALL IMPORTS MUST BE AT THE TOP OF THIS FILE!
+ * NO await import() OR require() STATEMENTS ANYWHERE IN FUNCTIONS!
+ * ALL LIBRARIES AND MODULES MUST BE IMPORTED STATICALLY ABOVE!
+ * =================================
  */
 
 /**
@@ -4141,7 +4155,6 @@ const executeFileMoveTask = async metadataJson => {
       destination,
     });
 
-    const { moveItem } = await import('../lib/FileSystemManager.js');
     await moveItem(source, destination);
 
     log.filesystem.info('File move completed', {
@@ -4187,7 +4200,6 @@ const executeFileCopyTask = async metadataJson => {
       destination,
     });
 
-    const { copyItem } = await import('../lib/FileSystemManager.js');
     await copyItem(source, destination);
 
     log.filesystem.info('File copy completed', {
@@ -4234,7 +4246,6 @@ const executeFileArchiveCreateTask = async metadataJson => {
       format,
     });
 
-    const { createArchive } = await import('../lib/FileSystemManager.js');
     await createArchive(sources, archive_path, format);
 
     log.filesystem.info('Archive created successfully', {
@@ -4281,7 +4292,6 @@ const executeFileArchiveExtractTask = async metadataJson => {
       extract_path,
     });
 
-    const { extractArchive } = await import('../lib/FileSystemManager.js');
     await extractArchive(archive_path, extract_path);
 
     log.filesystem.info('Archive extracted successfully', {
@@ -5574,7 +5584,6 @@ const executeArtifactDownloadTask = async metadataJson => {
     });
 
     // Get storage location
-    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
     const storageLocation = await ArtifactStorageLocation.findByPk(storage_location_id);
     
     if (!storageLocation || !storageLocation.enabled) {
@@ -5583,12 +5592,6 @@ const executeArtifactDownloadTask = async metadataJson => {
         error: `Storage location not found or disabled: ${storage_location_id}`,
       };
     }
-
-    // Import required modules
-    const crypto = await import('crypto');
-    const fs = await import('fs');
-    const path = await import('path');
-    const { v4: uuid } = await import('crypto');
 
     // Determine filename from URL if not provided
     let finalFilename = filename;
@@ -5657,7 +5660,7 @@ const executeArtifactDownloadTask = async metadataJson => {
       log.task.debug('Starting pure stream download - no buffers, no transforms');
 
       // Convert fetch ReadableStream to Node.js Readable
-      const nodeStream = new require('stream').Readable({
+      const nodeStream = new Readable({
         read() {}
       });
 
@@ -5756,9 +5759,6 @@ const executeArtifactDownloadTask = async metadataJson => {
       }
 
       // Create artifact database record
-      const { default: Artifact } = await import('../models/ArtifactModel.js');
-      const { getMimeType } = await import('../lib/FileSystemManager.js');
-
       const extension = path.extname(finalFilename).toLowerCase();
       const mimeType = getMimeType(final_path);
       
@@ -5831,10 +5831,6 @@ const executeArtifactScanAllTask = async metadataJson => {
       remove_orphaned,
       source,
     });
-
-    // Import required models
-    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
-    const { default: Artifact } = await import('../models/ArtifactModel.js');
 
     // Get all enabled storage locations
     const locations = await ArtifactStorageLocation.findAll({
@@ -5959,8 +5955,6 @@ const executeArtifactScanLocationTask = async metadataJson => {
       remove_orphaned,
     });
 
-    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
-
     const location = await ArtifactStorageLocation.findByPk(storage_location_id);
     if (!location) {
       return {
@@ -6035,10 +6029,6 @@ const executeArtifactDeleteFileTask = async metadataJson => {
       delete_files,
       force,
     });
-
-    const { default: Artifact } = await import('../models/ArtifactModel.js');
-    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
-    const fs = await import('fs');
 
     const artifacts = await Artifact.findAll({
       where: { id: artifact_ids },
@@ -6184,9 +6174,6 @@ const executeArtifactDeleteFolderTask = async metadataJson => {
       force,
     });
 
-    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
-    const { default: Artifact } = await import('../models/ArtifactModel.js');
-
     const location = await ArtifactStorageLocation.findByPk(storage_location_id);
     if (!location) {
       return {
@@ -6324,15 +6311,6 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       has_checksum: !!checksum,
     });
 
-    // Import required modules
-    const crypto = await import('crypto');
-    const fs = await import('fs');
-    const path = await import('path');
-
-    const { default: ArtifactStorageLocation } = await import('../models/ArtifactStorageLocationModel.js');
-    const { default: Artifact } = await import('../models/ArtifactModel.js');
-    const { getMimeType } = await import('../lib/FileSystemManager.js');
-
     // Get storage location
     const storageLocation = await ArtifactStorageLocation.findByPk(storage_location_id);
     if (!storageLocation) {
@@ -6454,18 +6432,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     };
 
   } catch (error) {
-    // Clean up temp file if processing failed
-    try {
-      const fs = await import('fs');
-    // CHANGE TO:
     // No cleanup needed - file is already in final location
-    } catch (cleanupError) {
-      log.task.warn('Failed to cleanup temp file after processing error', {
-        final_path: metadata?.final_path,
-        cleanup_error: cleanupError.message,
-      });
-    }
-
     log.task.error('Artifact upload process task exception', {
       error: error.message,
       stack: error.stack,
@@ -6491,15 +6458,9 @@ const scanStorageLocation = async (location, options = {}) => {
     remove_orphaned,
   });
 
-  const { default: Artifact } = await import('../models/ArtifactModel.js');
-  const { listDirectory, getMimeType } = await import('../lib/FileSystemManager.js');
-  const path = await import('path');
-  const fs = await import('fs');
-  const config = await import('../config/ConfigLoader.js');
-
   try {
     // Get supported extensions for this location type
-    const artifactConfig = config.default.getArtifactStorage();
+    const artifactConfig = config.getArtifactStorage();
     const supportedExtensions = artifactConfig?.scanning?.supported_extensions?.[location.type] || [];
 
     // List directory contents
