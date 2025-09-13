@@ -6330,7 +6330,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
     });
 
     const hash = crypto.createHash(checksum_algorithm);
-    const fileBuffer = await fs.readFile(final_path);
+    const fileBuffer = await fs.promises.readFile(final_path);
     
     // Update progress for checksum calculation
     if (taskToUpdate) {
