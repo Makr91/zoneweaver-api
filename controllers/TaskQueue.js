@@ -6292,6 +6292,16 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       checksum_algorithm = 'sha256',
     } = metadata;
 
+    if (!final_path) {
+      log.task.error('No final_path provided in metadata', {
+        metadata_keys: Object.keys(metadata),
+      });
+      return {
+        success: false,
+        error: 'No final_path provided in task metadata - cannot process upload',
+      };
+    }
+
     log.task.debug('Upload process task parameters', {
       final_path,
       original_name,

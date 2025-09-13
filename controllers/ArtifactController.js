@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import yaml from 'js-yaml';
+import multer from 'multer';
 import config from '../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../models/ArtifactStorageLocationModel.js';
 import Artifact from '../models/ArtifactModel.js';
@@ -1383,13 +1384,6 @@ export const uploadArtifactToTask = async (req, res) => {
       });
     }
 
-    if (!req.file) {
-      requestLogger.error(400, 'No file uploaded');
-      return res.status(400).json({
-        error: 'No file uploaded',
-      });
-    }
-
     const { taskId } = req.params;
     if (!taskId) {
       requestLogger.error(400, 'Task ID required');
@@ -1456,84 +1450,117 @@ export const uploadArtifactToTask = async (req, res) => {
       });
     }
 
-    // Multer already saved the file to temp location
-    const filePath = req.file.path;
-    const { filename } = req.file;
-
-    log.artifact.info('Artifact upload processing', {
-      requestId,
-      task_id: taskId,
-      filename: req.file.originalname,
-      sanitized_name: filename,
-      size: req.file.size,
-      storage_location: storageLocation.name,
-      temp_path: filePath,
-      has_expected_checksum: !!taskMetadata.expected_checksum,
+    // Create custom multer storage that saves directly to final location
+    const storage = multer.diskStorage({
+      destination: (req, file, cb) => {
+        cb(null, storageLocation.path);
+      },
+      filename: (req, file, cb) => {
+        cb(null, file.originalname);
+      },
     });
 
-    // Update task metadata with actual upload information
-    const updatedMetadata = {
-      ...taskMetadata,
-      temp_path: filePath,
-      actual_name: req.file.originalname,
-      actual_size: req.file.size,
-      upload_completed: true,
-    };
+    const upload = multer({ 
+      storage,
+      limits: {
+        fileSize: (artifactConfig.security?.max_upload_size_gb || 50) * 1024 * 1024 * 1024,
+      }
+    }).single('file');
 
-    await task.update({
-      metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(updatedMetadata, (err, result) => {
-          if (err) reject(err);
-          else resolve(result);
+    // Process upload with direct-to-final storage
+    upload(req, res, async (uploadError) => {
+      if (uploadError) {
+        requestLogger.error(400, 'Upload failed');
+        return res.status(400).json({
+          error: 'File upload failed',
+          details: uploadError.message,
         });
-      }),
-      status: 'running', // Mark as running so task queue will process it
-    });
+      }
 
-    const duration = timer.end({
-      filename: req.file.originalname,
-      fileSize: req.file.size,
-      temp_location: filePath,
-    });
+      if (!req.file) {
+        requestLogger.error(400, 'No file uploaded');
+        return res.status(400).json({
+          error: 'No file uploaded',
+        });
+      }
 
-    log.artifact.info('Upload task updated successfully', {
-      requestId,
-      task_id: taskId,
-      filename: req.file.originalname,
-      fileSize: req.file.size,
-      duration_ms: duration,
-    });
+      // File is now in final location
+      const finalPath = req.file.path;
 
-    const response = {
-      success: true,
-      message: `Upload task created for '${req.file.originalname}'`,
-      task_id: taskId,
-      file: {
-        name: req.file.originalname,
+      log.artifact.info('Artifact uploaded directly to final location', {
+        requestId,
+        task_id: taskId,
+        filename: req.file.originalname,
         size: req.file.size,
-        temp_location: filePath,
-      },
-      storage_location: {
-        id: storageLocation.id,
-        name: storageLocation.name,
-        path: storageLocation.path,
-      },
-    };
+        storage_location: storageLocation.name,
+        final_path: finalPath,
+        has_expected_checksum: !!taskMetadata.expected_checksum,
+      });
 
-    requestLogger.success(202, {
-      filename: req.file.originalname,
-      fileSize: req.file.size,
-      task_id: taskId,
+      // Update task metadata with final upload information
+      const updatedMetadata = {
+        ...taskMetadata,
+        final_path: finalPath,
+        original_name: req.file.originalname,
+        size: req.file.size,
+        upload_completed: true,
+      };
+
+      await task.update({
+        metadata: await new Promise((resolve, reject) => {
+          yj.stringifyAsync(updatedMetadata, (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          });
+        }),
+        status: 'running', // Mark as running so task queue will process it
+      });
+
+      const duration = timer.end({
+        filename: req.file.originalname,
+        fileSize: req.file.size,
+        final_location: finalPath,
+      });
+
+      log.artifact.info('Upload task updated successfully', {
+        requestId,
+        task_id: taskId,
+        filename: req.file.originalname,
+        fileSize: req.file.size,
+        duration_ms: duration,
+      });
+
+      const response = {
+        success: true,
+        message: `Upload completed for '${req.file.originalname}'`,
+        task_id: taskId,
+        file: {
+          name: req.file.originalname,
+          size: req.file.size,
+          final_location: finalPath,
+        },
+        storage_location: {
+          id: storageLocation.id,
+          name: storageLocation.name,
+          path: storageLocation.path,
+        },
+      };
+
+      requestLogger.success(202, {
+        filename: req.file.originalname,
+        fileSize: req.file.size,
+        task_id: taskId,
+      });
+
+      res.status(202).json(response);
     });
 
-    res.status(202).json(response);
   } catch (error) {
     timer.end({ error: error.message });
     log.artifact.error('Artifact upload failed', {
       requestId,
       error: error.message,
       stack: error.stack,
-      filename: req.file?.originalname,
     });
 
     requestLogger.error(500, error.message);
