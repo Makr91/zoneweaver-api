@@ -6497,8 +6497,22 @@ const scanStorageLocation = async (location, options = {}) => {
       task.operation === 'artifact_download_url'
     );
 
+    log.artifact.debug('Race condition protection: checking running tasks', {
+      total_running_tasks: runningTasks.size,
+      running_download_tasks: runningDownloadTasks.length,
+      location_id: location.id,
+      location_path: location.path,
+      running_task_ids: runningDownloadTasks.map(t => t.id),
+    });
+
     const downloadingPaths = new Set();
     for (const downloadTask of runningDownloadTasks) {
+      log.artifact.debug('Race condition protection: processing download task', {
+        task_id: downloadTask.id,
+        operation: downloadTask.operation,
+        metadata_length: downloadTask.metadata?.length,
+      });
+
       try {
         const downloadMetadata = await new Promise((resolve, reject) => {
           yj.parseAsync(downloadTask.metadata, (err, result) => {
@@ -6508,6 +6522,15 @@ const scanStorageLocation = async (location, options = {}) => {
         });
         
         const { storage_location_id, filename, url } = downloadMetadata;
+        
+        log.artifact.debug('Race condition protection: parsed download metadata', {
+          task_id: downloadTask.id,
+          download_storage_location_id: storage_location_id,
+          scan_location_id: location.id,
+          storage_location_match: storage_location_id === location.id,
+          filename,
+          url: url?.substring(0, 100),
+        });
         
         // If download targets this storage location
         if (storage_location_id === location.id) {
@@ -6519,21 +6542,35 @@ const scanStorageLocation = async (location, options = {}) => {
           }
           const targetPath = path.join(location.path, finalFilename);
           downloadingPaths.add(targetPath);
+          
+          log.artifact.debug('Race condition protection: added downloading path', {
+            task_id: downloadTask.id,
+            final_filename: finalFilename,
+            target_path: targetPath,
+            total_downloading_paths: downloadingPaths.size,
+          });
         }
       } catch (parseError) {
         // Skip if can't parse metadata
-        log.artifact.debug('Failed to parse download task metadata', {
+        log.artifact.error('Race condition protection: failed to parse download task metadata', {
           task_id: downloadTask.id,
           error: parseError.message,
+          metadata_preview: downloadTask.metadata?.substring(0, 200),
         });
         continue;
       }
     }
 
     if (downloadingPaths.size > 0) {
-      log.artifact.debug('Found active downloads to skip during scan', {
+      log.artifact.info('Race condition protection: found active downloads to skip during scan', {
         active_downloads: downloadingPaths.size,
         downloading_paths: Array.from(downloadingPaths),
+        location_name: location.name,
+      });
+    } else {
+      log.artifact.debug('Race condition protection: no active downloads found for this location', {
+        location_name: location.name,
+        total_running_downloads: runningDownloadTasks.length,
       });
     }
 
@@ -6567,11 +6604,20 @@ const scanStorageLocation = async (location, options = {}) => {
 
     // Add new artifacts (skip files being downloaded)
     for (const file of artifactFiles) {
+      log.artifact.debug('Race condition protection: checking file against downloading paths', {
+        file_path: file.path,
+        downloading_paths_count: downloadingPaths.size,
+        should_skip: downloadingPaths.has(file.path),
+        downloading_paths: Array.from(downloadingPaths),
+        file_exists_in_db: existingPaths.has(file.path),
+      });
+
       // Skip files that are currently being downloaded to prevent race condition
       if (downloadingPaths.has(file.path)) {
-        log.artifact.debug('Skipping file being downloaded', {
+        log.artifact.info('Race condition protection: skipping file being downloaded', {
           filename: file.name,
           path: file.path,
+          location_name: location.name,
         });
         skipped++;
         continue;
@@ -6581,6 +6627,14 @@ const scanStorageLocation = async (location, options = {}) => {
         // New artifact found
         const extension = path.extname(file.name).toLowerCase();
         const mimeType = getMimeType(file.path);
+
+        log.artifact.debug('Race condition protection: creating new artifact record', {
+          filename: file.name,
+          path: file.path,
+          size: file.size,
+          extension,
+          location_name: location.name,
+        });
 
         await Artifact.create({
           storage_location_id: location.id,
