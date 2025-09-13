@@ -5650,110 +5650,109 @@ const executeArtifactDownloadTask = async metadataJson => {
 
       log.task.debug('File pre-created successfully with proper permissions');
 
-      // Create write stream and hash calculator
+      // Pure streaming - let Node.js handle everything optimally
       const fileStream = fs.createWriteStream(final_path);
-      const hash = crypto.createHash(checksum_algorithm);
-      
-      let downloadedBytes = 0;
       const startTime = Date.now();
 
-      // Set up progress tracking for large files
-      const progressInterval = setInterval(async () => {
-        try {
-          if (fileSize) {
-            const progress = ((downloadedBytes / fileSize) * 100);
-            const speedKbps = downloadedBytes / 1024 / ((Date.now() - startTime) / 1000);
-            const remainingBytes = fileSize - downloadedBytes;
-            const etaSeconds = remainingBytes / (downloadedBytes / ((Date.now() - startTime) / 1000));
+      log.task.debug('Starting pure stream download - no buffers, no transforms');
 
-            // Update task progress in database
-            const taskToUpdate = await Tasks.findOne({
-              where: {
-                operation: 'artifact_download_url',
-                status: 'running',
-                metadata: { [Op.like]: `%${url.substring(0, 50)}%` }
-              }
-            });
+      // Convert fetch ReadableStream to Node.js Readable
+      const nodeStream = new require('stream').Readable({
+        read() {}
+      });
 
-            if (taskToUpdate) {
-              await taskToUpdate.update({
-                progress_percent: Math.round(progress * 100) / 100,
-                progress_info: {
-                  downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
-                  total_mb: Math.round(fileSize / 1024 / 1024),
-                  speed_kbps: Math.round(speedKbps),
-                  eta_seconds: isFinite(etaSeconds) ? Math.round(etaSeconds) : null,
-                  status: 'downloading',
-                },
-              });
-
-              log.task.debug('Download progress updated', {
-                task_id: taskToUpdate.id,
-                progress_percent: progress.toFixed(1),
-                downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
-                total_mb: Math.round(fileSize / 1024 / 1024),
-                speed_kbps: Math.round(speedKbps),
-              });
-            }
-          }
-        } catch (progressError) {
-          log.task.warn('Failed to update download progress', {
-            error: progressError.message,
-          });
-        }
-      }, 5000); // Update every 5 seconds
-
-      // Stream data to file and hash
+      // Simple pump without progress tracking during download
       const reader = response.body.getReader();
-      
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) {
-            break;
+      const pump = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              nodeStream.push(null);
+              break;
+            }
+            nodeStream.push(Buffer.from(value));
           }
-
-          downloadedBytes += value.length;
-          fileStream.write(value);
-          hash.update(value);
+        } catch (streamError) {
+          nodeStream.destroy(streamError);
         }
-      } finally {
-        clearInterval(progressInterval);
-        fileStream.end();
-      }
+      };
 
-      // Wait for file write to complete
+      // Start data flow
+      pump();
+
+      // Pure pipe - maximum performance
+      nodeStream.pipe(fileStream);
+
+      // Wait for completion
       await new Promise((resolve, reject) => {
         fileStream.on('finish', resolve);
         fileStream.on('error', reject);
+        nodeStream.on('error', reject);
       });
 
-      const calculatedChecksum = hash.digest('hex');
       const downloadTime = Date.now() - startTime;
 
-      log.task.info('Download completed', {
+      // Get final file size from disk
+      const stats = await fs.promises.stat(final_path);
+      const downloadedBytes = stats.size;
+
+      log.task.info('Download completed - starting post-processing', {
         url,
         downloaded_bytes: downloadedBytes,
         downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
         duration_ms: downloadTime,
-        checksum: calculatedChecksum.substring(0, 16) + '...',
+        speed_mbps: Math.round((downloadedBytes / 1024 / 1024) / (downloadTime / 1000) * 100) / 100,
       });
 
-      // Verify checksum if provided
+      // POST-DOWNLOAD: Calculate hash only if checksum verification is needed
+      let calculatedChecksum = null;
       let checksumVerified = false;
+      
       if (checksum) {
+        log.task.debug('Calculating checksum post-download for verification');
+        
+        // Use streaming hash calculation for large files
+        const hash = crypto.createHash(checksum_algorithm);
+        const readStream = fs.createReadStream(final_path, {
+          highWaterMark: 1024 * 1024 // 1MB chunks for fast hash calculation
+        });
+        
+        await new Promise((resolve, reject) => {
+          readStream.on('data', chunk => hash.update(chunk));
+          readStream.on('end', resolve);
+          readStream.on('error', reject);
+        });
+        
+        calculatedChecksum = hash.digest('hex');
         checksumVerified = calculatedChecksum === checksum;
+        
         if (!checksumVerified) {
-          
+          // Delete the invalid file
+          await executeCommand(`pfexec rm -f "${final_path}"`);
           return {
             success: false,
             error: `Checksum verification failed. Expected: ${checksum}, Got: ${calculatedChecksum}`,
-            checksum,
-            checksum,
+            expected_checksum: checksum,
+            calculated_checksum: calculatedChecksum,
           };
         }
         log.task.info('Checksum verification passed');
+      } else {
+        // Calculate checksum for storage but don't verify
+        log.task.debug('Calculating checksum for storage (no verification)');
+        const hash = crypto.createHash(checksum_algorithm);
+        const readStream = fs.createReadStream(final_path, {
+          highWaterMark: 1024 * 1024
+        });
+        
+        await new Promise((resolve, reject) => {
+          readStream.on('data', chunk => hash.update(chunk));
+          readStream.on('end', resolve);
+          readStream.on('error', reject);
+        });
+        
+        calculatedChecksum = hash.digest('hex');
       }
 
       // Create artifact database record
