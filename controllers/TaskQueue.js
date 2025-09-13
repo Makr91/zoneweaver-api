@@ -1,8 +1,9 @@
-import { spawn } from 'child_process';
 import axios from 'axios';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { executeCommand } from '../lib/CommandManager.js';
+import { executeSetHostnameTask } from './TaskManager/SystemManager.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import Zones from '../models/ZoneModel.js';
 import VncSessions from '../models/VncSessionModel.js';
@@ -16,14 +17,26 @@ import { Op } from 'sequelize';
 import os from 'os';
 import config from '../config/ConfigLoader.js';
 import { setRebootRequired } from '../lib/RebootManager.js';
-import { enableService, disableService, restartService, refreshService } from '../lib/ServiceManager.js';
+import {
+  enableService,
+  disableService,
+  restartService,
+  refreshService,
+} from '../lib/ServiceManager.js';
 import { log, createTimer } from '../lib/Logger.js';
-import { listDirectory, getMimeType, moveItem, copyItem, createArchive, extractArchive } from '../lib/FileSystemManager.js';
+import {
+  listDirectory,
+  getMimeType,
+  moveItem,
+  copyItem,
+  createArchive,
+  extractArchive,
+} from '../lib/FileSystemManager.js';
 
 /**
  * @fileoverview Task Queue controller for Zoneweaver API
  * @description Manages task execution, prioritization, and conflict resolution for zone operations
- * 
+ *
  * ⚠️  **CRITICAL IMPORT RULE** ⚠️
  * =================================
  * ALL IMPORTS MUST BE AT THE TOP OF THIS FILE!
@@ -102,7 +115,7 @@ const OPERATION_CATEGORIES = {
   // service_enable, service_disable, service_restart, service_refresh - no category = no conflicts
 
   // Artifact operations (safe to run concurrently - no category)
-  // artifact_download_url, artifact_scan_all, artifact_scan_location, artifact_delete_file, 
+  // artifact_download_url, artifact_scan_all, artifact_scan_location, artifact_delete_file,
   // artifact_delete_folder, artifact_upload_process - no category = no conflicts
 };
 
@@ -126,114 +139,6 @@ const runningCategories = new Set();
  * Maximum number of concurrent tasks
  */
 const MAX_CONCURRENT_TASKS = config.getZones().max_concurrent_tasks || 5;
-
-/**
- * Task timeout in milliseconds (5 minutes)
- */
-const TASK_TIMEOUT = 5 * 60 * 1000;
-
-/**
- * Execute a zone command asynchronously
- * @param {string} command - Command to execute
- * @param {number} timeout - Timeout in milliseconds
- * @returns {Promise<{success: boolean, output?: string, error?: string}>}
- */
-const executeCommand = async (command, timeout = TASK_TIMEOUT) => {
-  const timer = createTimer(`executeCommand: ${command.substring(0, 50)}`);
-
-  return new Promise(resolve => {
-    const child = spawn('sh', ['-c', command], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    let completed = false;
-
-    // Set up timeout
-    const timeoutId = setTimeout(() => {
-      if (!completed) {
-        completed = true;
-        child.kill('SIGTERM');
-        log.task.error('Command execution timeout', {
-          command: command.substring(0, 100),
-          timeout_ms: timeout,
-          stdout_preview: stdout.substring(0, 200),
-        });
-        timer.end();
-        resolve({
-          success: false,
-          error: `Command timed out after ${timeout}ms`,
-          output: stdout,
-        });
-      }
-    }, timeout);
-
-    // Collect output
-    child.stdout.on('data', data => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', data => {
-      stderr += data.toString();
-    });
-
-    // Handle completion
-    child.on('close', code => {
-      if (!completed) {
-        completed = true;
-        clearTimeout(timeoutId);
-        const duration = timer.end();
-
-        if (code === 0) {
-          // Log performance info if command took >1000ms
-          if (duration > 1000) {
-            log.performance.info('Slow command execution', {
-              command: command.substring(0, 100),
-              duration_ms: duration,
-              stdout_size: stdout.length,
-            });
-          }
-          resolve({
-            success: true,
-            output: stdout.trim(),
-          });
-        } else {
-          log.task.error('Command execution failed', {
-            command: command.substring(0, 100),
-            exit_code: code,
-            stderr: stderr.trim().substring(0, 200),
-            duration_ms: duration,
-          });
-          resolve({
-            success: false,
-            error: stderr.trim() || `Command exited with code ${code}`,
-            output: stdout.trim(),
-          });
-        }
-      }
-    });
-
-    // Handle errors
-    child.on('error', error => {
-      if (!completed) {
-        completed = true;
-        clearTimeout(timeoutId);
-        const duration = timer.end();
-        log.task.error('Command execution error', {
-          command: command.substring(0, 100),
-          error: error.message,
-          duration_ms: duration,
-        });
-        resolve({
-          success: false,
-          error: error.message,
-          output: stdout,
-        });
-      }
-    });
-  });
-};
 
 /**
  * Execute a specific task
@@ -954,7 +859,15 @@ export const listTasks = async (req, res) => {
   try {
     const zonesConfig = config.getZones();
     const defaultLimit = zonesConfig.default_pagination_limit || 50;
-    const { limit = defaultLimit, status, zone_name, operation, operation_ne, since, include_count } = req.query;
+    const {
+      limit = defaultLimit,
+      status,
+      zone_name,
+      operation,
+      operation_ne,
+      since,
+      include_count,
+    } = req.query;
     const whereClause = {};
 
     if (status) {
@@ -1167,57 +1080,6 @@ export const getTaskStats = async (req, res) => {
 };
 
 /**
- * Execute hostname change task
- * @param {string} metadataJson - Task metadata as JSON string
- * @returns {Promise<{success: boolean, message?: string, error?: string}>}
- */
-const executeSetHostnameTask = async metadataJson => {
-  try {
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(metadataJson, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
-    const { hostname, apply_immediately } = metadata;
-
-    // Write to /etc/nodename
-    const writeResult = await executeCommand(`echo "${hostname}" | pfexec tee /etc/nodename`);
-    if (!writeResult.success) {
-      return {
-        success: false,
-        error: `Failed to write to /etc/nodename: ${writeResult.error}`,
-      };
-    }
-
-    // Apply immediately if requested
-    if (apply_immediately) {
-      const hostnameResult = await executeCommand(`pfexec hostname ${hostname}`);
-      if (!hostnameResult.success) {
-        return {
-          success: false,
-          error: `Failed to set hostname immediately: ${hostnameResult.error}`,
-        };
-      }
-    }
-
-    return {
-      success: true,
-      message: `Hostname set to ${hostname}${apply_immediately ? ' (applied immediately)' : ' (reboot required)'}`,
-      requires_reboot: true,
-      reboot_reason: apply_immediately
-        ? 'Hostname applied immediately but reboot required for full persistence'
-        : 'Hostname written to /etc/nodename - reboot required to take effect',
-    };
-  } catch (error) {
-    return { success: false, error: `Hostname task failed: ${error.message}` };
-  }
-};
-
-/**
  * Execute IP address creation task
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -1271,18 +1133,14 @@ const executeCreateIPAddressTask = async metadataJson => {
     const result = await executeCommand(command);
 
     if (result.success) {
-      // Clean up associated data
-      await NetworkInterfaces.destroy({ where: { link: vlan } });
-      await NetworkUsage.destroy({ where: { link: vlan } });
-
       return {
         success: true,
-        message: `VLAN ${vlan} deleted successfully`,
+        message: `IP address ${addrobj} created successfully`,
       };
     }
     return {
       success: false,
-      error: `Failed to delete VLAN ${vlan}: ${result.error}`,
+      error: `Failed to create IP address ${addrobj}: ${result.error}`,
     };
   } catch (error) {
     return { success: false, error: `IP address creation task failed: ${error.message}` };
@@ -4362,13 +4220,13 @@ const executeUserCreateTask = async metadataJson => {
       has_rbac: authorizations.length > 0 || profiles.length > 0 || roles.length > 0,
     });
 
-    let warnings = [];
+    const warnings = [];
     let createdGroup = null;
 
     // Step 1: Create personal group if requested and no gid specified
     if (create_personal_group && !gid) {
       log.task.debug('Creating personal group', { groupname: username });
-      
+
       let groupCommand = `pfexec groupadd`;
       if (uid) {
         groupCommand += ` -g ${uid}`;
@@ -4376,7 +4234,7 @@ const executeUserCreateTask = async metadataJson => {
       groupCommand += ` ${username}`;
 
       const groupResult = await executeCommand(groupCommand);
-      
+
       if (groupResult.success) {
         createdGroup = username;
         log.task.info('Personal group created', { groupname: username, gid: uid });
@@ -4484,7 +4342,12 @@ const executeUserCreateTask = async metadataJson => {
     // Execute user creation
     const result = await executeCommand(command);
 
-    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+    if (
+      result.success ||
+      (result.stderr &&
+        result.stderr.includes('name too long') &&
+        !result.stderr.includes('ERROR:'))
+    ) {
       // Handle success or success with warnings
       if (result.stderr && result.stderr.includes('name too long')) {
         warnings.push(`Username '${username}' is longer than traditional 8-character limit`);
@@ -4506,25 +4369,24 @@ const executeUserCreateTask = async metadataJson => {
         created_group: createdGroup,
         system_output: result.output,
       };
-    } else {
-      log.task.error('User creation command failed', {
-        username,
-        error: result.error,
-        created_group: createdGroup,
-      });
-
-      // If we created a group but user creation failed, clean up the group
-      if (createdGroup) {
-        log.task.debug('Cleaning up created group due to user creation failure');
-        await executeCommand(`pfexec groupdel ${createdGroup}`);
-      }
-
-      return {
-        success: false,
-        error: `Failed to create user ${username}: ${result.error}`,
-        group_cleanup_performed: !!createdGroup,
-      };
     }
+    log.task.error('User creation command failed', {
+      username,
+      error: result.error,
+      created_group: createdGroup,
+    });
+
+    // If we created a group but user creation failed, clean up the group
+    if (createdGroup) {
+      log.task.debug('Cleaning up created group due to user creation failure');
+      await executeCommand(`pfexec groupdel ${createdGroup}`);
+    }
+
+    return {
+      success: false,
+      error: `Failed to create user ${username}: ${result.error}`,
+      group_cleanup_performed: !!createdGroup,
+    };
   } catch (error) {
     log.task.error('User creation task exception', {
       error: error.message,
@@ -4607,7 +4469,7 @@ const executeUserModifyTask = async metadataJson => {
     // Add new home directory with move option
     if (new_home_directory) {
       command += ` -d "${new_home_directory}"`;
-      
+
       if (move_home) {
         if (force_zfs) {
           command += ` -m -z`;
@@ -4665,12 +4527,19 @@ const executeUserModifyTask = async metadataJson => {
     log.task.debug('Executing user modification command', { command });
 
     const result = await executeCommand(command);
-    
-    let warnings = [];
-    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+
+    const warnings = [];
+    if (
+      result.success ||
+      (result.stderr &&
+        result.stderr.includes('name too long') &&
+        !result.stderr.includes('ERROR:'))
+    ) {
       // Handle success or success with warnings
       if (result.stderr && result.stderr.includes('name too long')) {
-        warnings.push(`Username '${new_username || username}' is longer than traditional 8-character limit`);
+        warnings.push(
+          `Username '${new_username || username}' is longer than traditional 8-character limit`
+        );
       }
 
       log.task.info('User modified successfully', {
@@ -4686,17 +4555,16 @@ const executeUserModifyTask = async metadataJson => {
         warnings: warnings.length > 0 ? warnings : undefined,
         final_username: new_username || username,
       };
-    } else {
-      log.task.error('User modification command failed', {
-        username,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to modify user ${username}: ${result.error}`,
-      };
     }
+    log.task.error('User modification command failed', {
+      username,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to modify user ${username}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('User modification task exception', {
       error: error.message,
@@ -4735,11 +4603,11 @@ const executeUserDeleteTask = async metadataJson => {
 
     // Build userdel command
     let command = `pfexec userdel`;
-    
+
     if (remove_home) {
       command += ` -r`;
     }
-    
+
     command += ` ${username}`;
 
     log.task.debug('Executing user deletion command', { command });
@@ -4748,13 +4616,13 @@ const executeUserDeleteTask = async metadataJson => {
 
     if (result.success) {
       let groupDeleted = false;
-      
+
       // Step 2: Delete personal group if requested and it exists
       if (delete_personal_group) {
         log.task.debug('Attempting to delete personal group', { groupname: username });
-        
+
         const groupDelResult = await executeCommand(`pfexec groupdel ${username}`);
-        
+
         if (groupDelResult.success) {
           groupDeleted = true;
           log.task.info('Personal group deleted', { groupname: username });
@@ -4778,17 +4646,16 @@ const executeUserDeleteTask = async metadataJson => {
         home_removed: remove_home,
         group_deleted: groupDeleted,
       };
-    } else {
-      log.task.error('User deletion command failed', {
-        username,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to delete user ${username}: ${result.error}`,
-      };
     }
+    log.task.error('User deletion command failed', {
+      username,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to delete user ${username}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('User deletion task exception', {
       error: error.message,
@@ -4837,8 +4704,13 @@ const executeGroupCreateTask = async metadataJson => {
 
     const result = await executeCommand(command);
 
-    let warnings = [];
-    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+    const warnings = [];
+    if (
+      result.success ||
+      (result.stderr &&
+        result.stderr.includes('name too long') &&
+        !result.stderr.includes('ERROR:'))
+    ) {
       // Handle success or success with warnings
       if (result.stderr && result.stderr.includes('name too long')) {
         warnings.push(`Group name '${groupname}' is longer than traditional limit`);
@@ -4855,17 +4727,16 @@ const executeGroupCreateTask = async metadataJson => {
         message: `Group ${groupname} created successfully${warnings.length > 0 ? ' (with warnings)' : ''}`,
         warnings: warnings.length > 0 ? warnings : undefined,
       };
-    } else {
-      log.task.error('Group creation command failed', {
-        groupname,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to create group ${groupname}: ${result.error}`,
-      };
     }
+    log.task.error('Group creation command failed', {
+      groupname,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to create group ${groupname}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('Group creation task exception', {
       error: error.message,
@@ -4919,11 +4790,18 @@ const executeGroupModifyTask = async metadataJson => {
 
     const result = await executeCommand(command);
 
-    let warnings = [];
-    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+    const warnings = [];
+    if (
+      result.success ||
+      (result.stderr &&
+        result.stderr.includes('name too long') &&
+        !result.stderr.includes('ERROR:'))
+    ) {
       // Handle success or success with warnings
       if (result.stderr && result.stderr.includes('name too long')) {
-        warnings.push(`Group name '${new_groupname || groupname}' is longer than traditional limit`);
+        warnings.push(
+          `Group name '${new_groupname || groupname}' is longer than traditional limit`
+        );
       }
 
       log.task.info('Group modified successfully', {
@@ -4939,17 +4817,16 @@ const executeGroupModifyTask = async metadataJson => {
         warnings: warnings.length > 0 ? warnings : undefined,
         final_groupname: new_groupname || groupname,
       };
-    } else {
-      log.task.error('Group modification command failed', {
-        groupname,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to modify group ${groupname}: ${result.error}`,
-      };
     }
+    log.task.error('Group modification command failed', {
+      groupname,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to modify group ${groupname}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('Group modification task exception', {
       error: error.message,
@@ -4999,17 +4876,16 @@ const executeGroupDeleteTask = async metadataJson => {
         success: true,
         message: `Group ${groupname} deleted successfully`,
       };
-    } else {
-      log.task.error('Group deletion command failed', {
-        groupname,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to delete group ${groupname}: ${result.error}`,
-      };
     }
+    log.task.error('Group deletion command failed', {
+      groupname,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to delete group ${groupname}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('Group deletion task exception', {
       error: error.message,
@@ -5049,8 +4925,8 @@ const executeUserSetPasswordTask = async metadataJson => {
 
     // Set password using passwd command with echo
     const command = `echo "${password}" | pfexec passwd --stdin ${username}`;
-    log.task.debug('Executing password setting command', { 
-      command: command.replace(password, '[REDACTED]') 
+    log.task.debug('Executing password setting command', {
+      command: command.replace(password, '[REDACTED]'),
     });
 
     const result = await executeCommand(command);
@@ -5090,17 +4966,16 @@ const executeUserSetPasswordTask = async metadataJson => {
         force_change,
         unlock_account,
       };
-    } else {
-      log.task.error('Password setting command failed', {
-        username,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to set password for user ${username}: ${result.error}`,
-      };
     }
+    log.task.error('Password setting command failed', {
+      username,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to set password for user ${username}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('User password setting task exception', {
       error: error.message,
@@ -5150,17 +5025,16 @@ const executeUserLockTask = async metadataJson => {
         success: true,
         message: `User account ${username} locked successfully`,
       };
-    } else {
-      log.task.error('User account lock command failed', {
-        username,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to lock user account ${username}: ${result.error}`,
-      };
     }
+    log.task.error('User account lock command failed', {
+      username,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to lock user account ${username}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('User account lock task exception', {
       error: error.message,
@@ -5210,17 +5084,16 @@ const executeUserUnlockTask = async metadataJson => {
         success: true,
         message: `User account ${username} unlocked successfully`,
       };
-    } else {
-      log.task.error('User account unlock command failed', {
-        username,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to unlock user account ${username}: ${result.error}`,
-      };
     }
+    log.task.error('User account unlock command failed', {
+      username,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to unlock user account ${username}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('User account unlock task exception', {
       error: error.message,
@@ -5325,8 +5198,13 @@ const executeRoleCreateTask = async metadataJson => {
 
     const result = await executeCommand(command);
 
-    let warnings = [];
-    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+    const warnings = [];
+    if (
+      result.success ||
+      (result.stderr &&
+        result.stderr.includes('name too long') &&
+        !result.stderr.includes('ERROR:'))
+    ) {
       // Handle success or success with warnings
       if (result.stderr && result.stderr.includes('name too long')) {
         warnings.push(`Role name '${rolename}' is longer than traditional 8-character limit`);
@@ -5343,17 +5221,16 @@ const executeRoleCreateTask = async metadataJson => {
         message: `Role ${rolename} created successfully${warnings.length > 0 ? ' (with warnings)' : ''}`,
         warnings: warnings.length > 0 ? warnings : undefined,
       };
-    } else {
-      log.task.error('Role creation command failed', {
-        rolename,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to create role ${rolename}: ${result.error}`,
-      };
     }
+    log.task.error('Role creation command failed', {
+      rolename,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to create role ${rolename}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('Role creation task exception', {
       error: error.message,
@@ -5438,12 +5315,19 @@ const executeRoleModifyTask = async metadataJson => {
     log.task.debug('Executing role modification command', { command });
 
     const result = await executeCommand(command);
-    
-    let warnings = [];
-    if (result.success || (result.stderr && result.stderr.includes('name too long') && !result.stderr.includes('ERROR:'))) {
+
+    const warnings = [];
+    if (
+      result.success ||
+      (result.stderr &&
+        result.stderr.includes('name too long') &&
+        !result.stderr.includes('ERROR:'))
+    ) {
       // Handle success or success with warnings
       if (result.stderr && result.stderr.includes('name too long')) {
-        warnings.push(`Role name '${new_rolename || rolename}' is longer than traditional 8-character limit`);
+        warnings.push(
+          `Role name '${new_rolename || rolename}' is longer than traditional 8-character limit`
+        );
       }
 
       log.task.info('Role modified successfully', {
@@ -5458,17 +5342,16 @@ const executeRoleModifyTask = async metadataJson => {
         warnings: warnings.length > 0 ? warnings : undefined,
         final_rolename: new_rolename || rolename,
       };
-    } else {
-      log.task.error('Role modification command failed', {
-        rolename,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to modify role ${rolename}: ${result.error}`,
-      };
     }
+    log.task.error('Role modification command failed', {
+      rolename,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to modify role ${rolename}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('Role modification task exception', {
       error: error.message,
@@ -5506,11 +5389,11 @@ const executeRoleDeleteTask = async metadataJson => {
 
     // Build roledel command
     let command = `pfexec roledel`;
-    
+
     if (remove_home) {
       command += ` -r`;
     }
-    
+
     command += ` ${rolename}`;
 
     log.task.debug('Executing role deletion command', { command });
@@ -5528,17 +5411,16 @@ const executeRoleDeleteTask = async metadataJson => {
         message: `Role ${rolename} deleted successfully${remove_home ? ' (home directory removed)' : ''}`,
         home_removed: remove_home,
       };
-    } else {
-      log.task.error('Role deletion command failed', {
-        rolename,
-        error: result.error,
-      });
-
-      return {
-        success: false,
-        error: `Failed to delete role ${rolename}: ${result.error}`,
-      };
     }
+    log.task.error('Role deletion command failed', {
+      rolename,
+      error: result.error,
+    });
+
+    return {
+      success: false,
+      error: `Failed to delete role ${rolename}: ${result.error}`,
+    };
   } catch (error) {
     log.task.error('Role deletion task exception', {
       error: error.message,
@@ -5567,13 +5449,13 @@ const executeArtifactDownloadTask = async metadataJson => {
       });
     });
 
-    const { 
-      url, 
-      storage_location_id, 
-      filename, 
-      checksum, 
+    const {
+      url,
+      storage_location_id,
+      filename,
+      checksum,
       checksum_algorithm = 'sha256',
-      overwrite_existing = false 
+      overwrite_existing = false,
     } = metadata;
 
     log.task.debug('Artifact download task parameters', {
@@ -5587,7 +5469,7 @@ const executeArtifactDownloadTask = async metadataJson => {
 
     // Get storage location
     const storageLocation = await ArtifactStorageLocation.findByPk(storage_location_id);
-    
+
     if (!storageLocation || !storageLocation.enabled) {
       return {
         success: false,
@@ -5640,11 +5522,11 @@ const executeArtifactDownloadTask = async metadataJson => {
       // Get artifact configuration for timeouts
       const artifactConfig = config.getArtifactStorage();
       const downloadTimeout = (artifactConfig.download?.timeout_seconds || 60) * 1000;
-      
+
       // Use axios for native streaming performance (like browser downloads)
       const response = await axios({
         method: 'get',
-        url: url,
+        url,
         responseType: 'stream',
         timeout: downloadTimeout,
       });
@@ -5667,29 +5549,30 @@ const executeArtifactDownloadTask = async metadataJson => {
       log.task.debug('Starting optimized axios stream download with progress tracking');
 
       // Track download progress via stream events (no checksum calculation)
-      response.data.on('data', (chunk) => {
+      response.data.on('data', chunk => {
         downloadedBytes += chunk.length;
-        
+
         // Update database at configurable interval
-        const progressUpdateInterval = (artifactConfig.download?.progress_update_seconds || 10) * 1000;
+        const progressUpdateInterval =
+          (artifactConfig.download?.progress_update_seconds || 10) * 1000;
         const now = Date.now();
-        if (fileSize && (now - lastProgressUpdate) > progressUpdateInterval) {
+        if (fileSize && now - lastProgressUpdate > progressUpdateInterval) {
           lastProgressUpdate = now;
-          
+
           // Async database update - don't block the download stream
           setImmediate(async () => {
             try {
-              const progress = ((downloadedBytes / fileSize) * 100);
-              const speedMbps = (downloadedBytes / 1024 / 1024) / ((now - startTime) / 1000);
+              const progress = (downloadedBytes / fileSize) * 100;
+              const speedMbps = downloadedBytes / 1024 / 1024 / ((now - startTime) / 1000);
               const remainingBytes = fileSize - downloadedBytes;
               const etaSeconds = remainingBytes / (downloadedBytes / ((now - startTime) / 1000));
-              
+
               const taskToUpdate = await Tasks.findOne({
                 where: {
                   operation: 'artifact_download_url',
                   status: 'running',
-                  metadata: { [Op.like]: `%${url.substring(0, 50)}%` }
-                }
+                  metadata: { [Op.like]: `%${url.substring(0, 50)}%` },
+                },
               });
 
               if (taskToUpdate) {
@@ -5729,28 +5612,28 @@ const executeArtifactDownloadTask = async metadataJson => {
         downloaded_bytes: downloadedBytes,
         downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
         duration_ms: downloadTime,
-        speed_mbps: Math.round((downloadedBytes / 1024 / 1024) / (downloadTime / 1000) * 100) / 100,
+        speed_mbps: Math.round((downloadedBytes / 1024 / 1024 / (downloadTime / 1000)) * 100) / 100,
       });
 
       // ALWAYS calculate checksum after download (but not during)
       log.task.debug('Calculating checksum post-download');
-      
+
       const hash = crypto.createHash(checksum_algorithm);
       const readStream = fs.createReadStream(final_path); // Pure streaming - let Node.js optimize
-      
+
       await new Promise((resolve, reject) => {
         readStream.on('data', chunk => hash.update(chunk));
         readStream.on('end', resolve);
         readStream.on('error', reject);
       });
-      
+
       const calculatedChecksum = hash.digest('hex');
       let checksumVerified = false;
-      
+
       // Verify checksum if provided
       if (checksum) {
         checksumVerified = calculatedChecksum === checksum;
-        
+
         if (!checksumVerified) {
           // Delete the invalid file
           await executeCommand(`pfexec rm -f "${final_path}"`);
@@ -5767,7 +5650,7 @@ const executeArtifactDownloadTask = async metadataJson => {
       // Create artifact database record
       const extension = path.extname(finalFilename).toLowerCase();
       const mimeType = getMimeType(final_path);
-      
+
       // Validate extension is not empty (required field)
       if (!extension) {
         return {
@@ -5775,7 +5658,7 @@ const executeArtifactDownloadTask = async metadataJson => {
           error: `File has no extension - cannot determine artifact type: ${finalFilename}`,
         };
       }
-      
+
       try {
         await Artifact.create({
           storage_location_id: storageLocation.id, // Fix: use database UUID, not metadata value
@@ -5803,10 +5686,10 @@ const executeArtifactDownloadTask = async metadataJson => {
           error: dbError.message,
           validation_errors: dbError.errors || null,
         });
-        
+
         // Clean up downloaded file since database record failed
         await executeCommand(`pfexec rm -f "${final_path}"`);
-        
+
         return {
           success: false,
           error: `Download completed but failed to create database record: ${dbError.message}`,
@@ -5824,14 +5707,12 @@ const executeArtifactDownloadTask = async metadataJson => {
         downloaded_bytes: downloadedBytes,
         checksum_verified: checksumVerified,
         checksum: calculatedChecksum,
-        final_path: final_path,
+        final_path,
         duration_ms: downloadTime,
       };
-
     } catch (downloadError) {
       throw downloadError;
     }
-
   } catch (error) {
     log.task.error('Artifact download task exception', {
       error: error.message,
@@ -5876,7 +5757,7 @@ const executeArtifactScanAllTask = async metadataJson => {
     let totalScanned = 0;
     let totalAdded = 0;
     let totalRemoved = 0;
-    let errors = [];
+    const errors = [];
 
     for (const location of locations) {
       try {
@@ -5895,11 +5776,10 @@ const executeArtifactScanAllTask = async metadataJson => {
           scan_errors: 0,
           last_error_message: null,
         });
-
       } catch (locationError) {
         const errorMsg = `Failed to scan ${location.name}: ${locationError.message}`;
         errors.push(errorMsg);
-        
+
         await location.update({
           scan_errors: location.scan_errors + 1,
           last_error_message: locationError.message,
@@ -5950,7 +5830,6 @@ const executeArtifactScanAllTask = async metadataJson => {
       },
       errors: errors.length > 0 ? errors : undefined,
     };
-
   } catch (error) {
     log.task.error('Artifact scan all task exception', {
       error: error.message,
@@ -5979,11 +5858,7 @@ const executeArtifactScanLocationTask = async metadataJson => {
       });
     });
 
-    const { 
-      storage_location_id, 
-      verify_checksums = false, 
-      remove_orphaned = false 
-    } = metadata;
+    const { storage_location_id, verify_checksums = false, remove_orphaned = false } = metadata;
 
     log.task.debug('Scan location task parameters', {
       storage_location_id,
@@ -6029,7 +5904,6 @@ const executeArtifactScanLocationTask = async metadataJson => {
         path: location.path,
       },
     };
-
   } catch (error) {
     log.task.error('Artifact scan location task exception', {
       error: error.message,
@@ -6068,10 +5942,12 @@ const executeArtifactDeleteFileTask = async metadataJson => {
 
     const artifacts = await Artifact.findAll({
       where: { id: artifact_ids },
-      include: [{ 
-        model: ArtifactStorageLocation, 
-        as: 'storage_location' 
-      }],
+      include: [
+        {
+          model: ArtifactStorageLocation,
+          as: 'storage_location',
+        },
+      ],
     });
 
     if (artifacts.length === 0) {
@@ -6083,7 +5959,7 @@ const executeArtifactDeleteFileTask = async metadataJson => {
 
     let filesDeleted = 0;
     let recordsRemoved = 0;
-    let errors = [];
+    const errors = [];
 
     for (const artifact of artifacts) {
       try {
@@ -6117,7 +5993,6 @@ const executeArtifactDeleteFileTask = async metadataJson => {
           await artifact.storage_location.decrement('file_count', { by: 1 });
           await artifact.storage_location.decrement('total_size', { by: artifact.size });
         }
-
       } catch (deleteError) {
         const errorMsg = `Failed to delete ${artifact.filename}: ${deleteError.message}`;
         errors.push(errorMsg);
@@ -6139,11 +6014,11 @@ const executeArtifactDeleteFileTask = async metadataJson => {
 
     const successCount = artifacts.length - errors.length;
     let message = `Successfully deleted ${successCount}/${artifacts.length} artifacts`;
-    
+
     if (delete_files) {
       message += ` (${filesDeleted} files removed from disk)`;
     }
-    
+
     if (errors.length > 0) {
       message += ` (${errors.length} had errors)`;
     }
@@ -6167,7 +6042,6 @@ const executeArtifactDeleteFileTask = async metadataJson => {
       },
       errors: errors.length > 0 ? errors : undefined,
     };
-
   } catch (error) {
     log.task.error('Artifact delete file task exception', {
       error: error.message,
@@ -6196,11 +6070,11 @@ const executeArtifactDeleteFolderTask = async metadataJson => {
       });
     });
 
-    const { 
-      storage_location_id, 
-      recursive = true, 
-      remove_db_records = true, 
-      force = false 
+    const {
+      storage_location_id,
+      recursive = true,
+      remove_db_records = true,
+      force = false,
     } = metadata;
 
     log.task.debug('Delete folder task parameters', {
@@ -6225,7 +6099,7 @@ const executeArtifactDeleteFolderTask = async metadataJson => {
       remove_db_records,
     });
 
-    let removedFiles = 0;
+    const removedFiles = 0;
     let removedRecords = 0;
 
     // Remove database records first if requested
@@ -6247,7 +6121,7 @@ const executeArtifactDeleteFolderTask = async metadataJson => {
 
     // Delete physical folder and contents
     let command = `pfexec rm`;
-    
+
     if (recursive && force) {
       command += ` -rf`;
     } else if (recursive) {
@@ -6255,7 +6129,7 @@ const executeArtifactDeleteFolderTask = async metadataJson => {
     } else if (force) {
       command += ` -f`;
     }
-    
+
     command += ` "${location.path}"/*`; // Delete contents, not the folder itself
 
     const result = await executeCommand(command);
@@ -6263,7 +6137,7 @@ const executeArtifactDeleteFolderTask = async metadataJson => {
     if (result.success || (force && result.error.includes('No such file'))) {
       // Count as success even if no files were found (empty directory)
       log.task.info('Folder contents deleted successfully');
-      
+
       // Reset location stats
       await location.update({
         file_count: 0,
@@ -6291,7 +6165,6 @@ const executeArtifactDeleteFolderTask = async metadataJson => {
       success: false,
       error: `Failed to delete folder contents: ${result.error}`,
     };
-
   } catch (error) {
     log.task.error('Artifact delete folder task exception', {
       error: error.message,
@@ -6358,18 +6231,18 @@ const executeArtifactUploadProcessTask = async metadataJson => {
 
     // Calculate checksum with progress tracking
     log.task.debug('Calculating checksum');
-    
+
     const taskToUpdate = await Tasks.findOne({
       where: {
         operation: 'artifact_upload_process',
         status: 'running',
-        metadata: { [Op.like]: `%${original_name}%` }
-      }
+        metadata: { [Op.like]: `%${original_name}%` },
+      },
     });
 
     const hash = crypto.createHash(checksum_algorithm);
     const fileBuffer = await fs.promises.readFile(final_path);
-    
+
     // Update progress for checksum calculation
     if (taskToUpdate) {
       await taskToUpdate.update({
@@ -6383,21 +6256,21 @@ const executeArtifactUploadProcessTask = async metadataJson => {
 
     hash.update(fileBuffer);
     const calculatedChecksum = hash.digest('hex');
-    
+
     // Update progress after checksum
     if (taskToUpdate) {
       await taskToUpdate.update({
         progress_percent: 80,
         progress_info: {
           status: 'checksum_complete',
-          checksum: calculatedChecksum.substring(0, 16) + '...',
+          checksum: `${calculatedChecksum.substring(0, 16)}...`,
         },
       });
     }
 
     log.task.debug('Checksum calculated', {
       algorithm: checksum_algorithm,
-      checksum: calculatedChecksum.substring(0, 16) + '...',
+      checksum: `${calculatedChecksum.substring(0, 16)}...`,
     });
 
     // Scenario 1: User provided checksum - verify and fail if mismatch
@@ -6420,7 +6293,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       storage_location_id: storageLocation.id,
       filename: original_name,
       path: final_path,
-      size: size,
+      size,
       file_type: storageLocation.type,
       extension,
       mime_type: mimeType,
@@ -6442,7 +6315,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
         progress_percent: 100,
         progress_info: {
           status: 'completed',
-          final_path: final_path,
+          final_path,
           checksum_verified: !!checksum,
         },
       });
@@ -6461,12 +6334,11 @@ const executeArtifactUploadProcessTask = async metadataJson => {
       artifact: {
         filename: original_name,
         size,
-        final_path: final_path,
+        final_path,
         checksum_verified: !!checksum,
         checksum: calculatedChecksum,
       },
     };
-
   } catch (error) {
     // No cleanup needed - file is already in final location
     log.task.error('Artifact upload process task exception', {
@@ -6485,7 +6357,7 @@ const executeArtifactUploadProcessTask = async metadataJson => {
  */
 const scanStorageLocation = async (location, options = {}) => {
   const { verify_checksums = false, remove_orphaned = false } = options;
-  
+
   log.artifact.debug('Scanning storage location', {
     location_id: location.id,
     location_name: location.name,
@@ -6497,11 +6369,12 @@ const scanStorageLocation = async (location, options = {}) => {
   try {
     // Get supported extensions for this location type
     const artifactConfig = config.getArtifactStorage();
-    const supportedExtensions = artifactConfig?.scanning?.supported_extensions?.[location.type] || [];
+    const supportedExtensions =
+      artifactConfig?.scanning?.supported_extensions?.[location.type] || [];
 
     // Get running download tasks to avoid race conditions
-    const runningDownloadTasks = Array.from(runningTasks.values()).filter(task => 
-      task.operation === 'artifact_download_url'
+    const runningDownloadTasks = Array.from(runningTasks.values()).filter(
+      task => task.operation === 'artifact_download_url'
     );
 
     log.artifact.debug('Race condition protection: checking running tasks', {
@@ -6523,13 +6396,16 @@ const scanStorageLocation = async (location, options = {}) => {
       try {
         const downloadMetadata = await new Promise((resolve, reject) => {
           yj.parseAsync(downloadTask.metadata, (err, result) => {
-            if (err) reject(err);
-            else resolve(result);
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
           });
         });
-        
+
         const { storage_location_id, filename, url } = downloadMetadata;
-        
+
         log.artifact.debug('Race condition protection: parsed download metadata', {
           task_id: downloadTask.id,
           download_storage_location_id: storage_location_id,
@@ -6538,7 +6414,7 @@ const scanStorageLocation = async (location, options = {}) => {
           filename,
           url: url?.substring(0, 100),
         });
-        
+
         // If download targets this storage location
         if (storage_location_id === location.id) {
           // Calculate target path same way download does
@@ -6549,7 +6425,7 @@ const scanStorageLocation = async (location, options = {}) => {
           }
           const targetPath = path.join(location.path, finalFilename);
           downloadingPaths.add(targetPath);
-          
+
           log.artifact.debug('Race condition protection: added downloading path', {
             task_id: downloadTask.id,
             final_filename: finalFilename,
@@ -6586,7 +6462,7 @@ const scanStorageLocation = async (location, options = {}) => {
     const files = items.filter(item => !item.isDirectory);
 
     // Filter files by supported extensions
-    const artifactFiles = files.filter(file => 
+    const artifactFiles = files.filter(file =>
       supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext.toLowerCase()))
     );
 
@@ -6666,10 +6542,7 @@ const scanStorageLocation = async (location, options = {}) => {
         });
       } else {
         // Update last_verified for existing artifacts
-        await Artifact.update(
-          { last_verified: new Date() },
-          { where: { path: file.path } }
-        );
+        await Artifact.update({ last_verified: new Date() }, { where: { path: file.path } });
       }
       scanned++;
     }
@@ -6693,9 +6566,10 @@ const scanStorageLocation = async (location, options = {}) => {
       where: { storage_location_id: location.id },
     });
 
-    const totalSize = await Artifact.sum('size', {
-      where: { storage_location_id: location.id },
-    }) || 0;
+    const totalSize =
+      (await Artifact.sum('size', {
+        where: { storage_location_id: location.id },
+      })) || 0;
 
     await location.update({
       file_count: totalFiles,
@@ -6712,7 +6586,6 @@ const scanStorageLocation = async (location, options = {}) => {
     });
 
     return { scanned, added, removed };
-
   } catch (error) {
     log.artifact.error('Storage location scan failed', {
       location_id: location.id,
