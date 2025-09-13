@@ -16,12 +16,7 @@ import { Op } from 'sequelize';
 import os from 'os';
 import config from '../config/ConfigLoader.js';
 import { setRebootRequired } from '../lib/RebootManager.js';
-import {
-  enableService,
-  disableService,
-  restartService,
-  refreshService,
-} from '../lib/ServiceManager.js';
+import { enableService, disableService, restartService, refreshService } from '../lib/ServiceManager.js';
 import { log, createTimer } from '../lib/Logger.js';
 import { listDirectory, getMimeType, moveItem, copyItem, createArchive, extractArchive } from '../lib/FileSystemManager.js';
 
@@ -5766,20 +5761,50 @@ const executeArtifactDownloadTask = async metadataJson => {
       const extension = path.extname(finalFilename).toLowerCase();
       const mimeType = getMimeType(final_path);
       
-      await Artifact.create({
-        storage_location_id: storage_location_id,
-        filename: finalFilename,
-        path: final_path,
-        size: downloadedBytes,
-        file_type: storageLocation.type,
-        extension,
-        mime_type: mimeType,
-        checksum: calculatedChecksum,
-        checksum_algorithm,
-        source_url: url,
-        discovered_at: new Date(),
-        last_verified: new Date(),
-      });
+      // Validate extension is not empty (required field)
+      if (!extension) {
+        return {
+          success: false,
+          error: `File has no extension - cannot determine artifact type: ${finalFilename}`,
+        };
+      }
+      
+      try {
+        await Artifact.create({
+          storage_location_id: storageLocation.id, // Fix: use database UUID, not metadata value
+          filename: finalFilename,
+          path: final_path,
+          size: downloadedBytes,
+          file_type: storageLocation.type,
+          extension,
+          mime_type: mimeType,
+          checksum: calculatedChecksum,
+          checksum_algorithm,
+          source_url: url,
+          discovered_at: new Date(),
+          last_verified: new Date(),
+        });
+      } catch (dbError) {
+        log.task.error('Failed to create artifact database record', {
+          storage_location_id: storageLocation.id,
+          filename: finalFilename,
+          path: final_path,
+          size: downloadedBytes,
+          file_type: storageLocation.type,
+          extension,
+          mime_type: mimeType,
+          error: dbError.message,
+          validation_errors: dbError.errors || null,
+        });
+        
+        // Clean up downloaded file since database record failed
+        await executeCommand(`pfexec rm -f "${final_path}"`);
+        
+        return {
+          success: false,
+          error: `Download completed but failed to create database record: ${dbError.message}`,
+        };
+      }
 
       // Update storage location stats
       await storageLocation.increment('file_count', { by: 1 });
