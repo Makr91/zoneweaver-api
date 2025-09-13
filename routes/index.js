@@ -578,7 +578,6 @@ router.post(
   '/artifacts/upload/:taskId',
   verifyApiKey,
   validateUploadRequest,
-  uploadSingle('file'),
   uploadArtifactToTask,
   handleUploadError
 ); // Upload artifact file to prepared task
