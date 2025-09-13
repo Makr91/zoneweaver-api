@@ -22,6 +22,7 @@ import yj from 'yieldable-json';
 
 /**
  * Update config.yaml with new storage path
+ * THIS SHOULD BE MOVED TO THE CONFIGLOADER FUNCTIONS
  * @param {Object} pathConfig - New path configuration
  * @returns {Promise<void>}
  */
@@ -1377,6 +1378,16 @@ export const uploadArtifactToTask = async (req, res) => {
   try {
     const artifactConfig = config.getArtifactStorage();
 
+    // LOG: Configuration debugging
+    log.artifact.info('UPLOAD DEBUG: Configuration loaded', {
+      requestId,
+      artifactConfig_enabled: artifactConfig?.enabled,
+      artifactConfig_security: artifactConfig?.security,
+      max_upload_size_gb: artifactConfig?.security?.max_upload_size_gb,
+      calculated_max_size: (artifactConfig?.security?.max_upload_size_gb || 50) * 1024 * 1024 * 1024,
+      config_paths: artifactConfig?.paths?.length || 0,
+    });
+
     if (!artifactConfig?.enabled) {
       requestLogger.error(503, 'Artifact storage disabled');
       return res.status(503).json({
@@ -1392,6 +1403,21 @@ export const uploadArtifactToTask = async (req, res) => {
       });
     }
 
+    // LOG: Request details
+    log.artifact.info('UPLOAD DEBUG: Request details', {
+      requestId,
+      taskId,
+      method: req.method,
+      headers: {
+        'content-type': req.get('Content-Type'),
+        'content-length': req.get('Content-Length'),
+        'user-agent': req.get('User-Agent'),
+      },
+      ip: req.ip,
+      query: req.query,
+      params: req.params,
+    });
+
     // Get the existing task created by prepareArtifactUpload
     const task = await Tasks.findByPk(taskId);
     if (!task) {
@@ -1400,6 +1426,17 @@ export const uploadArtifactToTask = async (req, res) => {
         error: 'Upload task not found',
       });
     }
+
+    // LOG: Task details
+    log.artifact.info('UPLOAD DEBUG: Task details', {
+      requestId,
+      task_id: task.id,
+      task_operation: task.operation,
+      task_status: task.status,
+      task_priority: task.priority,
+      task_created_by: task.created_by,
+      task_created_at: task.created_at,
+    });
 
     if (task.operation !== 'artifact_upload_process') {
       requestLogger.error(400, 'Invalid task type');
@@ -1410,8 +1447,15 @@ export const uploadArtifactToTask = async (req, res) => {
 
     if (task.status !== 'prepared') {
       requestLogger.error(400, 'Task not prepared');
+      log.artifact.error('UPLOAD DEBUG: Task status error', {
+        requestId,
+        expected_status: 'prepared',
+        actual_status: task.status,
+        task_id: taskId,
+      });
       return res.status(400).json({
         error: 'Task is not in prepared state',
+        current_status: task.status,
       });
     }
 
@@ -1419,10 +1463,30 @@ export const uploadArtifactToTask = async (req, res) => {
     let taskMetadata;
     try {
       taskMetadata = JSON.parse(task.metadata);
+      
+      // LOG: Task metadata
+      log.artifact.info('UPLOAD DEBUG: Task metadata', {
+        requestId,
+        metadata: {
+          original_name: taskMetadata.original_name,
+          size: taskMetadata.size,
+          storage_location_id: taskMetadata.storage_location_id,
+          expected_checksum: taskMetadata.expected_checksum ? 'present' : 'none',
+          checksum_algorithm: taskMetadata.checksum_algorithm,
+          overwrite_existing: taskMetadata.overwrite_existing,
+          upload_prepared: taskMetadata.upload_prepared,
+        },
+      });
     } catch (parseError) {
       requestLogger.error(500, 'Invalid task metadata');
+      log.artifact.error('UPLOAD DEBUG: Metadata parse error', {
+        requestId,
+        raw_metadata: task.metadata,
+        parse_error: parseError.message,
+      });
       return res.status(500).json({
         error: 'Invalid task metadata',
+        parse_error: parseError.message,
       });
     }
 
@@ -1450,39 +1514,134 @@ export const uploadArtifactToTask = async (req, res) => {
       });
     }
 
+    // LOG: Storage location details
+    log.artifact.info('UPLOAD DEBUG: Storage location details', {
+      requestId,
+      storage_location: {
+        id: storageLocation.id,
+        name: storageLocation.name,
+        path: storageLocation.path,
+        type: storageLocation.type,
+        enabled: storageLocation.enabled,
+        file_count: storageLocation.file_count,
+        total_size: storageLocation.total_size,
+      },
+    });
+
+    // Calculate and log size limits
+    const maxUploadSizeGB = artifactConfig.security?.max_upload_size_gb || 50;
+    const maxUploadSizeBytes = maxUploadSizeGB * 1024 * 1024 * 1024;
+    const expectedFileSizeBytes = taskMetadata.size || 0;
+    
+    log.artifact.info('UPLOAD DEBUG: Size calculations', {
+      requestId,
+      max_upload_size_gb: maxUploadSizeGB,
+      max_upload_size_bytes: maxUploadSizeBytes,
+      expected_file_size_bytes: expectedFileSizeBytes,
+      expected_file_size_mb: Math.round(expectedFileSizeBytes / 1024 / 1024),
+      size_limit_exceeded: expectedFileSizeBytes > maxUploadSizeBytes,
+      content_length_header: req.get('Content-Length'),
+    });
+
     // Create custom multer storage that saves directly to final location
     const storage = multer.diskStorage({
       destination: (req, file, cb) => {
+        log.artifact.info('UPLOAD DEBUG: Multer destination callback', {
+          requestId,
+          destination_path: storageLocation.path,
+          filename: file.originalname,
+          fieldname: file.fieldname,
+          mimetype: file.mimetype,
+        });
         cb(null, storageLocation.path);
       },
       filename: (req, file, cb) => {
+        log.artifact.info('UPLOAD DEBUG: Multer filename callback', {
+          requestId,
+          original_filename: file.originalname,
+          mimetype: file.mimetype,
+          encoding: file.encoding,
+        });
         cb(null, file.originalname);
       },
     });
 
-    const upload = multer({ 
+    const multerConfig = {
       storage,
       limits: {
-        fileSize: (artifactConfig.security?.max_upload_size_gb || 50) * 1024 * 1024 * 1024,
+        fileSize: maxUploadSizeBytes,
+        fieldSize: 10 * 1024 * 1024, // 10MB for form fields
+        files: 1, // Only allow 1 file
+        fields: 10, // Allow up to 10 form fields
       }
-    }).single('file');
+    };
+
+    log.artifact.info('UPLOAD DEBUG: Multer configuration', {
+      requestId,
+      limits: multerConfig.limits,
+      storage_type: 'diskStorage',
+    });
+
+    const upload = multer(multerConfig).single('file');
 
     // Process upload with direct-to-final storage
     upload(req, res, async (uploadError) => {
       if (uploadError) {
-        requestLogger.error(400, 'Upload failed');
+        // LOG: Detailed upload error
+        log.artifact.error('UPLOAD DEBUG: Upload error occurred', {
+          requestId,
+          error_name: uploadError.name,
+          error_message: uploadError.message,
+          error_code: uploadError.code,
+          error_field: uploadError.field,
+          error_stack: uploadError.stack,
+          upload_error_type: uploadError.constructor.name,
+          multer_error_properties: Object.keys(uploadError),
+        });
+
+        requestLogger.error(400, `Upload failed: ${uploadError.message}`);
         return res.status(400).json({
           error: 'File upload failed',
+          error_code: uploadError.code,
+          error_type: uploadError.name,
           details: uploadError.message,
+          debug_info: {
+            expected_size_mb: Math.round(expectedFileSizeBytes / 1024 / 1024),
+            max_size_mb: Math.round(maxUploadSizeBytes / 1024 / 1024),
+            content_length: req.get('Content-Length'),
+          },
         });
       }
 
       if (!req.file) {
+        log.artifact.error('UPLOAD DEBUG: No file in request', {
+          requestId,
+          body_keys: Object.keys(req.body || {}),
+          files_property: req.files,
+          file_property: req.file,
+        });
         requestLogger.error(400, 'No file uploaded');
         return res.status(400).json({
           error: 'No file uploaded',
         });
       }
+
+      // LOG: Successful upload details
+      log.artifact.info('UPLOAD DEBUG: File upload successful', {
+        requestId,
+        file: {
+          fieldname: req.file.fieldname,
+          originalname: req.file.originalname,
+          encoding: req.file.encoding,
+          mimetype: req.file.mimetype,
+          destination: req.file.destination,
+          filename: req.file.filename,
+          path: req.file.path,
+          size: req.file.size,
+          size_mb: Math.round(req.file.size / 1024 / 1024),
+        },
+        upload_duration: timer.elapsed(),
+      });
 
       // File is now in final location
       const finalPath = req.file.path;
@@ -1505,6 +1664,17 @@ export const uploadArtifactToTask = async (req, res) => {
         size: req.file.size,
         upload_completed: true,
       };
+
+      log.artifact.info('UPLOAD DEBUG: Updating task metadata', {
+        requestId,
+        task_id: taskId,
+        updated_metadata: {
+          final_path: updatedMetadata.final_path,
+          original_name: updatedMetadata.original_name,
+          size: updatedMetadata.size,
+          upload_completed: updatedMetadata.upload_completed,
+        },
+      });
 
       await task.update({
         metadata: await new Promise((resolve, reject) => {
@@ -1546,6 +1716,12 @@ export const uploadArtifactToTask = async (req, res) => {
         },
       };
 
+      log.artifact.info('UPLOAD DEBUG: Sending success response', {
+        requestId,
+        response_status: 202,
+        response_body: response,
+      });
+
       requestLogger.success(202, {
         filename: req.file.originalname,
         fileSize: req.file.size,
@@ -1557,6 +1733,14 @@ export const uploadArtifactToTask = async (req, res) => {
 
   } catch (error) {
     timer.end({ error: error.message });
+    log.artifact.error('UPLOAD DEBUG: Exception in upload handler', {
+      requestId,
+      error: error.message,
+      error_name: error.name,
+      stack: error.stack,
+      error_properties: Object.keys(error),
+    });
+
     log.artifact.error('Artifact upload failed', {
       requestId,
       error: error.message,
@@ -1567,6 +1751,7 @@ export const uploadArtifactToTask = async (req, res) => {
     res.status(500).json({
       error: 'Failed to process upload',
       details: error.message,
+      debug_request_id: requestId,
     });
   }
 };
