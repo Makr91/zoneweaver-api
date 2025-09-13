@@ -204,7 +204,7 @@ class ArtifactStorageService {
           yj.stringifyAsync(
             {
               verify_checksums: false,
-              remove_orphaned: false,
+              remove_orphaned: true, // Clean orphaned records during initial scan
               source: 'initial_scan',
             },
             (err, result) => {
@@ -332,7 +332,7 @@ class ArtifactStorageService {
           yj.stringifyAsync(
             {
               verify_checksums: false,
-              remove_orphaned: false,
+              remove_orphaned: true, // Clean orphaned records during periodic scans
               source: 'periodic_scan',
             },
             (err, result) => {
