@@ -1390,30 +1390,58 @@ export const uploadArtifactToTask = async (req, res) => {
       });
     }
 
-    const { 
-      storage_path_id, 
-      expected_checksum, 
-      checksum_algorithm = 'sha256',
-      overwrite_existing = false 
-    } = req.body;
-
-    if (!storage_path_id) {
-      requestLogger.error(400, 'Storage path ID required');
+    const { taskId } = req.params;
+    if (!taskId) {
+      requestLogger.error(400, 'Task ID required');
       return res.status(400).json({
-        error: 'storage_path_id is required',
+        error: 'taskId parameter is required',
       });
     }
 
-    // Validate checksum algorithm
-    if (!['md5', 'sha1', 'sha256'].includes(checksum_algorithm)) {
-      requestLogger.error(400, 'Invalid checksum algorithm');
+    // Get the existing task created by prepareArtifactUpload
+    const task = await Tasks.findByPk(taskId);
+    if (!task) {
+      requestLogger.error(404, 'Task not found');
+      return res.status(404).json({
+        error: 'Upload task not found',
+      });
+    }
+
+    if (task.operation !== 'artifact_upload_process') {
+      requestLogger.error(400, 'Invalid task type');
       return res.status(400).json({
-        error: 'checksum_algorithm must be md5, sha1, or sha256',
+        error: 'Invalid task type for upload',
+      });
+    }
+
+    if (task.status !== 'pending') {
+      requestLogger.error(400, 'Task not pending');
+      return res.status(400).json({
+        error: 'Task is not in pending state',
+      });
+    }
+
+    // Parse task metadata to get storage location info
+    let taskMetadata;
+    try {
+      taskMetadata = JSON.parse(task.metadata);
+    } catch (parseError) {
+      requestLogger.error(500, 'Invalid task metadata');
+      return res.status(500).json({
+        error: 'Invalid task metadata',
+      });
+    }
+
+    const storage_location_id = taskMetadata.storage_location_id;
+    if (!storage_location_id) {
+      requestLogger.error(500, 'Missing storage location in task');
+      return res.status(500).json({
+        error: 'Storage location not found in task metadata',
       });
     }
 
     // Verify storage location exists and is enabled
-    const storageLocation = await ArtifactStorageLocation.findByPk(storage_path_id);
+    const storageLocation = await ArtifactStorageLocation.findByPk(storage_location_id);
     if (!storageLocation) {
       requestLogger.error(404, 'Storage location not found');
       return res.status(404).json({
@@ -1434,37 +1462,32 @@ export const uploadArtifactToTask = async (req, res) => {
 
     log.artifact.info('Artifact upload processing', {
       requestId,
+      task_id: taskId,
       filename: req.file.originalname,
       sanitized_name: filename,
       size: req.file.size,
       storage_location: storageLocation.name,
       temp_path: filePath,
-      has_expected_checksum: !!expected_checksum,
+      has_expected_checksum: !!taskMetadata.expected_checksum,
     });
 
-    // Create task for post-processing (checksum calculation, move to final location)
-    const task = await Tasks.create({
-      zone_name: 'artifact',
-      operation: 'artifact_upload_process',
-      priority: TaskPriority.MEDIUM,
-      created_by: req.entity.name,
-      status: 'pending',
+    // Update task metadata with actual upload information
+    const updatedMetadata = {
+      ...taskMetadata,
+      temp_path: filePath,
+      actual_name: req.file.originalname,
+      actual_size: req.file.size,
+      upload_completed: true,
+    };
+
+    await task.update({
       metadata: await new Promise((resolve, reject) => {
-        yj.stringifyAsync(
-          {
-            temp_path: filePath,
-            original_name: req.file.originalname,
-            size: req.file.size,
-            storage_location_id: storage_path_id,
-            expected_checksum,
-            checksum_algorithm,
-          },
-          (err, result) => {
-            if (err) reject(err);
-            else resolve(result);
-          }
-        );
+        yj.stringifyAsync(updatedMetadata, (err, result) => {
+          if (err) reject(err);
+          else resolve(result);
+        });
       }),
+      status: 'running', // Mark as running so task queue will process it
     });
 
     const duration = timer.end({
@@ -1473,9 +1496,9 @@ export const uploadArtifactToTask = async (req, res) => {
       temp_location: filePath,
     });
 
-    log.artifact.info('Upload task created successfully', {
+    log.artifact.info('Upload task updated successfully', {
       requestId,
-      task_id: task.id,
+      task_id: taskId,
       filename: req.file.originalname,
       fileSize: req.file.size,
       duration_ms: duration,
@@ -1484,7 +1507,7 @@ export const uploadArtifactToTask = async (req, res) => {
     const response = {
       success: true,
       message: `Upload task created for '${req.file.originalname}'`,
-      task_id: task.id,
+      task_id: taskId,
       file: {
         name: req.file.originalname,
         size: req.file.size,
@@ -1500,7 +1523,7 @@ export const uploadArtifactToTask = async (req, res) => {
     requestLogger.success(202, {
       filename: req.file.originalname,
       fileSize: req.file.size,
-      task_id: task.id,
+      task_id: taskId,
     });
 
     res.status(202).json(response);
