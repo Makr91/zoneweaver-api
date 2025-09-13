@@ -1,5 +1,4 @@
-import { execSync, spawn } from 'child_process';
-import { Readable } from 'stream';
+import { spawn } from 'child_process';
 import axios from 'axios';
 import crypto from 'crypto';
 import fs from 'fs';
