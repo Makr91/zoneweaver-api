@@ -5800,7 +5800,6 @@ const executeArtifactDownloadTask = async metadataJson => {
     log.task.error('Artifact download task exception', {
       error: error.message,
       stack: error.stack,
-      url: metadata?.url || 'unknown',
     });
     return { success: false, error: `Download failed: ${error.message}` };
   }
