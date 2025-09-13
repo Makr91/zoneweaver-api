@@ -6492,6 +6492,51 @@ const scanStorageLocation = async (location, options = {}) => {
     const artifactConfig = config.getArtifactStorage();
     const supportedExtensions = artifactConfig?.scanning?.supported_extensions?.[location.type] || [];
 
+    // Get running download tasks to avoid race conditions
+    const runningDownloadTasks = Array.from(runningTasks.values()).filter(task => 
+      task.operation === 'artifact_download_url'
+    );
+
+    const downloadingPaths = new Set();
+    for (const downloadTask of runningDownloadTasks) {
+      try {
+        const downloadMetadata = await new Promise((resolve, reject) => {
+          yj.parseAsync(downloadTask.metadata, (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          });
+        });
+        
+        const { storage_location_id, filename, url } = downloadMetadata;
+        
+        // If download targets this storage location
+        if (storage_location_id === location.id) {
+          // Calculate target path same way download does
+          let finalFilename = filename;
+          if (!finalFilename) {
+            const urlPath = new URL(url).pathname;
+            finalFilename = path.basename(urlPath) || `download_${Date.now()}`;
+          }
+          const targetPath = path.join(location.path, finalFilename);
+          downloadingPaths.add(targetPath);
+        }
+      } catch (parseError) {
+        // Skip if can't parse metadata
+        log.artifact.debug('Failed to parse download task metadata', {
+          task_id: downloadTask.id,
+          error: parseError.message,
+        });
+        continue;
+      }
+    }
+
+    if (downloadingPaths.size > 0) {
+      log.artifact.debug('Found active downloads to skip during scan', {
+        active_downloads: downloadingPaths.size,
+        downloading_paths: Array.from(downloadingPaths),
+      });
+    }
+
     // List directory contents
     const items = await listDirectory(location.path);
     const files = items.filter(item => !item.isDirectory);
@@ -6518,9 +6563,20 @@ const scanStorageLocation = async (location, options = {}) => {
     let scanned = 0;
     let added = 0;
     let removed = 0;
+    let skipped = 0;
 
-    // Add new artifacts
+    // Add new artifacts (skip files being downloaded)
     for (const file of artifactFiles) {
+      // Skip files that are currently being downloaded to prevent race condition
+      if (downloadingPaths.has(file.path)) {
+        log.artifact.debug('Skipping file being downloaded', {
+          filename: file.name,
+          path: file.path,
+        });
+        skipped++;
+        continue;
+      }
+
       if (!existingPaths.has(file.path)) {
         // New artifact found
         const extension = path.extname(file.name).toLowerCase();
@@ -6590,6 +6646,7 @@ const scanStorageLocation = async (location, options = {}) => {
       scanned,
       added,
       removed,
+      skipped,
       total_files: totalFiles,
     });
 
