@@ -188,12 +188,27 @@ export const setHostname = async (req, res) => {
       });
     }
 
-    // Validate hostname format (basic validation)
-    const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$/;
+    // Validate hostname format (allows both simple hostnames and FQDNs)
+    const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,251}[a-zA-Z0-9])?$/;
     if (!hostnameRegex.test(hostname)) {
       return res.status(400).json({
-        error: 'Invalid hostname format. Must be alphanumeric with hyphens, 1-63 characters',
+        error: 'Invalid hostname format. Must be alphanumeric with hyphens and dots, 1-253 characters',
       });
+    }
+
+    // Additional validation: each label (part between dots) must be ≤63 characters
+    const labels = hostname.split('.');
+    for (const label of labels) {
+      if (label.length === 0 || label.length > 63) {
+        return res.status(400).json({
+          error: 'Invalid hostname format. Each part between dots must be 1-63 characters',
+        });
+      }
+      if (!/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$/.test(label)) {
+        return res.status(400).json({
+          error: 'Invalid hostname format. Each part must start and end with alphanumeric characters',
+        });
+      }
     }
 
     // Create task for hostname change
