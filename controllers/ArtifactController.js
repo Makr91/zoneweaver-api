@@ -1683,7 +1683,7 @@ export const uploadArtifactToTask = async (req, res) => {
           size: req.file.size,
           size_mb: Math.round(req.file.size / 1024 / 1024),
         },
-        upload_duration: timer.elapsed(),
+        upload_duration: timer.end(),
       });
 
       // File is now in final location
