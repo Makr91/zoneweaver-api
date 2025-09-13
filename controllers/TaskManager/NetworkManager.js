@@ -128,30 +128,61 @@ export const executeDeleteIPAddressTask = async metadataJson => {
       // Check if there are any remaining IP addresses on this interface
       log.task.debug('Checking for remaining IP addresses', { interface: interfaceName });
       const remainingAddrsResult = await executeCommand(
-        `pfexec ipadm show-addr ${interfaceName} -p`
+        `pfexec ipadm show-addr -p -o addrobj,addr,type,state`
       );
 
-      if (!remainingAddrsResult.success || !remainingAddrsResult.output.trim()) {
-        // No remaining IP addresses, delete the IP interface
-        log.task.debug('No remaining IP addresses, deleting IP interface', {
-          interface: interfaceName,
-        });
-        const deleteInterfaceResult = await executeCommand(
-          `pfexec ipadm delete-if ${interfaceName}`
+      if (remainingAddrsResult.success && remainingAddrsResult.output.trim()) {
+        // Parse all IP addresses and filter for our interface
+        const allAddresses = remainingAddrsResult.output.trim().split('\n');
+        const interfaceAddresses = allAddresses.filter(line => 
+          line.startsWith(`${interfaceName}/`)
         );
 
-        if (deleteInterfaceResult.success) {
-          cleanupResults.ip_interface_deleted = true;
-          log.task.info('IP interface deleted', { interface: interfaceName });
-        } else {
-          log.task.warn('Failed to delete IP interface', {
+        log.task.debug('IP address analysis', {
+          interface: interfaceName,
+          total_system_addresses: allAddresses.length,
+          interface_addresses: interfaceAddresses.length,
+          interface_address_list: interfaceAddresses,
+        });
+
+        if (interfaceAddresses.length === 0) {
+          // No remaining IP addresses on this interface, safe to delete IP interface
+          log.task.info('No remaining IP addresses found, deleting IP interface', {
             interface: interfaceName,
-            error: deleteInterfaceResult.error,
+            deleted_addrobj: addrobj,
+          });
+          
+          const deleteInterfaceResult = await executeCommand(
+            `pfexec ipadm delete-if ${interfaceName}`
+          );
+
+          if (deleteInterfaceResult.success) {
+            cleanupResults.ip_interface_deleted = true;
+            log.task.info('IP interface deleted successfully', { 
+              interface: interfaceName,
+              reason: 'no_remaining_addresses'
+            });
+          } else {
+            log.task.warn('Failed to delete IP interface', {
+              interface: interfaceName,
+              error: deleteInterfaceResult.error,
+            });
+          }
+        } else {
+          // Other IP addresses still exist on this interface, keep interface
+          log.task.info('Interface has remaining IP addresses, preserving interface', {
+            interface: interfaceName,
+            remaining_count: interfaceAddresses.length,
+            remaining_addresses: interfaceAddresses,
+            deleted_addrobj: addrobj,
           });
         }
       } else {
-        log.task.debug('Interface still has IP addresses, keeping IP interface', {
+        // Command failed or no output - assume interface should be preserved for safety
+        log.task.warn('Could not check remaining IP addresses, preserving interface for safety', {
           interface: interfaceName,
+          error: remainingAddrsResult.error || 'no_output',
+          deleted_addrobj: addrobj,
         });
       }
 
