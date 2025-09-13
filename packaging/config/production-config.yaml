@@ -194,6 +194,10 @@ artifact_storage:
     download_timeout_minutes: 60
     max_upload_size_gb: 50  # Maximum file upload size
     upload_timeout_minutes: 120  # Timeout for large uploads
+    max_form_field_size_mb: 10  # Maximum form field size in MB
+    max_files_per_upload: 1  # Maximum number of files per upload
+    max_form_fields: 10  # Maximum number of form fields
+    upload_session_timeout_hours: 2  # Upload session expiration time
   cleanup:
     enabled: true
     orphaned_files_retention_days: 30

@@ -1250,7 +1250,8 @@ export const prepareArtifactUpload = async (req, res) => {
 
     // Generate upload URL and expiration
     const uploadUrl = `/artifacts/upload/${task.id}`;
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // THIS SHOULD BE MOVED TO CONFIG.YML!
+    const sessionTimeoutHours = artifactConfig.security?.upload_session_timeout_hours || 2;
+    const expiresAt = new Date(Date.now() + sessionTimeoutHours * 60 * 60 * 1000);
 
     log.artifact.info('Upload prepared successfully', {
       task_id: task.id,
@@ -1543,7 +1544,7 @@ export const uploadArtifactToTask = async (req, res) => {
       content_length_header: req.get('Content-Length'),
     });
 
-    // Create custom multer storage that saves directly to final location
+    // Create custom multer storage with pfexec file pre-creation
     const storage = multer.diskStorage({
       destination: (req, file, cb) => {
         log.artifact.info('UPLOAD DEBUG: Multer destination callback', {
@@ -1555,24 +1556,66 @@ export const uploadArtifactToTask = async (req, res) => {
         });
         cb(null, storageLocation.path);
       },
-      filename: (req, file, cb) => {
-        log.artifact.info('UPLOAD DEBUG: Multer filename callback', {
-          requestId,
-          original_filename: file.originalname,
-          mimetype: file.mimetype,
-          encoding: file.encoding,
-        });
-        cb(null, file.originalname);
+      filename: async (req, file, cb) => {
+        try {
+          const finalPath = path.join(storageLocation.path, file.originalname);
+          
+          log.artifact.info('UPLOAD DEBUG: Pre-creating file with pfexec', {
+            requestId,
+            original_filename: file.originalname,
+            final_path: finalPath,
+            mimetype: file.mimetype,
+            encoding: file.encoding,
+          });
+
+          // Pre-create file with pfexec and set writable permissions
+          const createResult = await executeCommand(`pfexec touch "${finalPath}"`);
+          if (!createResult.success) {
+            log.artifact.error('UPLOAD DEBUG: Failed to pre-create file', {
+              requestId,
+              final_path: finalPath,
+              error: createResult.error,
+            });
+            return cb(new Error(`Failed to pre-create file: ${createResult.error}`));
+          }
+
+          // Set permissions so service user can write to the file
+          const chmodResult = await executeCommand(`pfexec chmod 666 "${finalPath}"`);
+          if (!chmodResult.success) {
+            log.artifact.error('UPLOAD DEBUG: Failed to set file permissions', {
+              requestId,
+              final_path: finalPath,
+              error: chmodResult.error,
+            });
+            return cb(new Error(`Failed to set file permissions: ${chmodResult.error}`));
+          }
+
+          log.artifact.info('UPLOAD DEBUG: File pre-created successfully', {
+            requestId,
+            final_path: finalPath,
+            permissions_set: '666',
+          });
+
+          cb(null, file.originalname);
+        } catch (error) {
+          log.artifact.error('UPLOAD DEBUG: Exception in filename callback', {
+            requestId,
+            error: error.message,
+            stack: error.stack,
+          });
+          cb(error);
+        }
       },
     });
 
+    // Get multer limits from config
     const multerConfig = {
       storage,
       limits: {
         fileSize: maxUploadSizeBytes,
-        fieldSize: 10 * 1024 * 1024, // 10MB for form fields
-        files: 1, // Only allow 1 file
-        fields: 10, // Allow up to 10 form fields
+        fieldSize: (artifactConfig.security?.max_form_field_size_mb || 10) * 1024 * 1024,
+        files: artifactConfig.security?.max_files_per_upload || 1,
+        fields: artifactConfig.security?.max_form_fields || 10,
       }
     };
 
