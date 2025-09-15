@@ -1799,7 +1799,7 @@ export const serveVncConsole = async (req, res) => {
 export const proxyVncContent = async (req, res) => {
   try {
     const { zoneName } = req.params;
-    const assetPath = req.params.assetPath || req.params[0];
+    const assetPath = req.params.splat;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });

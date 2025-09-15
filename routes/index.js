@@ -365,7 +365,7 @@ router.get('/vnc/sessions', verifyApiKey, listVncSessions); // List all VNC sess
 
 // VNC Console Content Routes (HTTP proxy to VNC server)
 router.get('/zones/:zoneName/vnc/console', verifyApiKey, serveVncConsole); // Serve VNC console HTML
-router.all('/zones/:zoneName/vnc/*', verifyApiKey, proxyVncContent); // Proxy VNC assets (JS, CSS, images)
+router.all('/zones/:zoneName/vnc/*splat', verifyApiKey, proxyVncContent); // Proxy VNC assets (JS, CSS, images)
 
 // Host Monitoring Routes
 router.get('/monitoring/status', verifyApiKey, getMonitoringStatus); // Get monitoring service status
@@ -443,9 +443,9 @@ router.put('/network/hostname', verifyApiKey, setHostname); // Set hostname
 // Network Management Routes - IP Addresses
 router.get('/network/addresses', verifyApiKey, getManageableIPAddresses); // List IP addresses
 router.post('/network/addresses', verifyApiKey, createIPAddress); // Create IP address
-router.delete('/network/addresses/*', verifyApiKey, deleteIPAddress); // Delete IP address (captures full addrobj with slashes)
-router.put('/network/addresses/*/enable', verifyApiKey, enableIPAddress); // Enable IP address
-router.put('/network/addresses/*/disable', verifyApiKey, disableIPAddress); // Disable IP address
+router.delete('/network/addresses/*splat', verifyApiKey, deleteIPAddress); // Delete IP address (captures full addrobj with slashes)
+router.put('/network/addresses/*splat/enable', verifyApiKey, enableIPAddress); // Enable IP address
+router.put('/network/addresses/*splat/disable', verifyApiKey, disableIPAddress); // Disable IP address
 
 // VNIC Management Routes
 router.get('/network/vnics', verifyApiKey, getVNICs); // List VNICs

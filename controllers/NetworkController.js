@@ -647,8 +647,8 @@ export const createIPAddress = async (req, res) => {
  */
 export const deleteIPAddress = async (req, res) => {
   try {
-    // With wildcard route (*), the addrobj is in req.params[0]
-    const addrobj = req.params[0];
+    // With wildcard route (*splat), the addrobj is in req.params.splat
+    const addrobj = req.params.splat;
     const { release = false, created_by = 'api' } = req.query;
 
     // Check if address object exists in current system
@@ -703,7 +703,7 @@ export const deleteIPAddress = async (req, res) => {
     log.api.error('Error deleting IP address', {
       error: error.message,
       stack: error.stack,
-      addrobj: req.params[0],
+      addrobj: req.params.splat,
     });
     res.status(500).json({
       error: 'Failed to create IP address deletion task',
@@ -738,8 +738,8 @@ export const deleteIPAddress = async (req, res) => {
  */
 export const enableIPAddress = async (req, res) => {
   try {
-    // With wildcard route (*), the addrobj is in req.params[0]
-    const addrobj = req.params[0];
+    // With wildcard route (*splat), the addrobj is in req.params.splat
+    const addrobj = req.params.splat;
     const { created_by = 'api' } = req.body || {};
 
     // Create task for enabling IP address
@@ -775,7 +775,7 @@ export const enableIPAddress = async (req, res) => {
     log.api.error('Error enabling IP address', {
       error: error.message,
       stack: error.stack,
-      addrobj: req.params[0],
+      addrobj: req.params.splat,
     });
     res.status(500).json({
       error: 'Failed to create IP address enable task',
@@ -808,8 +808,8 @@ export const enableIPAddress = async (req, res) => {
  */
 export const disableIPAddress = async (req, res) => {
   try {
-    // With wildcard route (*), the addrobj is in req.params[0]
-    const addrobj = req.params[0];
+    // With wildcard route (*splat), the addrobj is in req.params.splat
+    const addrobj = req.params.splat;
     const { created_by = 'api' } = req.body || {};
 
     // Create task for disabling IP address
@@ -845,7 +845,7 @@ export const disableIPAddress = async (req, res) => {
     log.api.error('Error disabling IP address', {
       error: error.message,
       stack: error.stack,
-      addrobj: req.params[0],
+      addrobj: req.params.splat,
     });
     res.status(500).json({
       error: 'Failed to create IP address disable task',
