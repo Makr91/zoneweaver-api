@@ -279,7 +279,7 @@ export const checkForUpdates = async (req, res) => {
     log.monitoring.info('Checking for system updates', {
       format,
     });
-    const result = await executeCommand('pfexec pkg update -n');
+    const result = await executeCommand('pfexec pkg update -nv');
 
     if (format === 'raw') {
       return res.json({
