@@ -297,28 +297,25 @@ export const executeRoleDeleteTask = async metadataJson => {
     if (remove_home) {
       log.task.debug('Checking if role has home directory', { rolename });
       
-      const checkHomeResult = await executeCommand(`logins -p ${rolename}`);
+      const checkHomeResult = await executeCommand(`pfexec getent passwd ${rolename}`);
       
-      if (checkHomeResult.success && checkHomeResult.output) {
-        // Parse the logins output to see if there's a home directory
-        const lines = checkHomeResult.output.trim().split('\n');
-        for (const line of lines) {
-          if (line.includes(':') && !line.startsWith('#')) {
-            const fields = line.split(':');
-            if (fields.length >= 6 && fields[5] && fields[5].trim() !== '') {
-              actuallyRemoveHome = true;
-              log.task.debug('Role has home directory, will remove it', {
-                rolename,
-                home_dir: fields[5],
-              });
-              break;
-            }
-          }
+      if (checkHomeResult.success && checkHomeResult.output && checkHomeResult.output.trim()) {
+        // Parse the getent passwd output: username:x:uid:gid:comment:home_dir:shell
+        const fields = checkHomeResult.output.trim().split(':');
+        if (fields.length >= 6 && fields[5] && fields[5].trim() !== '' && fields[5] !== '/') {
+          actuallyRemoveHome = true;
+          log.task.debug('Role has home directory, will remove it', {
+            rolename,
+            home_dir: fields[5],
+          });
+        } else {
+          log.task.debug('Role has no home directory or uses root home, skipping -r flag', { 
+            rolename,
+            home_dir: fields[5] || 'none'
+          });
         }
-      }
-      
-      if (!actuallyRemoveHome) {
-        log.task.debug('Role has no home directory, skipping -r flag', { rolename });
+      } else {
+        log.task.debug('Role not found in passwd database, skipping -r flag', { rolename });
       }
     }
 

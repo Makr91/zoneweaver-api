@@ -250,22 +250,49 @@ export const executeArtifactDownloadTask = async metadataJson => {
       }
 
       try {
-        await Artifact.create({
-          storage_location_id: storageLocation.id, // Fix: use database UUID, not metadata value
-          filename: finalFilename,
-          path: final_path,
-          size: downloadedBytes,
-          file_type: storageLocation.type,
-          extension,
-          mime_type: mimeType,
-          checksum: calculatedChecksum,
-          checksum_algorithm,
-          source_url: url,
-          discovered_at: new Date(),
-          last_verified: new Date(),
+        // Use findOrCreate to handle race condition with scan tasks
+        const [artifact, created] = await Artifact.findOrCreate({
+          where: { path: final_path },
+          defaults: {
+            storage_location_id: storageLocation.id,
+            filename: finalFilename,
+            path: final_path,
+            size: downloadedBytes,
+            file_type: storageLocation.type,
+            extension,
+            mime_type: mimeType,
+            checksum: calculatedChecksum,
+            checksum_algorithm,
+            source_url: url,
+            discovered_at: new Date(),
+            last_verified: new Date(),
+          },
         });
+
+        if (!created) {
+          // Record already exists (likely created by scan), update it with complete download data
+          log.task.info('Artifact record already exists, updating with download data', {
+            filename: finalFilename,
+            existing_source: artifact.source_url || 'scan',
+            new_source: url,
+          });
+
+          await artifact.update({
+            filename: finalFilename,
+            size: downloadedBytes,
+            checksum: calculatedChecksum,
+            checksum_algorithm,
+            source_url: url,
+            last_verified: new Date(),
+          });
+        } else {
+          log.task.debug('Created new artifact database record', {
+            filename: finalFilename,
+            path: final_path,
+          });
+        }
       } catch (dbError) {
-        log.task.error('Failed to create artifact database record', {
+        log.task.error('Failed to create/update artifact database record', {
           storage_location_id: storageLocation.id,
           filename: finalFilename,
           path: final_path,
