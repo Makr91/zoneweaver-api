@@ -78,7 +78,7 @@ const corsOptions = {
  */
 app.use(cookieParser());
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('/*splat', cors(corsOptions));
 // Get artifact storage configuration for upload limits
 const artifactConfig = config.getArtifactStorage?.() || {};
 const maxUploadGB = artifactConfig.security?.max_upload_size_gb || 50;
