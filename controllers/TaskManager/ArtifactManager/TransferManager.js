@@ -35,13 +35,31 @@ export const executeArtifactMoveTask = async metadataJson => {
 
     log.task.info('Artifact move task started', { artifact_id, destination_storage_location_id });
 
-    const task = await Tasks.findOne({ where: { metadata: { id: artifact_id } } });
+    // Find the current task for progress updates (look for recent task with matching operation)
+    const task = await Tasks.findOne({ 
+      where: { 
+        operation: 'artifact_move',
+        status: 'running'
+      },
+      order: [['created_at', 'DESC']]
+    });
+
     const updateProgress = async (percent, status, info = {}) => {
       if (task) {
-        await task.update({
-          progress_percent: percent,
-          progress_info: { status, ...info },
-        });
+        try {
+          await task.update({
+            progress_percent: percent,
+            progress_info: await new Promise((resolve, reject) => {
+              yj.stringifyAsync({ status, ...info }, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+              });
+            })
+          });
+          log.task.debug('Progress updated', { task_id: task.id, percent, status });
+        } catch (error) {
+          log.task.warn('Failed to update progress', { error: error.message });
+        }
       }
     };
 
@@ -140,13 +158,31 @@ export const executeArtifactCopyTask = async metadataJson => {
 
     log.task.info('Artifact copy task started', { artifact_id, destination_storage_location_id });
 
-    const task = await Tasks.findOne({ where: { metadata: { id: artifact_id } } });
+    // Find the current task for progress updates (look for recent task with matching operation)
+    const task = await Tasks.findOne({ 
+      where: { 
+        operation: 'artifact_copy',
+        status: 'running'
+      },
+      order: [['created_at', 'DESC']]
+    });
+
     const updateProgress = async (percent, status, info = {}) => {
       if (task) {
-        await task.update({
-          progress_percent: percent,
-          progress_info: { status, ...info },
-        });
+        try {
+          await task.update({
+            progress_percent: percent,
+            progress_info: await new Promise((resolve, reject) => {
+              yj.stringifyAsync({ status, ...info }, (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+              });
+            })
+          });
+          log.task.debug('Progress updated', { task_id: task.id, percent, status });
+        } catch (error) {
+          log.task.warn('Failed to update progress', { error: error.message });
+        }
       }
     };
 
