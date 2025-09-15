@@ -1,5 +1,5 @@
 import Entities from '../models/EntityModel.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';

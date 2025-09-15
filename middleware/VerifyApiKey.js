@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import Entities from '../models/EntityModel.js';
 import { log } from '../lib/Logger.js';
 
