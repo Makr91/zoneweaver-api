@@ -90,6 +90,8 @@ import {
   executeArtifactDeleteFileTask,
   executeArtifactDeleteFolderTask,
   executeArtifactUploadProcessTask,
+  executeArtifactMoveTask,
+  executeArtifactCopyTask,
 } from './TaskManager/ArtifactManager/index.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
@@ -431,6 +433,10 @@ const executeArtifactTask = (operation, metadata) => {
       return executeArtifactDeleteFolderTask(metadata);
     case 'artifact_upload_process':
       return executeArtifactUploadProcessTask(metadata);
+    case 'artifact_move':
+      return executeArtifactMoveTask(metadata);
+    case 'artifact_copy':
+      return executeArtifactCopyTask(metadata);
     default:
       return { success: false, error: `Unknown artifact operation: ${operation}` };
   }
@@ -725,7 +731,7 @@ export const startTaskProcessor = () => {
 
   log.task.info('Starting task processor');
 
-  // Process tasks every 2 seconds
+  // Process tasks every 2 seconds ## THIS SHOULD BE CONFIGURABLE!!
   taskProcessor = setInterval(async () => {
     await processNextTask();
   }, 2000);

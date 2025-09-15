@@ -9,6 +9,7 @@ import {
   executeArtifactDeleteFolderTask,
 } from './DeletionManager.js';
 import { executeArtifactUploadProcessTask } from './UploadManager.js';
+import { executeArtifactMoveTask, executeArtifactCopyTask } from './TransferManager.js';
 
 export {
   executeArtifactDownloadTask,
@@ -18,4 +19,6 @@ export {
   executeArtifactDeleteFileTask,
   executeArtifactDeleteFolderTask,
   executeArtifactUploadProcessTask,
+  executeArtifactMoveTask,
+  executeArtifactCopyTask,
 };

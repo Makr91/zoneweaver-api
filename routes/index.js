@@ -279,7 +279,9 @@ import {
   deleteArtifacts,
   getArtifactStats,
   getArtifactServiceStatus,
-} from '../controllers/ArtifactController.js';
+  moveArtifact,
+  copyArtifact,
+} from '../controllers/ArtifactController/index.js';
 import config from '../config/ConfigLoader.js';
 
 const router = express.Router();
@@ -572,6 +574,8 @@ router.get('/artifacts', verifyApiKey, listArtifacts); // List all artifacts
 router.get('/artifacts/iso', verifyApiKey, listISOArtifacts); // List ISO artifacts
 router.get('/artifacts/image', verifyApiKey, listImageArtifacts); // List image artifacts
 router.get('/artifacts/:id', verifyApiKey, getArtifactDetails); // Get artifact details
+router.post('/artifacts/:id/move', verifyApiKey, moveArtifact); // Move artifact to another storage location
+router.post('/artifacts/:id/copy', verifyApiKey, copyArtifact); // Copy artifact to another storage location
 router.post('/artifacts/download', verifyApiKey, downloadFromUrl); // Download artifact from URL (async task)
 router.post('/artifacts/upload/prepare', verifyApiKey, prepareArtifactUpload); // Prepare upload (returns task_id and upload_url)
 router.post(
