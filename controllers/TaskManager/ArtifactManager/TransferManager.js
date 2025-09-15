@@ -1,6 +1,6 @@
 import yj from 'yieldable-json';
 import path from 'path';
-import { log } from '../../../lib/Logger.js';
+import { log, createTimer } from '../../../lib/Logger.js';
 import { moveItem, copyItem } from '../../../lib/FileSystemManager.js';
 import Artifact from '../../../models/ArtifactModel.js';
 import ArtifactStorageLocation from '../../../models/ArtifactStorageLocationModel.js';
@@ -18,7 +18,7 @@ import db from '../../../config/Database.js';
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 export const executeArtifactMoveTask = async metadataJson => {
-  const taskTimer = log.createTimer('artifact_move_task');
+  const taskTimer = createTimer('artifact_move_task');
   let transaction;
 
   try {
@@ -115,7 +115,7 @@ export const executeArtifactMoveTask = async metadataJson => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 export const executeArtifactCopyTask = async metadataJson => {
-  const taskTimer = log.createTimer('artifact_copy_task');
+  const taskTimer = createTimer('artifact_copy_task');
   let transaction;
 
   try {
