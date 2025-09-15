@@ -291,10 +291,41 @@ export const executeRoleDeleteTask = async metadataJson => {
       remove_home,
     });
 
+    let actuallyRemoveHome = false;
+
+    // Check if role has a home directory before attempting to remove it
+    if (remove_home) {
+      log.task.debug('Checking if role has home directory', { rolename });
+      
+      const checkHomeResult = await executeCommand(`logins -p ${rolename}`);
+      
+      if (checkHomeResult.success && checkHomeResult.output) {
+        // Parse the logins output to see if there's a home directory
+        const lines = checkHomeResult.output.trim().split('\n');
+        for (const line of lines) {
+          if (line.includes(':') && !line.startsWith('#')) {
+            const fields = line.split(':');
+            if (fields.length >= 6 && fields[5] && fields[5].trim() !== '') {
+              actuallyRemoveHome = true;
+              log.task.debug('Role has home directory, will remove it', {
+                rolename,
+                home_dir: fields[5],
+              });
+              break;
+            }
+          }
+        }
+      }
+      
+      if (!actuallyRemoveHome) {
+        log.task.debug('Role has no home directory, skipping -r flag', { rolename });
+      }
+    }
+
     // Build roledel command
     let command = `pfexec roledel`;
 
-    if (remove_home) {
+    if (actuallyRemoveHome) {
       command += ` -r`;
     }
 
@@ -307,13 +338,20 @@ export const executeRoleDeleteTask = async metadataJson => {
     if (result.success) {
       log.task.info('Role deleted successfully', {
         rolename,
-        home_removed: remove_home,
+        home_removed: actuallyRemoveHome,
+        home_removal_requested: remove_home,
       });
+
+      let message = `Role ${rolename} deleted successfully`;
+      if (remove_home) {
+        message += actuallyRemoveHome ? ' (home directory removed)' : ' (no home directory to remove)';
+      }
 
       return {
         success: true,
-        message: `Role ${rolename} deleted successfully${remove_home ? ' (home directory removed)' : ''}`,
-        home_removed: remove_home,
+        message,
+        home_removed: actuallyRemoveHome,
+        home_removal_requested: remove_home,
       };
     }
     log.task.error('Role deletion command failed', {
