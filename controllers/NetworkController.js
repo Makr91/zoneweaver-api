@@ -648,7 +648,9 @@ export const createIPAddress = async (req, res) => {
 export const deleteIPAddress = async (req, res) => {
   try {
     // With wildcard route (*splat), the addrobj is in req.params.splat
-    const addrobj = req.params.splat;
+    const addrobj = Array.isArray(req.params.splat)
+      ? req.params.splat.join('/')
+      : req.params.splat || ''; // Express 5.x compatibility fix
     const { release = false, created_by = 'api' } = req.query;
 
     // Check if address object exists in current system
@@ -739,7 +741,9 @@ export const deleteIPAddress = async (req, res) => {
 export const enableIPAddress = async (req, res) => {
   try {
     // With wildcard route (*splat), the addrobj is in req.params.splat
-    const addrobj = req.params.splat;
+    const addrobj = Array.isArray(req.params.splat)
+      ? req.params.splat.join('/')
+      : req.params.splat || ''; // Express 5.x compatibility fix
     const { created_by = 'api' } = req.body || {};
 
     // Create task for enabling IP address
@@ -809,7 +813,9 @@ export const enableIPAddress = async (req, res) => {
 export const disableIPAddress = async (req, res) => {
   try {
     // With wildcard route (*splat), the addrobj is in req.params.splat
-    const addrobj = req.params.splat;
+    const addrobj = Array.isArray(req.params.splat)
+      ? req.params.splat.join('/')
+      : req.params.splat || ''; // Express 5.x compatibility fix
     const { created_by = 'api' } = req.body || {};
 
     // Create task for disabling IP address
