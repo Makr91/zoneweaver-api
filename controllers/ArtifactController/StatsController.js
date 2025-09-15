@@ -7,7 +7,7 @@
 
 import config from '../../config/ConfigLoader.js';
 import Tasks from '../../models/TaskModel.js';
-import { getArtifactStorageService } from '../../ArtifactStorageService.js';
+import { getArtifactStorageService } from '../ArtifactStorageService.js';
 import { log } from '../../lib/Logger.js';
 import { Op } from 'sequelize';
 
