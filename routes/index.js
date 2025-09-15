@@ -282,6 +282,22 @@ import {
   moveArtifact,
   copyArtifact,
 } from '../controllers/ArtifactController/index.js';
+import {
+  getSystemStatus,
+  getSystemUptime,
+  getRebootRequiredStatus,
+  clearRebootRequiredStatus,
+  restartHost,
+  rebootHost,
+  fastRebootHost,
+  shutdownHost,
+  poweroffHost,
+  haltHost,
+  getCurrentRunlevel,
+  changeRunlevel,
+  enterSingleUserMode,
+  enterMultiUserMode,
+} from '../controllers/SystemHostController/index.js';
 import config from '../config/ConfigLoader.js';
 
 const router = express.Router();
@@ -613,6 +629,26 @@ router.patch('/filesystem/permissions', verifyApiKey, changePermissions); // Cha
 router.post('/filesystem/archive/create', verifyApiKey, createArchiveTask); // Create archive (async task)
 router.post('/filesystem/archive/extract', verifyApiKey, extractArchiveTask); // Extract archive (async task)
 
-// NOTE: VNC and Terminal WebSocket traffic is handled by native WebSocket upgrade handler in index.js
+// System Host Management Routes
+router.get('/system/host/status', verifyApiKey, getSystemStatus); // Get comprehensive system status
+router.get('/system/host/uptime', verifyApiKey, getSystemUptime); // Get detailed uptime information
+router.get('/system/host/reboot-status', verifyApiKey, getRebootRequiredStatus); // Get reboot required status
+router.delete('/system/host/reboot-status', verifyApiKey, clearRebootRequiredStatus); // Clear reboot flags
+
+// System Host Restart Operations (TaskQueue)
+router.post('/system/host/restart', verifyApiKey, restartHost); // Gracefully restart host system
+router.post('/system/host/reboot', verifyApiKey, rebootHost); // Direct reboot host system
+router.post('/system/host/reboot/fast', verifyApiKey, fastRebootHost); // Fast reboot (x86 only)
+
+// System Host Shutdown Operations (TaskQueue)
+router.post('/system/host/shutdown', verifyApiKey, shutdownHost); // Gracefully shutdown to single-user
+router.post('/system/host/poweroff', verifyApiKey, poweroffHost); // Power off system completely
+router.post('/system/host/halt', verifyApiKey, haltHost); // Emergency immediate halt
+
+// System Host Runlevel Operations (TaskQueue)
+router.get('/system/host/runlevel', verifyApiKey, getCurrentRunlevel); // Get current runlevel
+router.post('/system/host/runlevel', verifyApiKey, changeRunlevel); // Change to specific runlevel
+router.post('/system/host/single-user', verifyApiKey, enterSingleUserMode); // Enter single-user mode
+router.post('/system/host/multi-user', verifyApiKey, enterMultiUserMode); // Enter multi-user mode
 
 export default router;

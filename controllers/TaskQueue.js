@@ -93,6 +93,15 @@ import {
   executeArtifactMoveTask,
   executeArtifactCopyTask,
 } from './TaskManager/ArtifactManager/index.js';
+import {
+  executeSystemHostRestartTask,
+  executeSystemHostRebootTask,
+  executeSystemHostRebootFastTask,
+  executeSystemHostShutdownTask,
+  executeSystemHostPoweroffTask,
+  executeSystemHostHaltTask,
+  executeSystemHostRunlevelChangeTask,
+} from './TaskManager/SystemHostManager/index.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
 import config from '../config/ConfigLoader.js';
@@ -163,6 +172,15 @@ const OPERATION_CATEGORIES = {
   update_time_sync_config: 'system_config',
   force_time_sync: 'system_config',
   set_timezone: 'system_config',
+
+  // System host operations (exclusive - only one system host operation at a time)
+  system_host_restart: 'system_host_management',
+  system_host_reboot: 'system_host_management',
+  system_host_reboot_fast: 'system_host_management',
+  system_host_shutdown: 'system_host_management',
+  system_host_poweroff: 'system_host_management',
+  system_host_halt: 'system_host_management',
+  system_host_runlevel_change: 'system_host_management',
 
   // User management operations
   user_create: 'user_management',
@@ -441,6 +459,33 @@ const executeArtifactTask = (operation, metadata) => {
       return { success: false, error: `Unknown artifact operation: ${operation}` };
   }
 };
+
+/**
+ * Execute system host management tasks
+ * @param {string} operation - Operation type
+ * @param {string} metadata - Task metadata
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeSystemHostTask = (operation, metadata) => {
+  switch (operation) {
+    case 'system_host_restart':
+      return executeSystemHostRestartTask(metadata);
+    case 'system_host_reboot':
+      return executeSystemHostRebootTask(metadata);
+    case 'system_host_reboot_fast':
+      return executeSystemHostRebootFastTask(metadata);
+    case 'system_host_shutdown':
+      return executeSystemHostShutdownTask(metadata);
+    case 'system_host_poweroff':
+      return executeSystemHostPoweroffTask(metadata);
+    case 'system_host_halt':
+      return executeSystemHostHaltTask(metadata);
+    case 'system_host_runlevel_change':
+      return executeSystemHostRunlevelChangeTask(metadata);
+    default:
+      return { success: false, error: `Unknown system host operation: ${operation}` };
+  }
+};
 /**
  * Execute a specific task
  * @param {Object} task - Task object from database
@@ -548,6 +593,11 @@ const executeTask = async task => {
     // Artifact operations
     if (operation.startsWith('artifact_')) {
       return await executeArtifactTask(operation, task.metadata);
+    }
+
+    // System host operations
+    if (operation.startsWith('system_host_')) {
+      return await executeSystemHostTask(operation, task.metadata);
     }
 
     // Process operations
