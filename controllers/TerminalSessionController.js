@@ -1,5 +1,5 @@
 import os from 'os';
-import pty from '@homebridge/node-pty-prebuilt-multiarch';
+import pty from '@lydell/node-pty';
 import { Op } from 'sequelize';
 import TerminalSessions from '../models/TerminalSessionModel.js';
 import { log, createTimer } from '../lib/Logger.js';
