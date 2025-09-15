@@ -10,7 +10,7 @@ new mode 100755
 diff --git a/node_modules/node-pty/build/Makefile b/node_modules/node-pty/build/Makefile
 old mode 100644
 new mode 100755
-index 77ec600..0ccd54c
+index d68410e..0ccd54c
 --- a/node_modules/node-pty/build/Makefile
 +++ b/node_modules/node-pty/build/Makefile
 @@ -47,7 +47,6 @@ CXXFLAGS.target ?= $(CPPFLAGS) $(CXXFLAGS)
@@ -75,8 +75,8 @@ index 77ec600..0ccd54c
  endif
  
  quiet_cmd_regen_makefile = ACTION Regenerating $@
--cmd_regen_makefile = cd $(srcdir); /usr/lib/node_modules/npm/node_modules/node-gyp/gyp/gyp_main.py -fmake --ignore-environment "-Dlibrary=shared_library" "-Dvisibility=default" "-Dnode_root_dir=/home/mark/.cache/node-gyp/22.18.0" "-Dnode_gyp_dir=/usr/lib/node_modules/npm/node_modules/node-gyp" "-Dnode_lib_file=/home/mark/.cache/node-gyp/22.18.0/<(target_arch)/node.lib" "-Dmodule_root_dir=/tmp/tmp-5278lDVbQAP2i4IB/node_modules/node-pty" "-Dnode_engine=v8" "--depth=." "-Goutput_dir=." "--generator-output=build" -I/tmp/tmp-5278lDVbQAP2i4IB/node_modules/node-pty/build/config.gypi -I/usr/lib/node_modules/npm/node_modules/node-gyp/addon.gypi -I/home/mark/.cache/node-gyp/22.18.0/include/node/common.gypi "--toplevel-dir=." binding.gyp
--Makefile: $(srcdir)/../../../../home/mark/.cache/node-gyp/22.18.0/include/node/common.gypi $(srcdir)/../../../../usr/lib/node_modules/npm/node_modules/node-gyp/addon.gypi $(srcdir)/build/config.gypi $(srcdir)/binding.gyp
+-cmd_regen_makefile = cd $(srcdir); /usr/lib/node_modules/npm/node_modules/node-gyp/gyp/gyp_main.py -fmake --ignore-environment "-Dlibrary=shared_library" "-Dvisibility=default" "-Dnode_root_dir=/home/mark/.cache/node-gyp/22.18.0" "-Dnode_gyp_dir=/usr/lib/node_modules/npm/node_modules/node-gyp" "-Dnode_lib_file=/home/mark/.cache/node-gyp/22.18.0/<(target_arch)/node.lib" "-Dmodule_root_dir=/tmp/tmp-5497goU4a0IinxJO/node_modules/node-pty" "-Dnode_engine=v8" "--depth=." "-Goutput_dir=." "--generator-output=build" -I/tmp/tmp-5497goU4a0IinxJO/node_modules/node-pty/build/config.gypi -I/usr/lib/node_modules/npm/node_modules/node-gyp/addon.gypi -I/home/mark/.cache/node-gyp/22.18.0/include/node/common.gypi "--toplevel-dir=." binding.gyp
+-Makefile: $(srcdir)/../../../../home/mark/.cache/node-gyp/22.18.0/include/node/common.gypi $(srcdir)/build/config.gypi $(srcdir)/../../../../usr/lib/node_modules/npm/node_modules/node-gyp/addon.gypi $(srcdir)/binding.gyp
 +cmd_regen_makefile = cd $(srcdir); /mnt/g/Projects/zoneweaver-api/node_modules/node-gyp/gyp/gyp_main.py -fmake --ignore-environment "-Dlibrary=shared_library" "-Dvisibility=default" "-Dnode_root_dir=/home/mark/.cache/node-gyp/22.18.0" "-Dnode_gyp_dir=/mnt/g/Projects/zoneweaver-api/node_modules/node-gyp" "-Dnode_lib_file=/home/mark/.cache/node-gyp/22.18.0/<(target_arch)/node.lib" "-Dmodule_root_dir=/mnt/g/Projects/zoneweaver-api/node_modules/node-pty" "-Dnode_engine=v8" "--depth=." "-Goutput_dir=." "--generator-output=build" -I/mnt/g/Projects/zoneweaver-api/node_modules/node-pty/build/config.gypi -I/mnt/g/Projects/zoneweaver-api/node_modules/node-gyp/addon.gypi -I/home/mark/.cache/node-gyp/22.18.0/include/node/common.gypi "--toplevel-dir=." binding.gyp
 +Makefile: $(srcdir)/../node-gyp/addon.gypi $(srcdir)/build/config.gypi $(srcdir)/binding.gyp $(srcdir)/../../../../../../home/mark/.cache/node-gyp/22.18.0/include/node/common.gypi
  	$(call do_cmd,regen_makefile)
@@ -88,7 +88,7 @@ new mode 100755
 diff --git a/node_modules/node-pty/build/config.gypi b/node_modules/node-pty/build/config.gypi
 old mode 100644
 new mode 100755
-index ae25cc4..3bdd04e
+index f13b68a..3bdd04e
 --- a/node_modules/node-pty/build/config.gypi
 +++ b/node_modules/node-pty/build/config.gypi
 @@ -491,12 +491,10 @@
@@ -100,7 +100,7 @@ index ae25cc4..3bdd04e
      "user_agent": "npm/10.9.3 node/v22.18.0 linux x64 workspaces/false",
 -    "force": "true",
      "userconfig": "/home/mark/.npmrc",
--    "local_prefix": "/tmp/tmp-5278lDVbQAP2i4IB",
+-    "local_prefix": "/tmp/tmp-5497goU4a0IinxJO",
 +    "local_prefix": "/mnt/g/Projects/zoneweaver-api",
      "prefix": "/usr",
      "npm_version": "10.9.3",
@@ -801,7 +801,7 @@ new mode 100755
 diff --git a/node_modules/node-pty/src/unix/pty.cc b/node_modules/node-pty/src/unix/pty.cc
 old mode 100644
 new mode 100755
-index cb5649e..0fd56e2
+index cb5649e..0641bcf
 --- a/node_modules/node-pty/src/unix/pty.cc
 +++ b/node_modules/node-pty/src/unix/pty.cc
 @@ -29,6 +29,7 @@
@@ -812,7 +812,7 @@ index cb5649e..0fd56e2
  
  /* forkpty */
  /* http://www.gnu.org/software/gnulib/manual/html_node/forkpty.html */
-@@ -38,6 +39,12 @@
+@@ -38,6 +39,15 @@
  #include <util.h>
  #elif defined(__FreeBSD__)
  #include <libutil.h>
@@ -822,6 +822,9 @@ index cb5649e..0fd56e2
 +#include <stropts.h>        /* for I_PUSH - from original Microsoft PR */
 +#include <sys/stropts.h>    /* additional streams support */
 +#include <libutil.h>        /* for forkpty/openpty on Solaris */
++/* Declare the functions that exist but aren't in standard headers */
++extern int openpty(int *, int *, char *, struct termios *, struct winsize *);
++extern pid_t forkpty(int *, char *, struct termios *, struct winsize *);
  #endif
  
  /* Some platforms name VWERASE and VDISCARD differently */
