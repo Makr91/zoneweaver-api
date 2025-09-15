@@ -389,9 +389,24 @@ export const createVlan = async (req, res) => {
       const linkMatch = link.match(/^([a-zA-Z]+)(\d+)$/);
       if (linkMatch) {
         const [, baseName, ppa] = linkMatch;
-        vlanName = `${baseName}${1000 * vid + parseInt(ppa)}`;
+        const calculatedSuffix = 1000 * vid + parseInt(ppa);
+        vlanName = `${baseName}${calculatedSuffix}`;
+        
+        log.api.debug('VLAN name generation', {
+          link,
+          vid,
+          baseName,
+          ppa,
+          calculatedSuffix,
+          generatedName: vlanName,
+        });
       } else {
         vlanName = `vlan${vid}`;
+        log.api.debug('VLAN name fallback', {
+          link,
+          vid,
+          fallbackName: vlanName,
+        });
       }
     }
 
