@@ -27,7 +27,7 @@
   "author": "makr91",
   "license": "GPL-3.0",
   "dependencies": {
-    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
+    "node-pty": "^1.0.0",
     "@jedithepro/system-info": "^3.0.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
