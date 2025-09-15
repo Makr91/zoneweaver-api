@@ -8,7 +8,6 @@
 import { spawn } from 'child_process';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import yj from 'yieldable-json';
-import os from 'os';
 import { log } from '../lib/Logger.js';
 
 /**
@@ -17,9 +16,9 @@ import { log } from '../lib/Logger.js';
  * @param {number} timeout - Timeout in milliseconds
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (
+const executeCommand = (
   command,
-  timeout = 20 * 60 * 1000 // 20 minute default timeout
+  timeout = 20 * 60 * 1000 // 20 minute default timeout ## THIS SHOULD NOT BE HARDCODED, THIS SHOULD USE CONFIG.YAML!!!
 ) =>
   new Promise(resolve => {
     const child = spawn('sh', ['-c', command], {
@@ -83,81 +82,142 @@ const executeCommand = async (
     });
   });
 /**
- * Parse pkg update -n output to extract update information
- * @param {string} output - Raw pkg update -n output
+ * Parse changed packages section from pkg output
+ * @param {Array} lines - Output lines
+ * @param {number} startIndex - Index where "Changed packages:" was found
+ * @returns {Array} Array of package objects
+ */
+const parseChangedPackages = (lines, startIndex) => {
+  const packages = [];
+  let currentPublisher = null;
+  let currentPackage = null;
+
+  for (let j = startIndex + 1; j < lines.length; j++) {
+    const packageLine = lines[j];
+    const packageTrimmed = packageLine.trim();
+
+    if (!packageTrimmed) {
+      continue;
+    }
+
+    // Publisher line (no leading spaces)
+    if (!packageLine.startsWith(' ') && packageTrimmed.match(/^[a-zA-Z]/)) {
+      currentPublisher = packageTrimmed;
+    }
+    // Package name line (2 spaces indentation)
+    else if (
+      packageLine.startsWith('  ') &&
+      !packageLine.startsWith('    ') &&
+      !packageTrimmed.includes('->')
+    ) {
+      currentPackage = packageTrimmed;
+    }
+    // Version line (4+ spaces indentation, contains ->)
+    else if (packageLine.startsWith('    ') && packageTrimmed.includes('->')) {
+      const versionMatch = packageTrimmed.match(/(?<current>\S+)\s*->\s*(?<new>\S+)/);
+      if (versionMatch && currentPublisher && currentPackage) {
+        packages.push({
+          name: currentPackage,
+          publisher: currentPublisher,
+          current_version: versionMatch.groups.current,
+          new_version: versionMatch.groups.new,
+        });
+      }
+    }
+  }
+
+  return packages;
+};
+
+/**
+ * Parse pkg update -nv output to extract update information
+ * @param {string} output - Raw pkg update -nv output
  * @returns {Object} Parsed update information
  */
 const parseUpdateCheckOutput = output => {
-  const lines = output.split('\n').filter(line => line.trim());
-  const updates = [];
+  const lines = output.split('\n');
   const planSummary = {
     packages_to_install: 0,
     packages_to_update: 0,
     packages_to_remove: 0,
-    total_download_size: null,
-    estimated_time: null,
+    estimated_space_available: null,
+    estimated_space_consumed: null,
   };
 
-  let inPackageList = false;
+  const bootEnvironment = {
+    create_boot_environment: false,
+    create_backup_boot_environment: false,
+    rebuild_boot_archive: false,
+  };
 
-  for (const line of lines) {
-    if (
-      line.includes('Packages to install:') ||
-      line.includes('Packages to update:') ||
-      line.includes('Packages to remove:')
-    ) {
-      inPackageList = true;
-      continue;
-    }
+  let packages = [];
 
-    // Parse summary information
-    if (line.includes('packages to install')) {
-      const match = line.match(/(\d+) packages? to install/);
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+
+    // Parse summary numbers with named capture groups
+    if (trimmed.includes('Packages to install:')) {
+      const match = trimmed.match(/Packages to install:\s*(?<count>\d+)/);
       if (match) {
-        planSummary.packages_to_install = parseInt(match[1]);
+        planSummary.packages_to_install = parseInt(match.groups.count);
       }
-    } else if (line.includes('packages to update')) {
-      const match = line.match(/(\d+) packages? to update/);
+    } else if (trimmed.includes('Packages to update:')) {
+      const match = trimmed.match(/Packages to update:\s*(?<count>\d+)/);
       if (match) {
-        planSummary.packages_to_update = parseInt(match[1]);
+        planSummary.packages_to_update = parseInt(match.groups.count);
       }
-    } else if (line.includes('packages to remove')) {
-      const match = line.match(/(\d+) packages? to remove/);
+    } else if (trimmed.includes('Packages to remove:')) {
+      const match = trimmed.match(/Packages to remove:\s*(?<count>\d+)/);
       if (match) {
-        planSummary.packages_to_remove = parseInt(match[1]);
-      }
-    } else if (line.includes('download size:') || line.includes('Download:')) {
-      const match = line.match(/(\d+(?:\.\d+)?)\s*([KMGT]?B)/);
-      if (match) {
-        planSummary.total_download_size = `${match[1]} ${match[2]}`;
+        planSummary.packages_to_remove = parseInt(match.groups.count);
       }
     }
 
-    // Parse individual package entries
-    if (
-      inPackageList &&
-      line.trim() &&
-      !line.includes('Plan Creation:') &&
-      !line.includes('State')
-    ) {
-      const trimmed = line.trim();
-      if (trimmed.match(/^\w/)) {
-        // Likely a package name
-        updates.push(trimmed);
+    // Parse space information
+    else if (trimmed.includes('Estimated space available:')) {
+      const match = trimmed.match(/Estimated space available:\s*(?<space>.+)/);
+      if (match) {
+        planSummary.estimated_space_available = match.groups.space.trim();
+      }
+    } else if (trimmed.includes('Estimated space to be consumed:')) {
+      const match = trimmed.match(/Estimated space to be consumed:\s*(?<space>.+)/);
+      if (match) {
+        planSummary.estimated_space_consumed = match.groups.space.trim();
       }
     }
 
-    // Stop parsing packages when we hit plan summary
-    if (line.includes('Plan Creation:') || line.includes('Download:') || line.includes('Space:')) {
-      inPackageList = false;
+    // Parse boot environment information
+    else if (trimmed.includes('Create boot environment:')) {
+      const match = trimmed.match(/Create boot environment:\s*(?<status>\w+)/);
+      if (match) {
+        bootEnvironment.create_boot_environment = match.groups.status.toLowerCase() === 'yes';
+      }
+    } else if (trimmed.includes('Create backup boot environment:')) {
+      const match = trimmed.match(/Create backup boot environment:\s*(?<status>\w+)/);
+      if (match) {
+        bootEnvironment.create_backup_boot_environment =
+          match.groups.status.toLowerCase() === 'yes';
+      }
+    } else if (trimmed.includes('Rebuild boot archive:')) {
+      const match = trimmed.match(/Rebuild boot archive:\s*(?<status>\w+)/);
+      if (match) {
+        bootEnvironment.rebuild_boot_archive = match.groups.status.toLowerCase() === 'yes';
+      }
+    }
+
+    // Parse changed packages section
+    else if (trimmed === 'Changed packages:') {
+      packages = parseChangedPackages(lines, i);
+      break;
     }
   }
 
   return {
-    updates_available: updates.length > 0,
-    total_updates: updates.length,
-    packages: updates,
+    updates_available: packages.length > 0,
+    total_updates: packages.length,
+    packages,
     plan_summary: planSummary,
+    boot_environment: bootEnvironment,
     raw_output: output,
   };
 };
@@ -262,7 +322,7 @@ export const checkForUpdates = async (req, res) => {
 
     const updateInfo = parseUpdateCheckOutput(result.output);
 
-    res.json({
+    return res.json({
       ...updateInfo,
       last_checked: new Date().toISOString(),
     });
@@ -270,9 +330,9 @@ export const checkForUpdates = async (req, res) => {
     log.monitoring.error('Error checking for updates', {
       error: error.message,
       stack: error.stack,
-      format,
+      format: req.query.format,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to check for updates',
       details: error.message,
     });
@@ -379,7 +439,7 @@ export const installUpdates = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message:
         packages.length > 0
@@ -394,11 +454,11 @@ export const installUpdates = async (req, res) => {
     log.api.error('Error creating system update task', {
       error: error.message,
       stack: error.stack,
-      packages,
-      backup_be,
-      created_by,
+      packages: req.body?.packages,
+      backup_be: req.body?.backup_be,
+      created_by: req.body?.created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create system update task',
       details: error.message,
     });
@@ -486,7 +546,7 @@ export const getUpdateHistory = async (req, res) => {
       }
     }
 
-    res.json({
+    return res.json({
       history,
       total: history.length,
       limit: parseInt(limit),
@@ -497,10 +557,10 @@ export const getUpdateHistory = async (req, res) => {
     log.monitoring.error('Error getting update history', {
       error: error.message,
       stack: error.stack,
-      limit,
-      operation,
+      limit: req.query.limit,
+      operation: req.query.operation,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get update history',
       details: error.message,
     });
@@ -581,7 +641,7 @@ export const refreshMetadata = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message:
         publishers.length > 0
@@ -595,11 +655,11 @@ export const refreshMetadata = async (req, res) => {
     log.api.error('Error creating metadata refresh task', {
       error: error.message,
       stack: error.stack,
-      full,
-      publishers,
-      created_by,
+      full: req.body?.full,
+      publishers: req.body?.publishers,
+      created_by: req.body?.created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create metadata refresh task',
       details: error.message,
     });
