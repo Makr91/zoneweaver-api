@@ -1,5 +1,5 @@
 import os from 'os';
-import pty from 'node-pty';
+import pty from '@homebridge/node-pty-prebuilt-multiarch';
 import ZloginSessions from '../models/ZloginSessionModel.js';
 import { Op } from 'sequelize';
 import Zones from '../models/ZoneModel.js';
