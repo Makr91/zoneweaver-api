@@ -29,7 +29,7 @@
     "@lydell/node-pty": "^1.1.0",
     "@jedithepro/system-info": "^3.0.0",
     "axios": "^1.12.2",
-    "bcryptjs": "^3.0.2",
+    "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "express": "^5.1.0",
