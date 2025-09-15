@@ -153,6 +153,11 @@ const Artifact = db.define(
       },
       comment: 'Algorithm used for checksum calculation',
     },
+    checksum_verified: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      comment: 'Checksum verification status: true=verified, false=mismatch, null=not verified',
+    },
     source_url: {
       type: DataTypes.TEXT,
       allowNull: true,
@@ -167,16 +172,6 @@ const Artifact = db.define(
       type: DataTypes.DATE,
       allowNull: true,
       comment: 'Last time file existence was verified on filesystem',
-    },
-    created_at: {
-      type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW,
-      comment: 'Timestamp when record was created',
-    },
-    updated_at: {
-      type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW,
-      comment: 'Timestamp when record was last updated',
     },
   },
   {

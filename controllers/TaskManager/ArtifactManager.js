@@ -10,15 +10,578 @@ import ArtifactStorageLocation from '../../models/ArtifactStorageLocationModel.j
 import Artifact from '../../models/ArtifactModel.js';
 import Tasks from '../../models/TaskModel.js';
 import { Op } from 'sequelize';
-import {
-  listDirectory,
-  getMimeType,
-} from '../../lib/FileSystemManager.js';
+import { listDirectory, getMimeType } from '../../lib/FileSystemManager.js';
 
 /**
  * Artifact Manager for Artifact Operations
  * Handles artifact downloads, scans, file operations, and upload processing
  */
+
+/**
+ * Process a single download task for race condition protection
+ * @param {Object} downloadTask - Download task object
+ * @param {Object} location - Storage location object
+ * @returns {Promise<string|null>} Target path if task matches location, null otherwise
+ */
+const processDownloadTask = async (downloadTask, location) => {
+  log.artifact.debug('Race condition protection: processing download task', {
+    task_id: downloadTask.id,
+    operation: downloadTask.operation,
+    metadata_length: downloadTask.metadata?.length,
+  });
+
+  try {
+    const downloadMetadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(downloadTask.metadata, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { storage_location_id, filename, url } = downloadMetadata;
+
+    log.artifact.debug('Race condition protection: parsed download metadata', {
+      task_id: downloadTask.id,
+      download_storage_location_id: storage_location_id,
+      scan_location_id: location.id,
+      storage_location_match: storage_location_id === location.id,
+      filename,
+      url: url?.substring(0, 100),
+    });
+
+    if (storage_location_id === location.id) {
+      let finalFilename = filename;
+      if (!finalFilename) {
+        const urlPath = new URL(url).pathname;
+        finalFilename = path.basename(urlPath) || `download_${Date.now()}`;
+      }
+      const targetPath = path.join(location.path, finalFilename);
+
+      log.artifact.debug('Race condition protection: added downloading path', {
+        task_id: downloadTask.id,
+        final_filename: finalFilename,
+        target_path: targetPath,
+      });
+
+      return targetPath;
+    }
+
+    return null;
+  } catch (parseError) {
+    log.artifact.error('Race condition protection: failed to parse download task metadata', {
+      task_id: downloadTask.id,
+      error: parseError.message,
+      metadata_preview: downloadTask.metadata?.substring(0, 200),
+    });
+    return null;
+  }
+};
+
+/**
+ * Get downloading paths to avoid race conditions during scanning
+ * @param {Object} location - Storage location object
+ * @returns {Promise<Set>} Set of paths currently being downloaded
+ */
+const getDownloadingPaths = async location => {
+  const runningDownloadTasks = Array.from(global.runningTasks?.values() || []).filter(
+    task => task.operation === 'artifact_download_url'
+  );
+
+  log.artifact.debug('Race condition protection: checking running tasks', {
+    running_download_tasks: runningDownloadTasks.length,
+    location_id: location.id,
+    location_path: location.path,
+    running_task_ids: runningDownloadTasks.map(t => t.id),
+  });
+
+  // Process all download tasks in parallel
+  const pathPromises = runningDownloadTasks.map(downloadTask =>
+    processDownloadTask(downloadTask, location)
+  );
+  const targetPaths = await Promise.all(pathPromises);
+
+  const downloadingPaths = new Set(targetPaths.filter(targetPath => targetPath !== null));
+
+  if (downloadingPaths.size > 0) {
+    log.artifact.info('Race condition protection: found active downloads to skip during scan', {
+      active_downloads: downloadingPaths.size,
+      downloading_paths: Array.from(downloadingPaths),
+      location_name: location.name,
+    });
+  } else {
+    log.artifact.debug('Race condition protection: no active downloads found for this location', {
+      location_name: location.name,
+      total_running_downloads: runningDownloadTasks.length,
+    });
+  }
+
+  return downloadingPaths;
+};
+
+/**
+ * Process artifact files and update database records
+ * @param {Object} location - Storage location object
+ * @param {Array} artifactFiles - Array of artifact files
+ * @param {Set} downloadingPaths - Set of paths being downloaded
+ * @param {Set} existingPaths - Set of existing database paths
+ * @returns {Promise<{scanned: number, added: number, skipped: number}>}
+ */
+const processArtifactFiles = async (location, artifactFiles, downloadingPaths, existingPaths) => {
+  const filesToCreate = [];
+  const pathsToUpdate = [];
+  let skipped = 0;
+
+  // First pass: categorize files (no await needed)
+  for (const file of artifactFiles) {
+    log.artifact.debug('Race condition protection: checking file against downloading paths', {
+      file_path: file.path,
+      downloading_paths_count: downloadingPaths.size,
+      should_skip: downloadingPaths.has(file.path),
+      downloading_paths: Array.from(downloadingPaths),
+      file_exists_in_db: existingPaths.has(file.path),
+    });
+
+    if (downloadingPaths.has(file.path)) {
+      log.artifact.info('Race condition protection: skipping file being downloaded', {
+        filename: file.name,
+        path: file.path,
+        location_name: location.name,
+      });
+      skipped++;
+      continue;
+    }
+
+    if (!existingPaths.has(file.path)) {
+      const extension = path.extname(file.name).toLowerCase();
+      const mimeType = getMimeType(file.path);
+
+      log.artifact.debug('Race condition protection: creating new artifact record', {
+        filename: file.name,
+        path: file.path,
+        size: file.size,
+        extension,
+        location_name: location.name,
+      });
+
+      filesToCreate.push({
+        storage_location_id: location.id,
+        filename: file.name,
+        path: file.path,
+        size: file.size || 0,
+        file_type: location.type,
+        extension,
+        mime_type: mimeType,
+        checksum: null,
+        checksum_algorithm: null,
+        source_url: null,
+        discovered_at: new Date(),
+        last_verified: new Date(),
+      });
+    } else {
+      pathsToUpdate.push(file.path);
+    }
+  }
+
+  // Second pass: Execute database operations in parallel
+  const operations = [];
+
+  if (filesToCreate.length > 0) {
+    operations.push(Artifact.bulkCreate(filesToCreate));
+  }
+
+  if (pathsToUpdate.length > 0) {
+    operations.push(
+      Artifact.update(
+        { last_verified: new Date() },
+        { where: { path: { [Op.in]: pathsToUpdate } } }
+      )
+    );
+  }
+
+  // Execute all database operations in parallel
+  await Promise.all(operations);
+
+  const scanned = artifactFiles.length - skipped;
+  const added = filesToCreate.length;
+
+  if (added > 0) {
+    log.artifact.debug('Bulk created new artifacts', {
+      count: added,
+      location_name: location.name,
+    });
+  }
+
+  return { scanned, added, skipped };
+};
+
+/**
+ * Remove orphaned artifacts from database
+ * @param {Array} existingArtifacts - Array of existing artifacts
+ * @param {Set} currentPaths - Set of current file paths
+ * @returns {Promise<number>} Number of removed artifacts
+ */
+const removeOrphanedArtifacts = async (existingArtifacts, currentPaths) => {
+  // Collect orphaned artifact IDs (no await needed)
+  const orphanedIds = existingArtifacts
+    .filter(artifact => !currentPaths.has(artifact.path))
+    .map(artifact => {
+      log.artifact.debug('Removed orphaned artifact', {
+        filename: artifact.filename,
+        path: artifact.path,
+      });
+      return artifact.id;
+    });
+
+  // Bulk delete all orphaned artifacts in single operation
+  if (orphanedIds.length > 0) {
+    await Artifact.destroy({
+      where: { id: { [Op.in]: orphanedIds } },
+    });
+  }
+
+  return orphanedIds.length;
+};
+
+/**
+ * Update storage location statistics
+ * @param {Object} location - Storage location object
+ * @returns {Promise<{totalFiles: number, totalSize: number}>}
+ */
+const updateStorageLocationStats = async location => {
+  const totalFiles = await Artifact.count({
+    where: { storage_location_id: location.id },
+  });
+
+  const totalSize =
+    (await Artifact.sum('size', {
+      where: { storage_location_id: location.id },
+    })) || 0;
+
+  await location.update({
+    file_count: totalFiles,
+    total_size: totalSize,
+  });
+
+  return { totalFiles, totalSize };
+};
+
+/**
+ * Scan a storage location for artifacts
+ * @param {Object} location - Storage location object
+ * @param {Object} options - Scan options
+ * @returns {Promise<{scanned: number, added: number, removed: number}>}
+ */
+export const scanStorageLocation = async (location, options = {}) => {
+  const { verify_checksums = false, remove_orphaned = false } = options;
+
+  log.artifact.debug('Scanning storage location', {
+    location_id: location.id,
+    location_name: location.name,
+    location_path: location.path,
+    verify_checksums,
+    remove_orphaned,
+  });
+
+  try {
+    const artifactConfig = config.getArtifactStorage();
+    const supportedExtensions =
+      artifactConfig?.scanning?.supported_extensions?.[location.type] || [];
+
+    const downloadingPaths = await getDownloadingPaths(location);
+
+    const items = await listDirectory(location.path);
+    const files = items.filter(item => !item.isDirectory);
+    const artifactFiles = files.filter(file =>
+      supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext.toLowerCase()))
+    );
+
+    log.artifact.debug('Found potential artifacts', {
+      total_files: files.length,
+      artifact_files: artifactFiles.length,
+      supported_extensions: supportedExtensions,
+    });
+
+    const existingArtifacts = await Artifact.findAll({
+      where: { storage_location_id: location.id },
+    });
+
+    const existingPaths = new Set(existingArtifacts.map(a => a.path));
+    const currentPaths = new Set(artifactFiles.map(f => f.path));
+
+    const { scanned, added, skipped } = await processArtifactFiles(
+      location,
+      artifactFiles,
+      downloadingPaths,
+      existingPaths
+    );
+
+    const removed = remove_orphaned
+      ? await removeOrphanedArtifacts(existingArtifacts, currentPaths)
+      : 0;
+
+    const { totalFiles } = await updateStorageLocationStats(location);
+
+    log.artifact.info('Storage location scan completed', {
+      location_name: location.name,
+      scanned,
+      added,
+      removed,
+      skipped,
+      total_files: totalFiles,
+    });
+
+    return { scanned, added, removed };
+  } catch (error) {
+    log.artifact.error('Storage location scan failed', {
+      location_id: location.id,
+      location_name: location.name,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Setup download file and permissions
+ * @param {string} final_path - Final file path
+ * @returns {Promise<void>}
+ */
+const setupDownloadFile = async final_path => {
+  log.task.debug('Pre-creating download file with pfexec', { final_path });
+
+  const createResult = await executeCommand(`pfexec touch "${final_path}"`);
+  if (!createResult.success) {
+    throw new Error(`Failed to pre-create file: ${createResult.error}`);
+  }
+
+  const chmodResult = await executeCommand(`pfexec chmod 666 "${final_path}"`);
+  if (!chmodResult.success) {
+    throw new Error(`Failed to set file permissions: ${chmodResult.error}`);
+  }
+
+  log.task.debug('File pre-created successfully with proper permissions');
+};
+
+/**
+ * Perform the actual download with progress tracking
+ * @param {string} url - Download URL
+ * @param {string} final_path - Final file path
+ * @param {number} downloadTimeout - Download timeout in ms
+ * @returns {Promise<{downloadedBytes: number, downloadTime: number}>}
+ */
+const performDownload = async (url, final_path, downloadTimeout) => {
+  const response = await axios({
+    method: 'get',
+    url,
+    responseType: 'stream',
+    timeout: downloadTimeout,
+  });
+
+  const contentLength = response.headers['content-length'];
+  const fileSize = contentLength ? parseInt(contentLength) : null;
+
+  log.task.info('Download response received', {
+    status: response.status,
+    content_length: fileSize ? `${Math.round(fileSize / 1024 / 1024)}MB` : 'unknown',
+    content_type: response.headers['content-type'],
+  });
+
+  const fileStream = fs.createWriteStream(final_path);
+  const startTime = Date.now();
+  let downloadedBytes = 0;
+  let lastProgressUpdate = 0;
+
+  const artifactConfig = config.getArtifactStorage();
+
+  response.data.on('data', chunk => {
+    downloadedBytes += chunk.length;
+
+    const progressUpdateInterval = (artifactConfig.download?.progress_update_seconds || 10) * 1000;
+    const now = Date.now();
+    if (fileSize && now - lastProgressUpdate > progressUpdateInterval) {
+      lastProgressUpdate = now;
+
+      setImmediate(async () => {
+        try {
+          const progress = (downloadedBytes / fileSize) * 100;
+          const speedMbps = downloadedBytes / 1024 / 1024 / ((now - startTime) / 1000);
+          const remainingBytes = fileSize - downloadedBytes;
+          const etaSeconds = remainingBytes / (downloadedBytes / ((now - startTime) / 1000));
+
+          const taskToUpdate = await Tasks.findOne({
+            where: {
+              operation: 'artifact_download_url',
+              status: 'running',
+              metadata: { [Op.like]: `%${url.substring(0, 50)}%` },
+            },
+          });
+
+          if (taskToUpdate) {
+            await taskToUpdate.update({
+              progress_percent: Math.round(progress * 100) / 100,
+              progress_info: {
+                downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
+                total_mb: Math.round(fileSize / 1024 / 1024),
+                speed_mbps: Math.round(speedMbps * 100) / 100,
+                eta_seconds: isFinite(etaSeconds) ? Math.round(etaSeconds) : null,
+                status: 'downloading',
+              },
+            });
+          }
+        } catch (progressError) {
+          log.task.debug('Progress update failed', { error: progressError.message });
+        }
+      });
+    }
+  });
+
+  response.data.pipe(fileStream);
+
+  await new Promise((resolve, reject) => {
+    fileStream.on('finish', resolve);
+    fileStream.on('error', reject);
+    response.data.on('error', reject);
+  });
+
+  const downloadTime = Date.now() - startTime;
+
+  log.task.info('Download completed - starting post-processing', {
+    url,
+    downloaded_bytes: downloadedBytes,
+    downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
+    duration_ms: downloadTime,
+    speed_mbps: Math.round((downloadedBytes / 1024 / 1024 / (downloadTime / 1000)) * 100) / 100,
+  });
+
+  return { downloadedBytes, downloadTime };
+};
+
+/**
+ * Calculate and verify checksum
+ * @param {string} final_path - Final file path
+ * @param {string} checksum_algorithm - Checksum algorithm
+ * @param {string} expectedChecksum - Expected checksum (optional)
+ * @returns {Promise<{calculatedChecksum: string, checksumVerified: boolean|null}>}
+ */
+const calculateAndVerifyChecksum = async (final_path, checksum_algorithm, expectedChecksum) => {
+  log.task.debug('Calculating checksum post-download');
+
+  const hash = crypto.createHash(checksum_algorithm);
+  const readStream = fs.createReadStream(final_path);
+
+  await new Promise((resolve, reject) => {
+    readStream.on('data', chunk => hash.update(chunk));
+    readStream.on('end', resolve);
+    readStream.on('error', reject);
+  });
+
+  const calculatedChecksum = hash.digest('hex');
+  let checksumVerified = null;
+
+  if (expectedChecksum) {
+    checksumVerified = calculatedChecksum === expectedChecksum;
+
+    if (!checksumVerified) {
+      await executeCommand(`pfexec rm -f "${final_path}"`);
+      throw new Error(
+        `Checksum verification failed. Expected: ${expectedChecksum}, Got: ${calculatedChecksum}`
+      );
+    }
+    log.task.info('Checksum verification passed');
+  }
+
+  return { calculatedChecksum, checksumVerified };
+};
+
+/**
+ * Create artifact database record
+ * @param {Object} params - Parameters object
+ * @returns {Promise<void>}
+ */
+const createArtifactRecord = async params => {
+  const {
+    storageLocation,
+    finalFilename,
+    final_path,
+    downloadedBytes,
+    calculatedChecksum,
+    checksum_algorithm,
+    checksumVerified,
+    url,
+  } = params;
+
+  const extension = path.extname(finalFilename).toLowerCase();
+  const mimeType = getMimeType(final_path);
+
+  if (!extension) {
+    throw new Error(`File has no extension - cannot determine artifact type: ${finalFilename}`);
+  }
+
+  try {
+    const [artifact, created] = await Artifact.findOrCreate({
+      where: { path: final_path },
+      defaults: {
+        storage_location_id: storageLocation.id,
+        filename: finalFilename,
+        path: final_path,
+        size: downloadedBytes,
+        file_type: storageLocation.type,
+        extension,
+        mime_type: mimeType,
+        checksum: calculatedChecksum,
+        checksum_algorithm,
+        checksum_verified: checksumVerified,
+        source_url: url,
+        discovered_at: new Date(),
+        last_verified: new Date(),
+      },
+    });
+
+    if (!created) {
+      log.task.info('Artifact record already exists, updating with download data', {
+        filename: finalFilename,
+        existing_source: artifact.source_url || 'scan',
+        new_source: url,
+        checksum_verified: checksumVerified,
+      });
+
+      await artifact.update({
+        filename: finalFilename,
+        size: downloadedBytes,
+        checksum: calculatedChecksum,
+        checksum_algorithm,
+        checksum_verified: checksumVerified,
+        source_url: url,
+        last_verified: new Date(),
+      });
+    } else {
+      log.task.debug('Created new artifact database record', {
+        filename: finalFilename,
+        path: final_path,
+        checksum_verified: checksumVerified,
+      });
+    }
+  } catch (dbError) {
+    log.task.error('Failed to create/update artifact database record', {
+      storage_location_id: storageLocation.id,
+      filename: finalFilename,
+      path: final_path,
+      size: downloadedBytes,
+      file_type: storageLocation.type,
+      extension,
+      mime_type: mimeType,
+      error: dbError.message,
+      validation_errors: dbError.errors || null,
+    });
+
+    await executeCommand(`pfexec rm -f "${final_path}"`);
+    throw new Error(`Download completed but failed to create database record: ${dbError.message}`);
+  }
+};
 
 /**
  * Execute artifact download from URL task
@@ -57,7 +620,6 @@ export const executeArtifactDownloadTask = async metadataJson => {
       overwrite_existing,
     });
 
-    // Get storage location
     const storageLocation = await ArtifactStorageLocation.findByPk(storage_location_id);
 
     if (!storageLocation || !storageLocation.enabled) {
@@ -67,7 +629,6 @@ export const executeArtifactDownloadTask = async metadataJson => {
       };
     }
 
-    // Determine filename from URL if not provided
     let finalFilename = filename;
     if (!finalFilename) {
       const urlPath = new URL(url).pathname;
@@ -76,7 +637,6 @@ export const executeArtifactDownloadTask = async metadataJson => {
 
     const final_path = path.join(storageLocation.path, finalFilename);
 
-    // Check if file already exists
     if (!overwrite_existing && fs.existsSync(final_path)) {
       return {
         success: false,
@@ -90,246 +650,47 @@ export const executeArtifactDownloadTask = async metadataJson => {
       storage_location: storageLocation.name,
     });
 
-    try {
-      // Pre-create file with pfexec and set writable permissions (same pattern as uploads)
-      log.task.debug('Pre-creating download file with pfexec', {
-        final_path,
-      });
+    await setupDownloadFile(final_path);
 
-      const createResult = await executeCommand(`pfexec touch "${final_path}"`);
-      if (!createResult.success) {
-        throw new Error(`Failed to pre-create file: ${createResult.error}`);
-      }
+    const artifactConfig = config.getArtifactStorage();
+    const downloadTimeout = (artifactConfig.download?.timeout_seconds || 60) * 1000;
 
-      // Set permissions so service user can write to the file
-      const chmodResult = await executeCommand(`pfexec chmod 666 "${final_path}"`);
-      if (!chmodResult.success) {
-        throw new Error(`Failed to set file permissions: ${chmodResult.error}`);
-      }
+    const { downloadedBytes, downloadTime } = await performDownload(
+      url,
+      final_path,
+      downloadTimeout
+    );
 
-      log.task.debug('File pre-created successfully with proper permissions');
+    const { calculatedChecksum, checksumVerified } = await calculateAndVerifyChecksum(
+      final_path,
+      checksum_algorithm,
+      checksum
+    );
 
-      // Get artifact configuration for timeouts
-      const artifactConfig = config.getArtifactStorage();
-      const downloadTimeout = (artifactConfig.download?.timeout_seconds || 60) * 1000;
+    await createArtifactRecord({
+      storageLocation,
+      finalFilename,
+      final_path,
+      downloadedBytes,
+      calculatedChecksum,
+      checksum_algorithm,
+      checksumVerified,
+      url,
+    });
 
-      // Use axios for native streaming performance (like browser downloads)
-      const response = await axios({
-        method: 'get',
-        url,
-        responseType: 'stream',
-        timeout: downloadTimeout,
-      });
+    await storageLocation.increment('file_count', { by: 1 });
+    await storageLocation.increment('total_size', { by: downloadedBytes });
+    await storageLocation.update({ last_scan_at: new Date() });
 
-      const contentLength = response.headers['content-length'];
-      const fileSize = contentLength ? parseInt(contentLength) : null;
-
-      log.task.info('Download response received', {
-        status: response.status,
-        content_length: fileSize ? `${Math.round(fileSize / 1024 / 1024)}MB` : 'unknown',
-        content_type: response.headers['content-type'],
-      });
-
-      // Create file stream and track progress
-      const fileStream = fs.createWriteStream(final_path);
-      const startTime = Date.now();
-      let downloadedBytes = 0;
-      let lastProgressUpdate = 0;
-
-      log.task.debug('Starting optimized axios stream download with progress tracking');
-
-      // Track download progress via stream events (no checksum calculation)
-      response.data.on('data', chunk => {
-        downloadedBytes += chunk.length;
-
-        // Update database at configurable interval
-        const progressUpdateInterval =
-          (artifactConfig.download?.progress_update_seconds || 10) * 1000;
-        const now = Date.now();
-        if (fileSize && now - lastProgressUpdate > progressUpdateInterval) {
-          lastProgressUpdate = now;
-
-          // Async database update - don't block the download stream
-          setImmediate(async () => {
-            try {
-              const progress = (downloadedBytes / fileSize) * 100;
-              const speedMbps = downloadedBytes / 1024 / 1024 / ((now - startTime) / 1000);
-              const remainingBytes = fileSize - downloadedBytes;
-              const etaSeconds = remainingBytes / (downloadedBytes / ((now - startTime) / 1000));
-
-              const taskToUpdate = await Tasks.findOne({
-                where: {
-                  operation: 'artifact_download_url',
-                  status: 'running',
-                  metadata: { [Op.like]: `%${url.substring(0, 50)}%` },
-                },
-              });
-
-              if (taskToUpdate) {
-                await taskToUpdate.update({
-                  progress_percent: Math.round(progress * 100) / 100,
-                  progress_info: {
-                    downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
-                    total_mb: Math.round(fileSize / 1024 / 1024),
-                    speed_mbps: Math.round(speedMbps * 100) / 100,
-                    eta_seconds: isFinite(etaSeconds) ? Math.round(etaSeconds) : null,
-                    status: 'downloading',
-                  },
-                });
-              }
-            } catch (progressError) {
-              // Don't let progress updates block the download
-              log.task.debug('Progress update failed', { error: progressError.message });
-            }
-          });
-        }
-      });
-
-      // Pure native streaming - maximum performance
-      response.data.pipe(fileStream);
-
-      // Wait for completion
-      await new Promise((resolve, reject) => {
-        fileStream.on('finish', resolve);
-        fileStream.on('error', reject);
-        response.data.on('error', reject);
-      });
-
-      const downloadTime = Date.now() - startTime;
-
-      log.task.info('Download completed - starting post-processing', {
-        url,
-        downloaded_bytes: downloadedBytes,
-        downloaded_mb: Math.round(downloadedBytes / 1024 / 1024),
-        duration_ms: downloadTime,
-        speed_mbps: Math.round((downloadedBytes / 1024 / 1024 / (downloadTime / 1000)) * 100) / 100,
-      });
-
-      // ALWAYS calculate checksum after download (but not during)
-      log.task.debug('Calculating checksum post-download');
-
-      const hash = crypto.createHash(checksum_algorithm);
-      const readStream = fs.createReadStream(final_path); // Pure streaming - let Node.js optimize
-
-      await new Promise((resolve, reject) => {
-        readStream.on('data', chunk => hash.update(chunk));
-        readStream.on('end', resolve);
-        readStream.on('error', reject);
-      });
-
-      const calculatedChecksum = hash.digest('hex');
-      let checksumVerified = false;
-
-      // Verify checksum if provided
-      if (checksum) {
-        checksumVerified = calculatedChecksum === checksum;
-
-        if (!checksumVerified) {
-          // Delete the invalid file
-          await executeCommand(`pfexec rm -f "${final_path}"`);
-          return {
-            success: false,
-            error: `Checksum verification failed. Expected: ${checksum}, Got: ${calculatedChecksum}`,
-            expected_checksum: checksum,
-            calculated_checksum: calculatedChecksum,
-          };
-        }
-        log.task.info('Checksum verification passed');
-      }
-
-      // Create artifact database record
-      const extension = path.extname(finalFilename).toLowerCase();
-      const mimeType = getMimeType(final_path);
-
-      // Validate extension is not empty (required field)
-      if (!extension) {
-        return {
-          success: false,
-          error: `File has no extension - cannot determine artifact type: ${finalFilename}`,
-        };
-      }
-
-      try {
-        // Use findOrCreate to handle race condition with scan tasks
-        const [artifact, created] = await Artifact.findOrCreate({
-          where: { path: final_path },
-          defaults: {
-            storage_location_id: storageLocation.id,
-            filename: finalFilename,
-            path: final_path,
-            size: downloadedBytes,
-            file_type: storageLocation.type,
-            extension,
-            mime_type: mimeType,
-            checksum: calculatedChecksum,
-            checksum_algorithm,
-            source_url: url,
-            discovered_at: new Date(),
-            last_verified: new Date(),
-          },
-        });
-
-        if (!created) {
-          // Record already exists (likely created by scan), update it with complete download data
-          log.task.info('Artifact record already exists, updating with download data', {
-            filename: finalFilename,
-            existing_source: artifact.source_url || 'scan',
-            new_source: url,
-          });
-
-          await artifact.update({
-            filename: finalFilename,
-            size: downloadedBytes,
-            checksum: calculatedChecksum,
-            checksum_algorithm,
-            source_url: url,
-            last_verified: new Date(),
-          });
-        } else {
-          log.task.debug('Created new artifact database record', {
-            filename: finalFilename,
-            path: final_path,
-          });
-        }
-      } catch (dbError) {
-        log.task.error('Failed to create/update artifact database record', {
-          storage_location_id: storageLocation.id,
-          filename: finalFilename,
-          path: final_path,
-          size: downloadedBytes,
-          file_type: storageLocation.type,
-          extension,
-          mime_type: mimeType,
-          error: dbError.message,
-          validation_errors: dbError.errors || null,
-        });
-
-        // Clean up downloaded file since database record failed
-        await executeCommand(`pfexec rm -f "${final_path}"`);
-
-        return {
-          success: false,
-          error: `Download completed but failed to create database record: ${dbError.message}`,
-        };
-      }
-
-      // Update storage location stats
-      await storageLocation.increment('file_count', { by: 1 });
-      await storageLocation.increment('total_size', { by: downloadedBytes });
-      await storageLocation.update({ last_scan_at: new Date() });
-
-      return {
-        success: true,
-        message: `Successfully downloaded ${finalFilename} (${Math.round(downloadedBytes / 1024 / 1024)}MB)${checksumVerified ? ' with verified checksum' : ''}`,
-        downloaded_bytes: downloadedBytes,
-        checksum_verified: checksumVerified,
-        checksum: calculatedChecksum,
-        final_path,
-        duration_ms: downloadTime,
-      };
-    } catch (downloadError) {
-      throw downloadError;
-    }
+    return {
+      success: true,
+      message: `Successfully downloaded ${finalFilename} (${Math.round(downloadedBytes / 1024 / 1024)}MB)${checksumVerified ? ' with verified checksum' : ''}`,
+      downloaded_bytes: downloadedBytes,
+      checksum_verified: checksumVerified,
+      checksum: calculatedChecksum,
+      final_path,
+      duration_ms: downloadTime,
+    };
   } catch (error) {
     log.task.error('Artifact download task exception', {
       error: error.message,
@@ -376,16 +737,13 @@ export const executeArtifactScanAllTask = async metadataJson => {
     let totalRemoved = 0;
     const errors = [];
 
-    for (const location of locations) {
+    // Process all locations in parallel for better performance
+    const scanPromises = locations.map(async location => {
       try {
         const scanResult = await scanStorageLocation(location, {
           verify_checksums,
           remove_orphaned,
         });
-
-        totalScanned += scanResult.scanned;
-        totalAdded += scanResult.added;
-        totalRemoved += scanResult.removed;
 
         // Update location stats
         await location.update({
@@ -393,9 +751,10 @@ export const executeArtifactScanAllTask = async metadataJson => {
           scan_errors: 0,
           last_error_message: null,
         });
+
+        return { success: true, scanResult, location };
       } catch (locationError) {
         const errorMsg = `Failed to scan ${location.name}: ${locationError.message}`;
-        errors.push(errorMsg);
 
         await location.update({
           scan_errors: location.scan_errors + 1,
@@ -407,6 +766,21 @@ export const executeArtifactScanAllTask = async metadataJson => {
           location_name: location.name,
           error: locationError.message,
         });
+
+        return { success: false, error: errorMsg, location };
+      }
+    });
+
+    const scanResults = await Promise.all(scanPromises);
+
+    // Aggregate results
+    for (const result of scanResults) {
+      if (result.success) {
+        totalScanned += result.scanResult.scanned;
+        totalAdded += result.scanResult.added;
+        totalRemoved += result.scanResult.removed;
+      } else {
+        errors.push(result.error);
       }
     }
 
@@ -531,6 +905,32 @@ export const executeArtifactScanLocationTask = async metadataJson => {
 };
 
 /**
+ * Process artifact deletion results and generate summary
+ * @param {Array} artifacts - Original artifacts array
+ * @param {Array} fileResults - File deletion results
+ * @param {Array} artifactIds - Artifact IDs array
+ * @returns {Object} Processing summary
+ */
+const processArtifactDeletionResults = (artifacts, fileResults, artifactIds) => {
+  const errors = [];
+  let filesDeleted = 0;
+
+  if (fileResults.length > 0) {
+    filesDeleted = fileResults.filter(r => r.success).length;
+    fileResults
+      .filter(r => !r.success)
+      .forEach(r => {
+        errors.push(r.error);
+      });
+  }
+
+  const recordsRemoved = artifactIds.length;
+  const successCount = artifacts.length - errors.length;
+
+  return { errors, filesDeleted, recordsRemoved, successCount };
+};
+
+/**
  * Execute artifact file deletion task
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -574,52 +974,100 @@ export const executeArtifactDeleteFileTask = async metadataJson => {
       };
     }
 
-    let filesDeleted = 0;
-    let recordsRemoved = 0;
-    const errors = [];
+    // Prepare parallel operations
+    const fileDeletePromises = [];
+    const artifactIds = [];
+    const storageLocationUpdates = new Map();
 
+    // First pass: prepare operations (no await)
     for (const artifact of artifacts) {
-      try {
-        // Delete physical file if requested
-        if (delete_files) {
-          if (fs.existsSync(artifact.path)) {
-            if (force) {
-              await executeCommand(`pfexec rm -f "${artifact.path}"`);
-            } else {
-              await executeCommand(`pfexec rm "${artifact.path}"`);
-            }
-            filesDeleted++;
-            log.task.debug('Deleted artifact file', {
-              filename: artifact.filename,
-              path: artifact.path,
-            });
-          } else {
-            log.task.warn('Artifact file not found on disk', {
-              filename: artifact.filename,
-              path: artifact.path,
-            });
-          }
-        }
+      // Prepare file deletion if requested
+      if (delete_files && fs.existsSync(artifact.path)) {
+        const command = force ? `pfexec rm -f "${artifact.path}"` : `pfexec rm "${artifact.path}"`;
 
-        // Remove database record
-        await artifact.destroy();
-        recordsRemoved++;
-
-        // Update storage location stats
-        if (artifact.storage_location) {
-          await artifact.storage_location.decrement('file_count', { by: 1 });
-          await artifact.storage_location.decrement('total_size', { by: artifact.size });
-        }
-      } catch (deleteError) {
-        const errorMsg = `Failed to delete ${artifact.filename}: ${deleteError.message}`;
-        errors.push(errorMsg);
-        log.task.warn('Artifact deletion failed', {
-          artifact_id: artifact.id,
+        fileDeletePromises.push(
+          executeCommand(command)
+            .then(result => {
+              if (result.success) {
+                log.task.debug('Deleted artifact file', {
+                  filename: artifact.filename,
+                  path: artifact.path,
+                });
+                return { success: true, filename: artifact.filename };
+              }
+              throw new Error(`Failed to delete ${artifact.filename}: ${result.error}`);
+            })
+            .catch(error => {
+              log.task.warn('Artifact file deletion failed', {
+                artifact_id: artifact.id,
+                filename: artifact.filename,
+                error: error.message,
+              });
+              return { success: false, filename: artifact.filename, error: error.message };
+            })
+        );
+      } else if (delete_files) {
+        log.task.warn('Artifact file not found on disk', {
           filename: artifact.filename,
-          error: deleteError.message,
+          path: artifact.path,
         });
       }
+
+      // Collect artifact IDs for bulk database deletion
+      artifactIds.push(artifact.id);
+
+      // Aggregate storage location updates
+      if (artifact.storage_location) {
+        const locationId = artifact.storage_location.id;
+        if (!storageLocationUpdates.has(locationId)) {
+          storageLocationUpdates.set(locationId, {
+            location: artifact.storage_location,
+            file_count: 0,
+            total_size: 0,
+          });
+        }
+        const update = storageLocationUpdates.get(locationId);
+        update.file_count += 1;
+        update.total_size += artifact.size;
+      }
     }
+
+    // Second pass: Execute all operations in parallel
+    const operations = [];
+
+    // Add file deletion promises
+    if (fileDeletePromises.length > 0) {
+      operations.push(Promise.all(fileDeletePromises));
+    }
+
+    // Add bulk database deletion
+    if (artifactIds.length > 0) {
+      operations.push(
+        Artifact.destroy({
+          where: { id: { [Op.in]: artifactIds } },
+        })
+      );
+    }
+
+    // Add storage location updates
+    const locationUpdatePromises = Array.from(storageLocationUpdates.values()).map(async update => {
+      await update.location.decrement('file_count', { by: update.file_count });
+      await update.location.decrement('total_size', { by: update.total_size });
+    });
+    if (locationUpdatePromises.length > 0) {
+      operations.push(Promise.all(locationUpdatePromises));
+    }
+
+    // Execute all operations in parallel
+    const results = await Promise.all(operations);
+
+    // Process results using helper function
+    const fileResults = fileDeletePromises.length > 0 ? results[0] || [] : [];
+    const { errors, filesDeleted, recordsRemoved, successCount } = processArtifactDeletionResults(
+      artifacts,
+      fileResults,
+      artifactIds
+    );
 
     if (errors.length > 0 && errors.length === artifacts.length) {
       return {
@@ -629,7 +1077,6 @@ export const executeArtifactDeleteFileTask = async metadataJson => {
       };
     }
 
-    const successCount = artifacts.length - errors.length;
     let message = `Successfully deleted ${successCount}/${artifacts.length} artifacts`;
 
     if (delete_files) {
@@ -716,7 +1163,6 @@ export const executeArtifactDeleteFolderTask = async metadataJson => {
       remove_db_records,
     });
 
-    const removedFiles = 0;
     let removedRecords = 0;
 
     // Remove database records first if requested
@@ -890,6 +1336,9 @@ export const executeArtifactUploadProcessTask = async metadataJson => {
       checksum: `${calculatedChecksum.substring(0, 16)}...`,
     });
 
+    // Determine checksum verification status
+    let checksumVerified = null; // Default: no verification performed
+
     // Scenario 1: User provided checksum - verify and fail if mismatch
     if (checksum) {
       if (calculatedChecksum !== checksum) {
@@ -898,6 +1347,7 @@ export const executeArtifactUploadProcessTask = async metadataJson => {
           error: `Checksum verification failed. Expected: ${checksum}, Got: ${calculatedChecksum}`,
         };
       }
+      checksumVerified = true; // User checksum verified successfully
       log.task.info('Upload checksum verification passed');
     }
 
@@ -905,7 +1355,7 @@ export const executeArtifactUploadProcessTask = async metadataJson => {
     const extension = path.extname(original_name).toLowerCase();
     const mimeType = getMimeType(final_path);
 
-    // Create artifact database record with single checksum field
+    // Create artifact database record with checksum verification status
     await Artifact.create({
       storage_location_id: storageLocation.id,
       filename: original_name,
@@ -916,6 +1366,7 @@ export const executeArtifactUploadProcessTask = async metadataJson => {
       mime_type: mimeType,
       checksum: calculatedChecksum,
       checksum_algorithm,
+      checksum_verified: checksumVerified,
       source_url: null,
       discovered_at: new Date(),
       last_verified: new Date(),
@@ -963,252 +1414,5 @@ export const executeArtifactUploadProcessTask = async metadataJson => {
       stack: error.stack,
     });
     return { success: false, error: `Upload processing failed: ${error.message}` };
-  }
-};
-
-/**
- * Scan a storage location for artifacts
- * @param {Object} location - Storage location object
- * @param {Object} options - Scan options
- * @returns {Promise<{scanned: number, added: number, removed: number}>}
- */
-export const scanStorageLocation = async (location, options = {}) => {
-  const { verify_checksums = false, remove_orphaned = false } = options;
-
-  log.artifact.debug('Scanning storage location', {
-    location_id: location.id,
-    location_name: location.name,
-    location_path: location.path,
-    verify_checksums,
-    remove_orphaned,
-  });
-
-  try {
-    // Get supported extensions for this location type
-    const artifactConfig = config.getArtifactStorage();
-    const supportedExtensions =
-      artifactConfig?.scanning?.supported_extensions?.[location.type] || [];
-
-    // Get running download tasks to avoid race conditions
-    const runningDownloadTasks = Array.from(global.runningTasks?.values() || []).filter(
-      task => task.operation === 'artifact_download_url'
-    );
-
-    log.artifact.debug('Race condition protection: checking running tasks', {
-      running_download_tasks: runningDownloadTasks.length,
-      location_id: location.id,
-      location_path: location.path,
-      running_task_ids: runningDownloadTasks.map(t => t.id),
-    });
-
-    const downloadingPaths = new Set();
-    for (const downloadTask of runningDownloadTasks) {
-      log.artifact.debug('Race condition protection: processing download task', {
-        task_id: downloadTask.id,
-        operation: downloadTask.operation,
-        metadata_length: downloadTask.metadata?.length,
-      });
-
-      try {
-        const downloadMetadata = await new Promise((resolve, reject) => {
-          yj.parseAsync(downloadTask.metadata, (err, result) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(result);
-            }
-          });
-        });
-
-        const { storage_location_id, filename, url } = downloadMetadata;
-
-        log.artifact.debug('Race condition protection: parsed download metadata', {
-          task_id: downloadTask.id,
-          download_storage_location_id: storage_location_id,
-          scan_location_id: location.id,
-          storage_location_match: storage_location_id === location.id,
-          filename,
-          url: url?.substring(0, 100),
-        });
-
-        // If download targets this storage location
-        if (storage_location_id === location.id) {
-          // Calculate target path same way download does
-          let finalFilename = filename;
-          if (!finalFilename) {
-            const urlPath = new URL(url).pathname;
-            finalFilename = path.basename(urlPath) || `download_${Date.now()}`;
-          }
-          const targetPath = path.join(location.path, finalFilename);
-          downloadingPaths.add(targetPath);
-
-          log.artifact.debug('Race condition protection: added downloading path', {
-            task_id: downloadTask.id,
-            final_filename: finalFilename,
-            target_path: targetPath,
-            total_downloading_paths: downloadingPaths.size,
-          });
-        }
-      } catch (parseError) {
-        // Skip if can't parse metadata
-        log.artifact.error('Race condition protection: failed to parse download task metadata', {
-          task_id: downloadTask.id,
-          error: parseError.message,
-          metadata_preview: downloadTask.metadata?.substring(0, 200),
-        });
-        continue;
-      }
-    }
-
-    if (downloadingPaths.size > 0) {
-      log.artifact.info('Race condition protection: found active downloads to skip during scan', {
-        active_downloads: downloadingPaths.size,
-        downloading_paths: Array.from(downloadingPaths),
-        location_name: location.name,
-      });
-    } else {
-      log.artifact.debug('Race condition protection: no active downloads found for this location', {
-        location_name: location.name,
-        total_running_downloads: runningDownloadTasks.length,
-      });
-    }
-
-    // List directory contents
-    const items = await listDirectory(location.path);
-    const files = items.filter(item => !item.isDirectory);
-
-    // Filter files by supported extensions
-    const artifactFiles = files.filter(file =>
-      supportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext.toLowerCase()))
-    );
-
-    log.artifact.debug('Found potential artifacts', {
-      total_files: files.length,
-      artifact_files: artifactFiles.length,
-      supported_extensions: supportedExtensions,
-    });
-
-    // Get existing database records for this location
-    const existingArtifacts = await Artifact.findAll({
-      where: { storage_location_id: location.id },
-    });
-
-    const existingPaths = new Set(existingArtifacts.map(a => a.path));
-    const currentPaths = new Set(artifactFiles.map(f => f.path));
-
-    let scanned = 0;
-    let added = 0;
-    let removed = 0;
-    let skipped = 0;
-
-    // Add new artifacts (skip files being downloaded)
-    for (const file of artifactFiles) {
-      log.artifact.debug('Race condition protection: checking file against downloading paths', {
-        file_path: file.path,
-        downloading_paths_count: downloadingPaths.size,
-        should_skip: downloadingPaths.has(file.path),
-        downloading_paths: Array.from(downloadingPaths),
-        file_exists_in_db: existingPaths.has(file.path),
-      });
-
-      // Skip files that are currently being downloaded to prevent race condition
-      if (downloadingPaths.has(file.path)) {
-        log.artifact.info('Race condition protection: skipping file being downloaded', {
-          filename: file.name,
-          path: file.path,
-          location_name: location.name,
-        });
-        skipped++;
-        continue;
-      }
-
-      if (!existingPaths.has(file.path)) {
-        // New artifact found
-        const extension = path.extname(file.name).toLowerCase();
-        const mimeType = getMimeType(file.path);
-
-        log.artifact.debug('Race condition protection: creating new artifact record', {
-          filename: file.name,
-          path: file.path,
-          size: file.size,
-          extension,
-          location_name: location.name,
-        });
-
-        await Artifact.create({
-          storage_location_id: location.id,
-          filename: file.name,
-          path: file.path,
-          size: file.size || 0,
-          file_type: location.type,
-          extension,
-          mime_type: mimeType,
-          checksum: null,
-          checksum_algorithm: null,
-          source_url: null,
-          discovered_at: new Date(),
-          last_verified: new Date(),
-        });
-
-        added++;
-        log.artifact.debug('Added new artifact', {
-          filename: file.name,
-          path: file.path,
-          size: file.size,
-        });
-      } else {
-        // Update last_verified for existing artifacts
-        await Artifact.update({ last_verified: new Date() }, { where: { path: file.path } });
-      }
-      scanned++;
-    }
-
-    // Remove orphaned artifacts if requested
-    if (remove_orphaned) {
-      for (const existingArtifact of existingArtifacts) {
-        if (!currentPaths.has(existingArtifact.path)) {
-          await existingArtifact.destroy();
-          removed++;
-          log.artifact.debug('Removed orphaned artifact', {
-            filename: existingArtifact.filename,
-            path: existingArtifact.path,
-          });
-        }
-      }
-    }
-
-    // Update storage location stats
-    const totalFiles = await Artifact.count({
-      where: { storage_location_id: location.id },
-    });
-
-    const totalSize =
-      (await Artifact.sum('size', {
-        where: { storage_location_id: location.id },
-      })) || 0;
-
-    await location.update({
-      file_count: totalFiles,
-      total_size: totalSize,
-    });
-
-    log.artifact.info('Storage location scan completed', {
-      location_name: location.name,
-      scanned,
-      added,
-      removed,
-      skipped,
-      total_files: totalFiles,
-    });
-
-    return { scanned, added, removed };
-  } catch (error) {
-    log.artifact.error('Storage location scan failed', {
-      location_id: location.id,
-      location_name: location.name,
-      error: error.message,
-      stack: error.stack,
-    });
-    throw error;
   }
 };
