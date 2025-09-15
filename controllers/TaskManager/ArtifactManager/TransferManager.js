@@ -22,7 +22,15 @@ export const executeArtifactMoveTask = async metadataJson => {
   let transaction;
 
   try {
-    const metadata = await yj.parseAsync(metadataJson);
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
     const { artifact_id, destination_storage_location_id } = metadata;
 
     log.task.info('Artifact move task started', { artifact_id, destination_storage_location_id });
@@ -119,7 +127,15 @@ export const executeArtifactCopyTask = async metadataJson => {
   let transaction;
 
   try {
-    const metadata = await yj.parseAsync(metadataJson);
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
     const { artifact_id, destination_storage_location_id } = metadata;
 
     log.task.info('Artifact copy task started', { artifact_id, destination_storage_location_id });
