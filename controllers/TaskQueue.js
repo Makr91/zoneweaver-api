@@ -90,7 +90,7 @@ import {
   executeArtifactDeleteFileTask,
   executeArtifactDeleteFolderTask,
   executeArtifactUploadProcessTask,
-} from './TaskManager/ArtifactManager.js';
+} from './TaskManager/ArtifactManager/index.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
 import config from '../config/ConfigLoader.js';
