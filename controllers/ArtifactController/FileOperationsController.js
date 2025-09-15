@@ -64,9 +64,20 @@ export const moveArtifact = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await yj.stringifyAsync({
-        artifact_id: id,
-        destination_storage_location_id,
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            artifact_id: id,
+            destination_storage_location_id,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
       }),
     });
 
@@ -137,9 +148,20 @@ export const copyArtifact = async (req, res) => {
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'pending',
-      metadata: await yj.stringifyAsync({
-        artifact_id: id,
-        destination_storage_location_id,
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            artifact_id: id,
+            destination_storage_location_id,
+          },
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          }
+        );
       }),
     });
 
