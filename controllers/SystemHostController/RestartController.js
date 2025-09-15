@@ -11,6 +11,10 @@ import {
   validateWarningMessage,
   checkOperationSafety,
 } from './utils/SystemValidation.js';
+import {
+  validateOrchestrationStrategy,
+  validateOrchestrationTimeouts,
+} from '../../lib/ZoneOrchestrationUtils.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -44,6 +48,32 @@ import { log } from '../../lib/Logger.js';
  *                 type: boolean
  *                 description: Confirmation that restart is intended
  *                 default: false
+ *               zone_orchestration:
+ *                 type: object
+ *                 description: Zone orchestration configuration
+ *                 properties:
+ *                   enabled:
+ *                     type: boolean
+ *                     description: Enable zone orchestration before host restart
+ *                     default: false
+ *                   strategy:
+ *                     type: string
+ *                     enum: [sequential, parallel_by_priority, staggered]
+ *                     description: Zone shutdown strategy
+ *                     default: parallel_by_priority
+ *                   failure_action:
+ *                     type: string
+ *                     enum: [abort, force_stuck, skip_stuck]
+ *                     description: Action to take if zones fail to stop
+ *                     default: abort
+ *                   priority_delay:
+ *                     type: integer
+ *                     description: Delay in seconds between priority groups
+ *                     default: 30
+ *                   zone_timeout:
+ *                     type: integer
+ *                     description: Timeout in seconds per zone shutdown
+ *                     default: 120
  *     responses:
  *       202:
  *         description: Restart task created successfully
@@ -70,7 +100,7 @@ import { log } from '../../lib/Logger.js';
  */
 export const restartHost = async (req, res) => {
   try {
-    const { grace_period, message, confirm = false } = req.body;
+    const { grace_period, message, confirm = false, zone_orchestration } = req.body;
 
     // Require explicit confirmation for destructive operation
     if (!confirm) {
@@ -93,13 +123,26 @@ export const restartHost = async (req, res) => {
       return errorResponse(res, 400, messageValidation.error);
     }
 
+    // Validate zone orchestration if provided
+    if (zone_orchestration?.enabled) {
+      const strategyValidation = validateOrchestrationStrategy(zone_orchestration.strategy);
+      if (!strategyValidation.valid) {
+        return errorResponse(res, 400, strategyValidation.error);
+      }
+
+      const timeoutValidation = validateOrchestrationTimeouts(zone_orchestration);
+      if (!timeoutValidation.valid) {
+        return errorResponse(res, 400, timeoutValidation.error);
+      }
+    }
+
     // Safety check
     const safetyCheck = checkOperationSafety('restart', {
       gracePeriod: gracePeriodValidation.normalizedValue,
       force: false,
     });
 
-    // Create restart task
+    // Create restart task with zone orchestration
     const task = await createSystemTask(
       'system_host_restart',
       {
@@ -107,6 +150,7 @@ export const restartHost = async (req, res) => {
         message: messageValidation.normalizedValue,
         method: 'graceful_shutdown',
         command: 'shutdown',
+        zone_orchestration: zone_orchestration?.enabled ? zone_orchestration : null,
       },
       req.entity.name
     );

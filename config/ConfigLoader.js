@@ -263,6 +263,20 @@ class ConfigLoader {
   getArtifactStorage() {
     return this.config.artifact_storage;
   }
+
+  /**
+   * Gets zone orchestration configuration
+   * @description Returns zone orchestration configuration for priority-based zone management
+   * @returns {Object} Zone orchestration configuration object
+   * @returns {boolean} returns.enabled - Whether zone orchestration is enabled
+   * @returns {Object} returns.strategies - Default orchestration strategies
+   * @returns {Object} returns.timeouts - Timeout configurations
+   * @returns {Object} returns.priorities - Priority system configuration
+   * @returns {Object} returns.failure_handling - Failure handling settings
+   */
+  getZoneOrchestration() {
+    return this.config.zones?.orchestration || {};
+  }
 }
 
 // Export singleton instance

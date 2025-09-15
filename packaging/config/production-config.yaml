@@ -53,6 +53,20 @@ zones:
   task_timeout: 300
   orphan_retention: 7
   default_pagination_limit: 50
+  orchestration:
+    enabled: false                        # Enable zone orchestration by default
+    take_control_on_startup: false        # Auto-disable zones service on API startup
+    return_control_on_shutdown: true      # Auto-enable zones service on API shutdown
+    default_strategy: "parallel_by_priority"  # sequential, parallel_by_priority, staggered
+    timeouts:
+      zone_shutdown: 120                  # Per-zone shutdown timeout (seconds)
+      total_orchestration: 900            # Total orchestration timeout (seconds)
+      priority_group_delay: 30            # Delay between priority groups (seconds)
+    priorities:
+      default_priority: 95                # For zones without boot_priority attribute (1-100 scale)
+    failure_handling:
+      default_action: "abort"             # abort, force_stuck, skip_stuck
+      allow_emergency_override: true      # Allow bypassing orchestration entirely
 provisioning:
   install_tools: true
 cleanup:

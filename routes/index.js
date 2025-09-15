@@ -298,6 +298,13 @@ import {
   enterSingleUserMode,
   enterMultiUserMode,
 } from '../controllers/SystemHostController/index.js';
+import {
+  getZoneOrchestrationStatus,
+  enableOrchestration,
+  disableOrchestration,
+  getZonePriorities,
+  testOrchestration,
+} from '../controllers/ZoneOrchestrationController.js';
 import config from '../config/ConfigLoader.js';
 
 const router = express.Router();
@@ -336,6 +343,13 @@ router.post('/zones/:zoneName/start', verifyApiKey, startZone); // Start zone
 router.post('/zones/:zoneName/stop', verifyApiKey, stopZone); // Stop zone
 router.post('/zones/:zoneName/restart', verifyApiKey, restartZone); // Restart zone
 router.delete('/zones/:zoneName', verifyApiKey, deleteZone); // Delete zone
+
+// Zone Orchestration Management Routes
+router.get('/zones/orchestration/status', verifyApiKey, getZoneOrchestrationStatus); // Get orchestration control status
+router.post('/zones/orchestration/enable', verifyApiKey, enableOrchestration); // Enable zone orchestration control
+router.post('/zones/orchestration/disable', verifyApiKey, disableOrchestration); // Disable zone orchestration control
+router.get('/zones/priorities', verifyApiKey, getZonePriorities); // List all zones with priorities
+router.post('/zones/orchestration/test', verifyApiKey, testOrchestration); // Test orchestration (dry run)
 
 // Task Management Routes
 router.get('/tasks', verifyApiKey, listTasks); // List tasks

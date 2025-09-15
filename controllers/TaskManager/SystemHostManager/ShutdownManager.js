@@ -8,6 +8,7 @@
 import yj from 'yieldable-json';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { log, createTimer } from '../../../lib/Logger.js';
+import { executeZoneShutdownOrchestration } from '../../../lib/ZoneOrchestrationManager.js';
 
 /**
  * Execute system host shutdown task
@@ -28,13 +29,57 @@ export const executeSystemHostShutdownTask = async metadataJson => {
       });
     });
 
-    const { grace_period = 60, message = '', target_state = 's' } = metadata;
+    const {
+      grace_period = 60,
+      message = '',
+      target_state = 's',
+      zone_orchestration = null,
+    } = metadata;
 
     log.monitoring.warn('SYSTEM SHUTDOWN: Task execution started', {
       grace_period,
       message,
       target_state,
+      zone_orchestration_enabled: !!zone_orchestration?.enabled,
     });
+
+    // PHASE 1: Zone Orchestration (if enabled)
+    if (zone_orchestration?.enabled) {
+      log.monitoring.warn('SYSTEM SHUTDOWN: Starting zone shutdown orchestration');
+
+      const orchestrationResult = await executeZoneShutdownOrchestration(
+        zone_orchestration.strategy || 'parallel_by_priority',
+        {
+          failure_action: zone_orchestration.failure_action || 'abort',
+          priority_delay: zone_orchestration.priority_delay || 30,
+          zone_timeout: zone_orchestration.zone_timeout || 120,
+        }
+      );
+
+      if (!orchestrationResult.success) {
+        if (zone_orchestration.failure_action === 'abort') {
+          log.monitoring.error('SYSTEM SHUTDOWN: Aborting due to zone orchestration failure', {
+            zones_failed: orchestrationResult.zones_failed,
+          });
+          return {
+            success: false,
+            error: `Zone orchestration failed: ${orchestrationResult.error}`,
+            details: {
+              zones_stopped: orchestrationResult.zones_stopped || [],
+              zones_failed: orchestrationResult.zones_failed || [],
+            },
+          };
+        }
+        log.monitoring.warn('SYSTEM SHUTDOWN: Continuing despite zone orchestration failures', {
+          zones_failed: orchestrationResult.zones_failed,
+          failure_action: zone_orchestration.failure_action,
+        });
+      } else {
+        log.monitoring.info('SYSTEM SHUTDOWN: Zone orchestration completed successfully', {
+          zones_stopped: orchestrationResult.zones_stopped?.length || 0,
+        });
+      }
+    }
 
     let command = `pfexec shutdown -y -i ${target_state} -g ${grace_period}`;
     if (message) {
@@ -103,12 +148,51 @@ export const executeSystemHostPoweroffTask = async metadataJson => {
       });
     });
 
-    const { grace_period = 60, message = '' } = metadata;
+    const { grace_period = 60, message = '', zone_orchestration = null } = metadata;
 
     log.monitoring.warn('SYSTEM POWEROFF: Task execution started', {
       grace_period,
       message,
+      zone_orchestration_enabled: !!zone_orchestration?.enabled,
     });
+
+    // PHASE 1: Zone Orchestration (if enabled)
+    if (zone_orchestration?.enabled) {
+      log.monitoring.warn('SYSTEM POWEROFF: Starting zone shutdown orchestration');
+
+      const orchestrationResult = await executeZoneShutdownOrchestration(
+        zone_orchestration.strategy || 'parallel_by_priority',
+        {
+          failure_action: zone_orchestration.failure_action || 'abort',
+          priority_delay: zone_orchestration.priority_delay || 30,
+          zone_timeout: zone_orchestration.zone_timeout || 120,
+        }
+      );
+
+      if (!orchestrationResult.success) {
+        if (zone_orchestration.failure_action === 'abort') {
+          log.monitoring.error('SYSTEM POWEROFF: Aborting due to zone orchestration failure', {
+            zones_failed: orchestrationResult.zones_failed,
+          });
+          return {
+            success: false,
+            error: `Zone orchestration failed: ${orchestrationResult.error}`,
+            details: {
+              zones_stopped: orchestrationResult.zones_stopped || [],
+              zones_failed: orchestrationResult.zones_failed || [],
+            },
+          };
+        }
+        log.monitoring.warn('SYSTEM POWEROFF: Continuing despite zone orchestration failures', {
+          zones_failed: orchestrationResult.zones_failed,
+          failure_action: zone_orchestration.failure_action,
+        });
+      } else {
+        log.monitoring.info('SYSTEM POWEROFF: Zone orchestration completed successfully', {
+          zones_stopped: orchestrationResult.zones_stopped?.length || 0,
+        });
+      }
+    }
 
     let command = `pfexec shutdown -y -i 5 -g ${grace_period}`;
     if (message) {
