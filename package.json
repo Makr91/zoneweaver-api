@@ -26,7 +26,7 @@
   "author": "makr91",
   "license": "GPL-3.0",
   "dependencies": {
-    "@lydell/node-pty": "^1.1.0",
+    "node-pty": "^1.0.0",
     "@jedithepro/system-info": "^3.0.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
