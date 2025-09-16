@@ -639,6 +639,54 @@ httpServer.listen(httpPort, () => {
         await initializeArtifactStorage();
         await startArtifactStorage();
 
+        // Check zone orchestration startup
+        const orchestrationConfig = config.getZoneOrchestration();
+        if (orchestrationConfig.enabled) {
+          log.monitoring.info('Zone orchestration enabled - checking autoboot zones');
+          
+          try {
+            const { getAutobootZones } = await import('./lib/ZoneOrchestrationManager.js');
+            const autobootZones = await getAutobootZones();
+            
+            if (autobootZones.success && autobootZones.zones.length > 0) {
+              log.monitoring.info('Zone orchestration startup initiated', {
+                autoboot_zones_found: autobootZones.zones.length,
+                zones: autobootZones.zones.map(z => ({ name: z.name, priority: z.priority })),
+              });
+              
+              const Tasks = (await import('./models/TaskModel.js')).default;
+              const { TaskPriority } = await import('./models/TaskModel.js');
+              
+              // Create start tasks for each autoboot zone in priority order (highest first)
+              const sortedZones = autobootZones.zones.sort((a, b) => b.priority - a.priority);
+              for (const zone of sortedZones) {
+                await Tasks.create({
+                  zone_name: zone.name,
+                  operation: 'start',
+                  priority: TaskPriority.HIGH,
+                  created_by: 'orchestration_startup',
+                  status: 'pending',
+                });
+                
+                log.monitoring.debug('Zone start task created for autoboot', {
+                  zone_name: zone.name,
+                  priority: zone.priority,
+                });
+              }
+              
+              log.monitoring.info('Zone orchestration startup tasks created', {
+                zones_queued: sortedZones.length,
+              });
+            } else {
+              log.monitoring.info('Zone orchestration enabled but no autoboot zones found');
+            }
+          } catch (error) {
+            log.monitoring.error('Error during zone orchestration startup', {
+              error: error.message,
+            });
+          }
+        }
+
         log.app.info('Zoneweaver API fully initialized and ready for zone management', {
           services_started: [
             'task_processor',
@@ -647,7 +695,9 @@ httpServer.listen(httpPort, () => {
             'host_monitoring',
             'reconciliation_service',
             'artifact_storage_service',
-          ],
+            orchestrationConfig.enabled ? 'zone_orchestration' : null,
+          ].filter(Boolean),
+          zone_orchestration_enabled: orchestrationConfig.enabled,
           ready: true,
         });
       } else {
