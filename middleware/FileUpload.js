@@ -56,16 +56,16 @@ const storage = multer.diskStorage({
         );
       }
 
-      cb(null, destinationPath);
+      return cb(null, destinationPath);
     } catch (error) {
-      cb(new Error(`Upload destination error: ${error.message}`), false);
+      return cb(new Error(`Upload destination error: ${error.message}`), false);
     }
   },
 
   filename: (req, file, cb) => {
     // Use original filename, but sanitize it
     const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, sanitizedName);
+    return cb(null, sanitizedName);
   },
 });
 
@@ -82,9 +82,9 @@ const fileFilter = (req, file, cb) => {
 
     // For now, allow all file types - the frontend can implement restrictions
     // In the future, we could add file type restrictions here based on config
-    cb(null, true);
+    return cb(null, true);
   } catch (error) {
-    cb(new Error(`File filter error: ${error.message}`), false);
+    return cb(new Error(`File filter error: ${error.message}`), false);
   }
 };
 
@@ -98,7 +98,7 @@ const createUploadMiddleware = () => {
     throw new Error('File browser is disabled');
   }
 
-  // Convert GB to bytes
+  // Convert GB to bytes 
   const maxSizeBytes = fileBrowserConfig.upload_size_limit_gb * 1024 * 1024 * 1024;
 
   return multer({
@@ -106,10 +106,10 @@ const createUploadMiddleware = () => {
     fileFilter,
     limits: {
       fileSize: maxSizeBytes,
-      fieldSize: 10 * 1024 * 1024, // 10MB for form fields
-      fields: 20, // Maximum number of non-file fields
-      files: 10, // Maximum number of files
-      parts: 30, // Maximum number of parts (fields + files)
+      fieldSize: 10 * 1024 * 1024, // 10MB for form fields # should be configurable in config.yaml
+      fields: 20, // Maximum number of non-file fields # should be configurable in config.yaml
+      files: 10, // Maximum number of files # should be configurable in config.yaml
+      parts: 30, // Maximum number of parts (fields + files) # should be configurable in config.yaml
     },
     // Preserve file extensions and handle errors gracefully
     preservePath: false,
@@ -122,7 +122,7 @@ const createUploadMiddleware = () => {
 export const handleUploadError = (error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     switch (error.code) {
-      case 'LIMIT_FILE_SIZE':
+      case 'LIMIT_FILE_SIZE': {
         const fileBrowserConfig = config.getFileBrowser();
         const limitGB = fileBrowserConfig?.upload_size_limit_gb || 50;
         return res.status(413).json({
@@ -130,6 +130,7 @@ export const handleUploadError = (error, req, res, next) => {
           message: `File size exceeds the ${limitGB}GB limit`,
           code: 'FILE_TOO_LARGE',
         });
+      }
 
       case 'LIMIT_FILE_COUNT':
         return res.status(413).json({
@@ -170,7 +171,7 @@ export const handleUploadError = (error, req, res, next) => {
   }
 
   // Pass other errors to the next handler
-  next(error);
+  return next(error);
 };
 
 /**
@@ -195,7 +196,7 @@ export const validateUploadRequest = (req, res, next) => {
       });
     }
 
-    next();
+    return next();
   } catch (error) {
     return res.status(500).json({
       error: 'Validation failed',
@@ -208,10 +209,9 @@ export const validateUploadRequest = (req, res, next) => {
  * Process file upload and save to destination (for multer compatibility)
  * @param {Object} file - Multer file object
  * @param {string} uploadPath - Destination path (already handled by multer storage)
- * @param {boolean} overwrite - Whether to overwrite existing files (already handled by multer)
- * @returns {Promise<Object>} Upload result
+ * @returns {Object} Upload result
  */
-export const saveUploadedFile = async (file, uploadPath, overwrite = false) => {
+export const saveUploadedFile = file => {
   try {
     return {
       success: true,
