@@ -36,7 +36,6 @@ export const verifyApiKey = async (req, res, next) => {
   }
 
   try {
-
     if (!apiKey) {
       return res.status(401).json({
         msg: 'API key required - provide either X-API-Key header or Authorization: Bearer header',

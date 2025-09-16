@@ -98,7 +98,7 @@ const createUploadMiddleware = () => {
     throw new Error('File browser is disabled');
   }
 
-  // Convert GB to bytes 
+  // Convert GB to bytes
   const maxSizeBytes = fileBrowserConfig.upload_size_limit_gb * 1024 * 1024 * 1024;
 
   return multer({
