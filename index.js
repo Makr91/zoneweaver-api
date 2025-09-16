@@ -30,12 +30,11 @@ import {
   initializeArtifactStorage,
   startArtifactStorage,
 } from './controllers/ArtifactStorageService.js';
-import { executeDiscoverTask } from './controllers/TaskManager/ZoneManager.js';
-import { getAutobootZones } from './lib/ZoneOrchestrationManager.js';
 import { handleWebSocketUpgrade } from './lib/WebSocketHandler.js';
 import { setupHTTPSServer } from './lib/SSLManager.js';
 import { setupSwaggerDocs } from './lib/SwaggerManager.js';
-import Tasks, { TaskPriority } from './models/TaskModel.js';
+import { startZoneOrchestration } from './controllers/ZoneOrchestrationService.js';
+import Tasks from './models/TaskModel.js';
 
 /**
  * Express application instance
@@ -183,64 +182,8 @@ httpServer.listen(httpPort, () => {
         await initializeArtifactStorage();
         await startArtifactStorage();
 
-        // Check zone orchestration startup
-        const orchestrationConfig = config.getZoneOrchestration();
-        if (orchestrationConfig.enabled) {
-          log.monitoring.info('Zone orchestration enabled - running discovery first');
-
-          try {
-            // Force zone discovery to ensure database has fresh configuration data
-            const discoveryResult = await executeDiscoverTask();
-
-            if (discoveryResult.success) {
-              log.monitoring.info('Zone discovery completed - checking autoboot zones');
-            } else {
-              log.monitoring.warn('Zone discovery failed during startup', {
-                error: discoveryResult.error,
-              });
-            }
-
-            const autobootZones = await getAutobootZones();
-
-            if (autobootZones.success && autobootZones.zones.length > 0) {
-              log.monitoring.info('Zone orchestration startup initiated', {
-                autoboot_zones_found: autobootZones.zones.length,
-                zones: autobootZones.zones.map(z => ({ name: z.name, priority: z.priority })),
-              });
-
-              // Create start tasks for each autoboot zone in priority order (highest first)
-              const sortedZones = autobootZones.zones.sort((a, b) => b.priority - a.priority);
-
-              // Create all tasks in parallel for 10x performance improvement
-              const taskPromises = sortedZones.map(zone => {
-                log.monitoring.debug('Zone start task created for autoboot', {
-                  zone_name: zone.name,
-                  priority: zone.priority,
-                });
-
-                return Tasks.create({
-                  zone_name: zone.name,
-                  operation: 'start',
-                  priority: TaskPriority.HIGH,
-                  created_by: 'orchestration_startup',
-                  status: 'pending',
-                });
-              });
-
-              await Promise.all(taskPromises);
-
-              log.monitoring.info('Zone orchestration startup tasks created', {
-                zones_queued: sortedZones.length,
-              });
-            } else {
-              log.monitoring.info('Zone orchestration enabled but no autoboot zones found');
-            }
-          } catch (error) {
-            log.monitoring.error('Error during zone orchestration startup', {
-              error: error.message,
-            });
-          }
-        }
+        // Start zone orchestration service
+        await startZoneOrchestration();
 
         log.app.info('Zoneweaver API fully initialized and ready for zone management', {
           services_started: [
@@ -252,9 +195,9 @@ httpServer.listen(httpPort, () => {
             'artifact_storage_service',
           ],
           startup_actions_completed: [
-            orchestrationConfig.enabled ? 'zone_orchestration_startup' : null,
+            config.getZoneOrchestration().enabled ? 'zone_orchestration_startup' : null,
           ].filter(Boolean),
-          zone_orchestration_enabled: orchestrationConfig.enabled,
+          zone_orchestration_enabled: config.getZoneOrchestration().enabled,
           ready: true,
         });
       } else {
