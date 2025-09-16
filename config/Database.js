@@ -46,7 +46,7 @@ const sequelizeOptions = {
  * @description Sets up connection parameters for different database types (SQLite, PostgreSQL, MySQL/MariaDB)
  */
 switch (dbConfig.dialect) {
-  case 'sqlite':
+  case 'sqlite': {
     /**
      * SQLite configuration
      * @description File-based database, ideal for development and single-host deployments
@@ -113,6 +113,7 @@ switch (dbConfig.dialect) {
       },
     });
     break;
+  }
 
   case 'postgres':
   case 'mysql':

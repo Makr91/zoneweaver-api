@@ -116,7 +116,7 @@ httpServer.on('upgrade', (request, socket, head) => {
 /**
  * Setup HTTPS server
  */
-setupHTTPSServer(app, sslConfig, httpsPort, serverConfig, handleWebSocketUpgrade);
+setupHTTPSServer(app, sslConfig, httpsPort, serverConfig, handleWebSocketUpgrade, wss);
 
 /**
  * Start HTTP server
