@@ -215,6 +215,7 @@ export const executeDiscoverTask = async () => {
           host: os.hostname(),
           status,
           brand: zoneConfig.brand || 'unknown',
+          configuration: zoneConfig, // Store full configuration including autoboot and attributes
           auto_discovered: true,
           last_seen: new Date(),
         });
@@ -241,6 +242,7 @@ export const executeDiscoverTask = async () => {
         await dbZone.update({
           status,
           brand: zoneConfig.brand || dbZone.brand,
+          configuration: zoneConfig, // Store full configuration including autoboot and attributes
           last_seen: new Date(),
           is_orphaned: false,
         });

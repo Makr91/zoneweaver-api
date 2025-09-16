@@ -110,6 +110,11 @@ const Zones = db.define(
       defaultValue: DataTypes.NOW,
       comment: 'Last time zone was detected during system scan',
     },
+    configuration: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'Full zone configuration from zadm show including autoboot and attributes',
+    },
   },
   {
     freezeTableName: true,

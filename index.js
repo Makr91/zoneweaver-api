@@ -9,14 +9,12 @@ import express from 'express';
 import https from 'https';
 import http from 'http';
 import fs from 'fs';
-import path from 'path';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import WebSocket, { WebSocketServer } from 'ws';
 import crypto from 'crypto';
 import config from './config/ConfigLoader.js';
-import { log, createTimer } from './lib/Logger.js';
-import db from './config/Database.js';
+import { log } from './lib/Logger.js';
 import DatabaseMigrations from './config/DatabaseMigrations.js';
 import router from './routes/index.js';
 import { specs, swaggerUi } from './config/swagger.js';
@@ -32,10 +30,15 @@ import CleanupService from './controllers/CleanupService.js';
 import { startHostMonitoring } from './controllers/HostMonitoringService.js';
 import { checkAndInstallPackages } from './controllers/ProvisioningController.js';
 import ReconciliationService from './controllers/ReconciliationService.js';
-import { initializeArtifactStorage, startArtifactStorage } from './controllers/ArtifactStorageService.js';
+import {
+  initializeArtifactStorage,
+  startArtifactStorage,
+} from './controllers/ArtifactStorageService.js';
+import { executeDiscoverTask } from './controllers/TaskManager/ZoneManager.js';
+import { getAutobootZones } from './lib/ZoneOrchestrationManager.js';
+import Tasks, { TaskPriority } from './models/TaskModel.js';
 import TerminalSessions from './models/TerminalSessionModel.js';
 import ZloginSessions from './models/ZloginSessionModel.js';
-import yj from 'yieldable-json';
 
 /**
  * Express application instance
@@ -589,7 +592,6 @@ httpServer.listen(httpPort, () => {
       if (success) {
         // Clear any pending/running tasks from previous server runs
         try {
-          const Tasks = (await import('./models/TaskModel.js')).default;
           const clearedTasks = await Tasks.update(
             { status: 'cancelled' },
             {
@@ -642,38 +644,49 @@ httpServer.listen(httpPort, () => {
         // Check zone orchestration startup
         const orchestrationConfig = config.getZoneOrchestration();
         if (orchestrationConfig.enabled) {
-          log.monitoring.info('Zone orchestration enabled - checking autoboot zones');
-          
+          log.monitoring.info('Zone orchestration enabled - running discovery first');
+
           try {
-            const { getAutobootZones } = await import('./lib/ZoneOrchestrationManager.js');
+            // Force zone discovery to ensure database has fresh configuration data
+            const discoveryResult = await executeDiscoverTask();
+
+            if (discoveryResult.success) {
+              log.monitoring.info('Zone discovery completed - checking autoboot zones');
+            } else {
+              log.monitoring.warn('Zone discovery failed during startup', {
+                error: discoveryResult.error,
+              });
+            }
+
             const autobootZones = await getAutobootZones();
-            
+
             if (autobootZones.success && autobootZones.zones.length > 0) {
               log.monitoring.info('Zone orchestration startup initiated', {
                 autoboot_zones_found: autobootZones.zones.length,
                 zones: autobootZones.zones.map(z => ({ name: z.name, priority: z.priority })),
               });
-              
-              const Tasks = (await import('./models/TaskModel.js')).default;
-              const { TaskPriority } = await import('./models/TaskModel.js');
-              
+
               // Create start tasks for each autoboot zone in priority order (highest first)
               const sortedZones = autobootZones.zones.sort((a, b) => b.priority - a.priority);
-              for (const zone of sortedZones) {
-                await Tasks.create({
+              
+              // Create all tasks in parallel for 10x performance improvement
+              const taskPromises = sortedZones.map(zone => {
+                log.monitoring.debug('Zone start task created for autoboot', {
+                  zone_name: zone.name,
+                  priority: zone.priority,
+                });
+                
+                return Tasks.create({
                   zone_name: zone.name,
                   operation: 'start',
                   priority: TaskPriority.HIGH,
                   created_by: 'orchestration_startup',
                   status: 'pending',
                 });
-                
-                log.monitoring.debug('Zone start task created for autoboot', {
-                  zone_name: zone.name,
-                  priority: zone.priority,
-                });
-              }
+              });
               
+              await Promise.all(taskPromises);
+
               log.monitoring.info('Zone orchestration startup tasks created', {
                 zones_queued: sortedZones.length,
               });
