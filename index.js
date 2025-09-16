@@ -11,8 +11,8 @@ import http from 'http';
 import fs from 'fs';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import WebSocket, { WebSocketServer } from 'ws';
-import crypto from 'crypto';
+import { WebSocketServer } from 'ws';
+
 import config from './config/ConfigLoader.js';
 import { log } from './lib/Logger.js';
 import DatabaseMigrations from './config/DatabaseMigrations.js';
@@ -20,12 +20,8 @@ import router from './routes/index.js';
 import { specs, swaggerUi } from './config/swagger.js';
 import { startTaskProcessor } from './controllers/TaskQueue.js';
 import { startVncSessionCleanup } from './controllers/VncConsole.js';
-import { handleTerminalConnection } from './controllers/XtermController.js';
-import { handleZloginConnection, getZloginCleanupTask } from './controllers/ZloginController.js';
-import {
-  handleLogStreamUpgrade,
-  cleanupLogStreamSessions,
-} from './controllers/LogStreamController.js';
+import { getZloginCleanupTask } from './controllers/ZloginController.js';
+import { cleanupLogStreamSessions } from './controllers/LogStreamController.js';
 import CleanupService from './controllers/CleanupService.js';
 import { startHostMonitoring } from './controllers/HostMonitoringService.js';
 import { checkAndInstallPackages } from './controllers/ProvisioningController.js';
@@ -36,9 +32,10 @@ import {
 } from './controllers/ArtifactStorageService.js';
 import { executeDiscoverTask } from './controllers/TaskManager/ZoneManager.js';
 import { getAutobootZones } from './lib/ZoneOrchestrationManager.js';
+import { handleWebSocketUpgrade } from './lib/WebSocketHandler.js';
+import { setupHTTPSServer } from './lib/SSLManager.js';
+import { setupSwaggerDocs } from './lib/SwaggerManager.js';
 import Tasks, { TaskPriority } from './models/TaskModel.js';
-import TerminalSessions from './models/TerminalSessionModel.js';
-import ZloginSessions from './models/ZloginSessionModel.js';
 
 /**
  * Express application instance
@@ -82,7 +79,7 @@ const corsOptions = {
 app.use(cookieParser());
 app.use(cors(corsOptions));
 app.options('/*splat', cors(corsOptions));
-// Get artifact storage configuration for upload limits
+
 const artifactConfig = config.getArtifactStorage?.() || {};
 const maxUploadGB = artifactConfig.security?.max_upload_size_gb || 50;
 const maxUploadSize = `${maxUploadGB}gb`;
@@ -98,56 +95,9 @@ app.use(express.urlencoded({ limit: maxUploadSize, extended: true }));
 app.use(router);
 
 /**
- * Swagger API Documentation middleware (conditionally enabled)
- * @description Serves interactive API documentation at /api-docs endpoint when enabled in configuration
+ * Setup Swagger API Documentation
  */
-const apiDocsConfig = config.getApiDocs();
-if (apiDocsConfig && apiDocsConfig.enabled) {
-  log.app.info('API documentation endpoint enabled', {
-    endpoint: '/api-docs',
-    enabled: true,
-  });
-
-  app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
-    // Dynamically set the server URL based on the current request
-    const { protocol } = req;
-    const host = req.get('host');
-    const dynamicSpecs = {
-      ...specs,
-      servers: [
-        {
-          url: `${protocol}://${host}`,
-          description: 'Current server (auto-detected)',
-        },
-        {
-          url: '{protocol}://{host}',
-          description: 'Custom server',
-          variables: {
-            protocol: {
-              enum: ['http', 'https'],
-              default: 'https',
-              description: 'The protocol used to access the server',
-            },
-            host: {
-              default: 'localhost:5001',
-              description: 'The hostname and port of the server',
-            },
-          },
-        },
-      ],
-    };
-
-    swaggerUi.setup(dynamicSpecs, {
-      explorer: true,
-      customCss: '.swagger-ui .topbar { display: none }',
-      customSiteTitle: 'Zoneweaver API Documentation',
-    })(req, res, next);
-  });
-} else {
-  log.app.info('API documentation endpoint disabled by configuration', {
-    enabled: false,
-  });
-}
+setupSwaggerDocs(app, config.getApiDocs(), specs, swaggerUi);
 
 /**
  * HTTP server instance
@@ -161,423 +111,15 @@ const httpServer = http.createServer(app);
  */
 const wss = new WebSocketServer({ noServer: true });
 
-/**
- * WebSocket upgrade handler
- * @description Handles WebSocket upgrade requests for VNC connections using proper ws library
- */
-const handleWebSocketUpgrade = async (request, socket, head) => {
-  try {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    log.websocket.debug('WebSocket upgrade request', {
-      pathname: url.pathname,
-      host: request.headers.host,
-    });
-
-    const termMatch = url.pathname.match(/\/term\/([a-fA-F0-9\-]+)/);
-    if (termMatch) {
-      const sessionId = termMatch[1];
-      const session = await TerminalSessions.findByPk(sessionId);
-
-      if (!session || session.status !== 'active') {
-        log.websocket.warn('Terminal WebSocket upgrade failed - session not found or inactive', {
-          session_id: sessionId,
-          session_status: session?.status,
-        });
-        socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-
-      wss.handleUpgrade(request, socket, head, ws => {
-        handleTerminalConnection(ws, sessionId);
-      });
-      return;
-    }
-
-    const zloginMatch = url.pathname.match(/\/zlogin\/([a-fA-F0-9\-]+)/);
-    if (zloginMatch) {
-      const sessionId = zloginMatch[1];
-      log.websocket.debug('Zlogin WebSocket upgrade request', {
-        session_id: sessionId,
-        pathname: url.pathname,
-      });
-
-      try {
-        const session = await ZloginSessions.findByPk(sessionId);
-
-        if (!session) {
-          log.websocket.warn('Zlogin session not found for WebSocket upgrade', {
-            session_id: sessionId,
-          });
-          socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-
-        if (session.status !== 'active' && session.status !== 'connecting') {
-          log.websocket.warn('Zlogin WebSocket upgrade failed - invalid session status', {
-            session_id: sessionId,
-            status: session.status,
-          });
-          socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-
-        log.websocket.info('Zlogin WebSocket upgrade approved', {
-          session_id: sessionId,
-          zone_name: session.zone_name,
-          status: session.status,
-        });
-
-        wss.handleUpgrade(request, socket, head, ws => {
-          handleZloginConnection(ws, sessionId);
-        });
-      } catch (error) {
-        log.websocket.error('Error during zlogin WebSocket upgrade', {
-          session_id: sessionId,
-          error: error.message,
-          stack: error.stack,
-        });
-        socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
-        socket.destroy();
-      }
-      return;
-    }
-
-    // Check for log stream WebSocket requests
-    const logStreamMatch = url.pathname.match(/\/logs\/stream\/([a-fA-F0-9\-]+)/);
-    if (logStreamMatch) {
-      const sessionId = logStreamMatch[1];
-      log.websocket.debug('Log stream WebSocket upgrade request', {
-        session_id: sessionId,
-      });
-
-      // Handle log stream upgrade
-      await handleLogStreamUpgrade(request, socket, head, wss);
-      return;
-    }
-
-    let zoneName;
-
-    // Handle multiple WebSocket path patterns
-    let zonePathMatch = url.pathname.match(/\/zones\/([^\/]+)\/vnc\/websockify/);
-    if (zonePathMatch) {
-      zoneName = decodeURIComponent(zonePathMatch[1]);
-      log.websocket.debug('Zone-specific VNC WebSocket request', {
-        zone_name: zoneName,
-      });
-    } else {
-      // Try frontend proxy path pattern: /api/servers/host:port/zones/zoneName/vnc/websockify
-      zonePathMatch = url.pathname.match(
-        /\/api\/servers\/[^\/]+\/zones\/([^\/]+)\/vnc\/websockify/
-      );
-      if (zonePathMatch) {
-        zoneName = decodeURIComponent(zonePathMatch[1]);
-        log.websocket.debug('Frontend proxy VNC WebSocket request', {
-          zone_name: zoneName,
-        });
-      } else if (url.pathname === '/websockify') {
-        // Extract zone from various headers for root /websockify requests
-        const referer = request.headers.referer || request.headers.origin || '';
-
-        // Try to find zone in referer first
-        const refererMatch = referer.match(/\/zones\/([^\/]+)\/vnc/);
-        if (refererMatch) {
-          zoneName = decodeURIComponent(refererMatch[1]);
-          log.websocket.debug('Extracted zone from referer', {
-            zone_name: zoneName,
-            referer,
-          });
-        } else {
-          // If we can't find zone info, check if there's only one active VNC session
-          const { sessionManager } = await import('./controllers/VncConsole.js');
-          const fs = await import('fs');
-
-          if (fs.existsSync(sessionManager.pidDir)) {
-            const pidFiles = fs
-              .readdirSync(sessionManager.pidDir)
-              .filter(file => file.endsWith('.pid'));
-            if (pidFiles.length === 1) {
-              zoneName = pidFiles[0].replace('.pid', '');
-              log.websocket.info('Using single active VNC session', {
-                zone_name: zoneName,
-              });
-            } else {
-              log.websocket.error('Cannot determine zone - multiple active sessions', {
-                active_sessions: pidFiles.length,
-                sessions: pidFiles,
-              });
-              socket.destroy();
-              return;
-            }
-          } else {
-            log.websocket.error('No active VNC sessions found', {
-              pathname: url.pathname,
-              referer,
-            });
-            socket.destroy();
-            return;
-          }
-        }
-      } else {
-        log.websocket.error('Unrecognized WebSocket path', {
-          pathname: url.pathname,
-        });
-        socket.destroy();
-        return;
-      }
-    }
-
-    // Get session info to find the VNC port and connection tracking
-    const { sessionManager, connectionTracker, performSmartCleanup } = await import(
-      './controllers/VncConsole.js'
-    );
-    const sessionInfo = await sessionManager.getSessionInfo(zoneName);
-
-    if (!sessionInfo) {
-      log.websocket.error('No active VNC session found for zone', {
-        zone_name: zoneName,
-        pathname: url.pathname,
-      });
-      socket.destroy();
-      return;
-    }
-
-    // Use proper WebSocket server upgrade
-    wss.handleUpgrade(request, socket, head, ws => {
-      log.websocket.info('VNC WebSocket client connected', {
-        zone_name: zoneName,
-        vnc_port: sessionInfo.port,
-      });
-
-      // Generate unique connection ID for tracking
-      const connectionId = crypto.randomUUID();
-
-      // Track this connection
-      connectionTracker.addConnection(zoneName, connectionId);
-
-      // Create connection to VNC server
-      const backendUrl = `ws://127.0.0.1:${sessionInfo.port}/websockify`;
-      const backendWs = new WebSocket(backendUrl, {
-        protocol: 'binary',
-      });
-
-      backendWs.on('open', () => {
-        log.websocket.debug('Connected to VNC server', {
-          zone_name: zoneName,
-          vnc_port: sessionInfo.port,
-          connection_id: connectionId,
-        });
-
-        // Forward messages between client and VNC server
-        ws.on('message', data => {
-          if (backendWs.readyState === WebSocket.OPEN) {
-            backendWs.send(data);
-          }
-        });
-
-        backendWs.on('message', data => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(data);
-          }
-        });
-
-        // Handle connection cleanup with smart cleanup logic
-        const handleConnectionClose = () => {
-          // Remove this connection from tracking
-          const isLastClient = connectionTracker.removeConnection(zoneName, connectionId);
-
-          log.websocket.debug('VNC client WebSocket closed', {
-            zone_name: zoneName,
-            connection_id: connectionId,
-            is_last_client: isLastClient,
-          });
-
-          // Perform smart cleanup if this was the last client
-          performSmartCleanup(zoneName, isLastClient);
-
-          // Close backend connection
-          if (backendWs.readyState === WebSocket.OPEN) {
-            backendWs.close();
-          }
-        };
-
-        ws.on('close', (code, reason) => {
-          handleConnectionClose();
-        });
-
-        ws.on('error', err => {
-          log.websocket.error('VNC client WebSocket error', {
-            zone_name: zoneName,
-            connection_id: connectionId,
-            error: err.message,
-          });
-          handleConnectionClose();
-        });
-
-        backendWs.on('close', (code, reason) => {
-          log.websocket.debug('VNC server WebSocket closed', {
-            zone_name: zoneName,
-            close_code: code,
-            reason,
-          });
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.close();
-          }
-        });
-
-        backendWs.on('error', err => {
-          log.websocket.error('VNC server WebSocket error', {
-            zone_name: zoneName,
-            vnc_port: sessionInfo.port,
-            error: err.message,
-          });
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.close();
-          }
-        });
-      });
-
-      backendWs.on('error', err => {
-        log.websocket.error('Failed to connect to VNC server', {
-          zone_name: zoneName,
-          vnc_port: sessionInfo.port,
-          backend_url: backendUrl,
-          error: err.message,
-        });
-
-        // Remove connection tracking on error
-        const isLastClient = connectionTracker.removeConnection(zoneName, connectionId);
-        performSmartCleanup(zoneName, isLastClient);
-
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.close(1002, 'VNC server connection failed');
-        }
-      });
-    });
-  } catch (error) {
-    log.websocket.error('WebSocket upgrade error', {
-      error: error.message,
-      stack: error.stack,
-      pathname: request?.url,
-    });
-    socket.destroy();
-  }
-};
-
 // Add WebSocket upgrade handler to HTTP server
-httpServer.on('upgrade', handleWebSocketUpgrade);
+httpServer.on('upgrade', (request, socket, head) => {
+  handleWebSocketUpgrade(request, socket, head, wss);
+});
 
 /**
- * Generate SSL certificates if they don't exist and generate_ssl is enabled
+ * Setup HTTPS server
  */
-async function generateSSLCertificatesIfNeeded() {
-  if (!sslConfig.generate_ssl) {
-    return false; // SSL generation disabled
-  }
-
-  const keyPath = sslConfig.key_path;
-  const certPath = sslConfig.cert_path;
-
-  // Check if certificates already exist
-  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-    log.app.info('SSL certificates already exist, skipping generation', {
-      key_path: keyPath,
-      cert_path: certPath,
-    });
-    return false; // Certificates exist, no need to generate
-  }
-
-  try {
-    log.app.info('Generating SSL certificates', {
-      key_path: keyPath,
-      cert_path: certPath,
-    });
-
-    // Import child_process for running openssl
-    const { execSync } = await import('child_process');
-    const path = await import('path');
-
-    // Ensure SSL directory exists
-    const sslDir = path.dirname(keyPath);
-    if (!fs.existsSync(sslDir)) {
-      fs.mkdirSync(sslDir, { recursive: true, mode: 0o700 });
-    }
-
-    // Generate SSL certificate using OpenSSL
-    const opensslCmd = `openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -subj "/C=US/ST=State/L=City/O=Zoneweaver/CN=localhost"`;
-
-    execSync(opensslCmd, { stdio: 'pipe' });
-
-    // Set proper permissions (readable by current user only)
-    fs.chmodSync(keyPath, 0o600);
-    fs.chmodSync(certPath, 0o600);
-
-    log.app.info('SSL certificates generated successfully', {
-      key_path: keyPath,
-      cert_path: certPath,
-      validity_days: 365,
-    });
-
-    return true; // Certificates generated successfully
-  } catch (error) {
-    log.app.error('Failed to generate SSL certificates', {
-      error: error.message,
-      stack: error.stack,
-      fallback: 'HTTP only',
-    });
-    return false; // Generation failed
-  }
-}
-
-/**
- * HTTPS server setup with SSL certificate handling
- * @description Attempts to create HTTPS server with SSL certificates, gracefully handles missing certificates
- */
-(async () => {
-  if (sslConfig.enabled) {
-    // Try to generate SSL certificates if needed
-    await generateSSLCertificatesIfNeeded();
-
-    try {
-      const privateKey = fs.readFileSync(sslConfig.key_path, 'utf8');
-      const certificate = fs.readFileSync(sslConfig.cert_path, 'utf8');
-
-      const credentials = { key: privateKey, cert: certificate };
-
-      const httpsServer = https.createServer(credentials, app);
-
-      // Add WebSocket upgrade handler for HTTPS server
-      httpsServer.on('upgrade', handleWebSocketUpgrade);
-
-      httpsServer.listen(httpsPort, () => {
-        const host = serverConfig.hostname || 'localhost';
-        log.app.info('HTTPS server started', {
-          port: httpsPort,
-          host,
-          api_docs_url: `https://${host}:${httpsPort}/api-docs`,
-        });
-      });
-    } catch (error) {
-      log.app.error('SSL Certificate Error', {
-        error: error.message,
-        key_path: sslConfig.key_path,
-        cert_path: sslConfig.cert_path,
-      });
-      log.app.warn('HTTPS server not started due to SSL certificate issues', {
-        required_key_path: sslConfig.key_path,
-        required_cert_path: sslConfig.cert_path,
-        suggestion: 'Ensure SSL certificates are available or enable generate_ssl',
-      });
-    }
-  } else {
-    log.app.info('SSL disabled in configuration', {
-      https_enabled: false,
-      server_mode: 'HTTP only',
-    });
-  }
-})();
+setupHTTPSServer(app, sslConfig, httpsPort, serverConfig, handleWebSocketUpgrade);
 
 /**
  * Start HTTP server
@@ -708,7 +250,9 @@ httpServer.listen(httpPort, () => {
             'host_monitoring',
             'reconciliation_service',
             'artifact_storage_service',
-            orchestrationConfig.enabled ? 'zone_orchestration' : null,
+          ],
+          startup_actions_completed: [
+            orchestrationConfig.enabled ? 'zone_orchestration_startup' : null,
           ].filter(Boolean),
           zone_orchestration_enabled: orchestrationConfig.enabled,
           ready: true,
