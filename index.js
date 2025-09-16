@@ -668,14 +668,14 @@ httpServer.listen(httpPort, () => {
 
               // Create start tasks for each autoboot zone in priority order (highest first)
               const sortedZones = autobootZones.zones.sort((a, b) => b.priority - a.priority);
-              
+
               // Create all tasks in parallel for 10x performance improvement
               const taskPromises = sortedZones.map(zone => {
                 log.monitoring.debug('Zone start task created for autoboot', {
                   zone_name: zone.name,
                   priority: zone.priority,
                 });
-                
+
                 return Tasks.create({
                   zone_name: zone.name,
                   operation: 'start',
@@ -684,7 +684,7 @@ httpServer.listen(httpPort, () => {
                   status: 'pending',
                 });
               });
-              
+
               await Promise.all(taskPromises);
 
               log.monitoring.info('Zone orchestration startup tasks created', {
