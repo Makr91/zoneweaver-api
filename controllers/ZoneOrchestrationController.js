@@ -5,11 +5,11 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import {
-  getOrchestrationStatus,
-  enableZoneOrchestration,
+import { 
+  getOrchestrationStatus, 
+  enableZoneOrchestration, 
   disableZoneOrchestration,
-  getRunningZonesWithConfig,
+  getZonesForOrchestration
 } from '../lib/ZoneOrchestrationManager.js';
 import { log } from '../lib/Logger.js';
 
@@ -230,7 +230,7 @@ export const disableOrchestration = async (req, res) => {
  */
 export const getZonePriorities = async (req, res) => {
   try {
-    const zonesResult = await getRunningZonesWithConfig();
+    const zonesResult = await getZonesForOrchestration('running');
 
     if (!zonesResult.success) {
       return res.status(500).json({
@@ -334,7 +334,7 @@ export const testOrchestration = async (req, res) => {
     const { strategy = 'parallel_by_priority' } = req.body;
 
     // Get zones and calculate execution plan without executing
-    const zonesResult = await getRunningZonesWithConfig();
+    const zonesResult = await getZonesForOrchestration('running');
 
     if (!zonesResult.success) {
       return res.status(500).json({
