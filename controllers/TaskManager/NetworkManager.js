@@ -25,7 +25,7 @@ export const executeCreateIPAddressTask = async metadataJson => {
         }
       });
     });
-    const { interface: iface, type, addrobj, address, primary, wait, temporary, down } = metadata;
+    const { type, addrobj, address, primary, wait, temporary, down } = metadata;
 
     let command = `pfexec ipadm create-addr`;
 

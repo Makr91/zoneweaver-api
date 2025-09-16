@@ -87,10 +87,12 @@ export const executeDeleteEtherstubTask = async metadataJson => {
           count: vnics.length,
           vnics: vnics.join(', '),
         });
-        for (const vnic of vnics) {
-          log.task.debug('Removing VNIC from etherstub', { vnic });
-          await executeCommand(`pfexec dladm delete-vnic ${temporary ? '-t' : ''} ${vnic}`);
-        }
+        await Promise.all(
+          vnics.map(vnic => {
+            log.task.debug('Removing VNIC from etherstub', { vnic });
+            return executeCommand(`pfexec dladm delete-vnic ${temporary ? '-t' : ''} ${vnic}`);
+          })
+        );
       } else {
         log.task.debug('No VNICs found on etherstub');
       }

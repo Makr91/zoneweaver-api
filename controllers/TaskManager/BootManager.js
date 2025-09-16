@@ -1,6 +1,5 @@
 import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
-import { log } from '../../lib/Logger.js';
 
 /**
  * Boot Manager for Boot Environment Operations

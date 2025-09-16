@@ -1,5 +1,4 @@
 import { executeCommand } from '../../lib/CommandManager.js';
-import { log } from '../../lib/Logger.js';
 import yj from 'yieldable-json';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../../models/NetworkUsageModel.js';

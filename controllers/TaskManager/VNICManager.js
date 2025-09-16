@@ -11,6 +11,83 @@ import os from 'os';
  */
 
 /**
+ * Build MAC address configuration for VNIC command
+ * @param {string} mac_address - MAC address type or value
+ * @param {string} mac_prefix - MAC prefix for random generation
+ * @param {number} slot - Slot number for factory MAC
+ * @returns {string} MAC configuration string
+ */
+const buildMacConfiguration = (mac_address, mac_prefix, slot) => {
+  let macConfig = '';
+
+  if (mac_address === 'factory') {
+    macConfig = ` -m factory -n ${slot}`;
+    log.task.debug('Added factory MAC to command', { slot });
+  } else if (mac_address === 'random') {
+    macConfig = ` -m random`;
+    log.task.debug('Added random MAC to command');
+    if (mac_prefix) {
+      macConfig += ` -r ${mac_prefix}`;
+      log.task.debug('Added MAC prefix to command', { mac_prefix });
+    }
+  } else if (mac_address === 'auto') {
+    macConfig = ` -m auto`;
+    log.task.debug('Added auto MAC to command');
+  } else if (mac_address && mac_address !== 'auto') {
+    macConfig = ` -m ${mac_address}`;
+    log.task.debug('Added specific MAC to command', { mac_address });
+  } else {
+    log.task.debug('Using default MAC assignment');
+  }
+
+  return macConfig;
+};
+
+/**
+ * Build VNIC creation command
+ * @param {Object} params - VNIC parameters
+ * @returns {string} Complete dladm command
+ */
+const buildVNICCommand = params => {
+  const { name, link, mac_address, mac_prefix, slot, vlan_id, temporary, properties } = params;
+
+  let command = `pfexec dladm create-vnic`;
+
+  if (temporary) {
+    command += ` -t`;
+    log.task.debug('Added temporary flag to command');
+  }
+
+  if (link) {
+    command += ` -l ${link}`;
+    log.task.debug('Added link to command', { link });
+  }
+
+  // Add MAC address configuration
+  command += buildMacConfiguration(mac_address, mac_prefix, slot);
+
+  if (vlan_id) {
+    command += ` -v ${vlan_id}`;
+    log.task.debug('Added VLAN ID to command', { vlan_id });
+  }
+
+  if (properties && Object.keys(properties).length > 0) {
+    const propList = Object.entries(properties)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(',');
+    command += ` -p ${propList}`;
+    log.task.debug('Added properties to command', { properties: propList });
+  }
+
+  if (name) {
+    command += ` ${name}`;
+    log.task.debug('Added VNIC name to command', { name });
+  }
+
+  return command;
+};
+
+/**
  * Execute VNIC creation task
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -46,76 +123,9 @@ export const executeCreateVNICTask = async metadataJson => {
       return { success: false, error: `Invalid JSON metadata: ${parseError.message}` };
     }
 
-    const { name, link, mac_address, mac_prefix, slot, vlan_id, temporary, properties } = metadata;
+    const { name, link } = metadata;
 
-    log.task.debug('Building dladm create-vnic command', {
-      name,
-      link,
-      mac_address,
-      mac_prefix,
-      slot,
-      vlan_id,
-      temporary,
-      properties,
-    });
-
-    let command = `pfexec dladm create-vnic`;
-
-    if (temporary) {
-      command += ` -t`;
-      log.task.debug('Added temporary flag to command');
-    }
-
-    if (link) {
-      command += ` -l ${link}`;
-      log.task.debug('Added link to command', { link });
-    } else {
-      log.task.warn('Missing required link parameter');
-    }
-
-    // Add MAC address configuration
-    if (mac_address === 'factory') {
-      command += ` -m factory -n ${slot}`;
-      log.task.debug('Added factory MAC to command', { slot });
-    } else if (mac_address === 'random') {
-      command += ` -m random`;
-      log.task.debug('Added random MAC to command');
-      if (mac_prefix) {
-        command += ` -r ${mac_prefix}`;
-        log.task.debug('Added MAC prefix to command', { mac_prefix });
-      }
-    } else if (mac_address === 'auto') {
-      command += ` -m auto`;
-      log.task.debug('Added auto MAC to command');
-    } else if (mac_address && mac_address !== 'auto') {
-      command += ` -m ${mac_address}`;
-      log.task.debug('Added specific MAC to command', { mac_address });
-    } else {
-      log.task.debug('Using default MAC assignment');
-    }
-
-    if (vlan_id) {
-      command += ` -v ${vlan_id}`;
-      log.task.debug('Added VLAN ID to command', { vlan_id });
-    }
-
-    if (properties && Object.keys(properties).length > 0) {
-      const propList = Object.entries(properties)
-        .map(([key, value]) => `${key}=${value}`)
-        .join(',');
-      command += ` -p ${propList}`;
-      log.task.debug('Added properties to command', { properties: propList });
-    }
-
-    if (name) {
-      command += ` ${name}`;
-      log.task.debug('Added VNIC name to command', { name });
-    } else {
-      log.task.warn('Missing required VNIC name parameter');
-    }
-
-    log.task.debug('Final VNIC creation command', { command });
-
+    // Validate required parameters
     if (!name || !link) {
       log.task.error('Missing required parameters - cannot execute command', {
         name_missing: !name,
@@ -126,6 +136,10 @@ export const executeCreateVNICTask = async metadataJson => {
         error: `Missing required parameters: ${!name ? 'name ' : ''}${!link ? 'link' : ''}`,
       };
     }
+
+    log.task.debug('Building dladm create-vnic command', { metadata });
+    const command = buildVNICCommand(metadata);
+    log.task.debug('Final VNIC creation command', { command });
 
     const result = await executeCommand(command);
 

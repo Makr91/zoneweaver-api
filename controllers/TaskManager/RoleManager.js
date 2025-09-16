@@ -8,6 +8,74 @@ import { log } from '../../lib/Logger.js';
  */
 
 /**
+ * Helper function to build role command options
+ * @param {Object} metadata - Role metadata
+ * @returns {string} Command options string
+ */
+const buildRoleOptions = metadata => {
+  const {
+    uid,
+    gid,
+    comment,
+    home_directory,
+    shell,
+    create_home,
+    authorizations,
+    profiles,
+    project,
+  } = metadata;
+
+  let options = '';
+
+  // Add UID
+  if (uid) {
+    options += ` -u ${uid}`;
+  }
+
+  // Add primary group
+  if (gid) {
+    options += ` -g ${gid}`;
+  }
+
+  // Add comment
+  if (comment) {
+    options += ` -c "${comment}"`;
+  }
+
+  // Add home directory
+  if (home_directory) {
+    options += ` -d "${home_directory}"`;
+  }
+
+  // Add shell (defaults to /bin/pfsh for roles)
+  if (shell && shell !== '/bin/pfsh') {
+    options += ` -s "${shell}"`;
+  }
+
+  // Add home directory creation
+  if (create_home) {
+    options += ` -m`;
+  }
+
+  // Add project
+  if (project) {
+    options += ` -p "${project}"`;
+  }
+
+  // Add RBAC authorizations
+  if (authorizations && authorizations.length > 0) {
+    options += ` -A "${authorizations.join(',')}"`;
+  }
+
+  // Add RBAC profiles
+  if (profiles && profiles.length > 0) {
+    options += ` -P "${profiles.join(',')}"`;
+  }
+
+  return options;
+};
+
+/**
  * Execute role creation task
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -30,13 +98,9 @@ export const executeRoleCreateTask = async metadataJson => {
       rolename,
       uid,
       gid,
-      comment,
-      home_directory,
-      shell = '/bin/pfsh',
       create_home = false,
       authorizations = [],
       profiles = [],
-      project,
     } = metadata;
 
     log.task.debug('Role creation task parameters', {
@@ -47,56 +111,8 @@ export const executeRoleCreateTask = async metadataJson => {
       has_rbac: authorizations.length > 0 || profiles.length > 0,
     });
 
-    // Build roleadd command
-    let command = `pfexec roleadd`;
-
-    // Add UID
-    if (uid) {
-      command += ` -u ${uid}`;
-    }
-
-    // Add primary group
-    if (gid) {
-      command += ` -g ${gid}`;
-    }
-
-    // Add comment
-    if (comment) {
-      command += ` -c "${comment}"`;
-    }
-
-    // Add home directory
-    if (home_directory) {
-      command += ` -d "${home_directory}"`;
-    }
-
-    // Add shell (defaults to /bin/pfsh for roles)
-    if (shell && shell !== '/bin/pfsh') {
-      command += ` -s "${shell}"`;
-    }
-
-    // Add home directory creation
-    if (create_home) {
-      command += ` -m`;
-    }
-
-    // Add project
-    if (project) {
-      command += ` -p "${project}"`;
-    }
-
-    // Add RBAC authorizations
-    if (authorizations && authorizations.length > 0) {
-      command += ` -A "${authorizations.join(',')}"`;
-    }
-
-    // Add RBAC profiles
-    if (profiles && profiles.length > 0) {
-      command += ` -P "${profiles.join(',')}"`;
-    }
-
-    // Add role name
-    command += ` ${rolename}`;
+    // Build roleadd command using helper function
+    const command = `pfexec roleadd${buildRoleOptions(metadata)} ${rolename}`;
 
     log.task.debug('Executing role creation command', { command });
 

@@ -127,10 +127,12 @@ export const executeDeleteBridgeTask = async metadataJson => {
           count: attachedLinks.length,
           links: attachedLinks.join(', '),
         });
-        for (const link of attachedLinks) {
-          log.task.debug('Removing link from bridge', { link, bridge });
-          await executeCommand(`pfexec dladm remove-bridge -l ${link} ${bridge}`);
-        }
+        await Promise.all(
+          attachedLinks.map(link => {
+            log.task.debug('Removing link from bridge', { link, bridge });
+            return executeCommand(`pfexec dladm remove-bridge -l ${link} ${bridge}`);
+          })
+        );
       } else {
         log.task.debug('No attached links found on bridge');
       }

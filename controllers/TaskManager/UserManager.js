@@ -8,6 +8,152 @@ import { log } from '../../lib/Logger.js';
  */
 
 /**
+ * Helper function to create personal group for user
+ * @param {string} username - Username for group
+ * @param {number} uid - UID for group
+ * @param {Array} warnings - Warnings array to update
+ * @returns {Promise<{createdGroup: string|null, warnings: Array}>}
+ */
+const createPersonalGroup = async (username, uid, warnings) => {
+  log.task.debug('Creating personal group', { groupname: username });
+
+  let groupCommand = `pfexec groupadd`;
+  if (uid) {
+    groupCommand += ` -g ${uid}`;
+  }
+  groupCommand += ` ${username}`;
+
+  const groupResult = await executeCommand(groupCommand);
+
+  if (groupResult.success) {
+    log.task.info('Personal group created', { groupname: username, gid: uid });
+    return { createdGroup: username, warnings };
+  } else if (groupResult.error && groupResult.error.includes('name too long')) {
+    warnings.push(`Group name '${username}' is longer than recommended but was created`);
+    return { createdGroup: username, warnings };
+  }
+  log.task.warn('Failed to create personal group, continuing without it', {
+    groupname: username,
+    error: groupResult.error,
+  });
+  warnings.push(`Failed to create personal group '${username}': ${groupResult.error}`);
+  return { createdGroup: null, warnings };
+};
+
+/**
+ * Helper function to build user creation command
+ * @param {Object} params - User parameters
+ * @param {string} createdGroup - Created group name
+ * @returns {string} Complete useradd command
+ */
+const buildUserCreateCommand = (params, createdGroup) => {
+  const {
+    username,
+    uid,
+    gid,
+    groups,
+    comment,
+    home_directory,
+    shell,
+    create_home,
+    skeleton_dir,
+    expire_date,
+    inactive_days,
+    project,
+    authorizations,
+    profiles,
+    roles,
+    force_zfs,
+    prevent_zfs,
+  } = params;
+
+  let command = `pfexec useradd`;
+
+  // Add UID
+  if (uid) {
+    command += ` -u ${uid}`;
+  }
+
+  // Add primary group (personal group if created, or specified gid)
+  if (createdGroup) {
+    command += ` -g ${createdGroup}`;
+  } else if (gid) {
+    command += ` -g ${gid}`;
+  }
+
+  // Add supplementary groups
+  if (groups && groups.length > 0) {
+    command += ` -G ${groups.join(',')}`;
+  }
+
+  // Add comment
+  if (comment) {
+    command += ` -c "${comment}"`;
+  }
+
+  // Add home directory
+  if (home_directory) {
+    command += ` -d "${home_directory}"`;
+  }
+
+  // Add shell
+  if (shell && shell !== '/bin/sh') {
+    command += ` -s "${shell}"`;
+  }
+
+  // Add home directory creation with ZFS options
+  if (create_home) {
+    if (force_zfs) {
+      command += ` -m -z`;
+    } else if (prevent_zfs) {
+      command += ` -m -Z`;
+    } else {
+      command += ` -m`;
+    }
+
+    // Add skeleton directory
+    if (skeleton_dir) {
+      command += ` -k "${skeleton_dir}"`;
+    }
+  }
+
+  // Add expiration date
+  if (expire_date) {
+    command += ` -e "${expire_date}"`;
+  }
+
+  // Add inactive days
+  if (inactive_days) {
+    command += ` -f ${inactive_days}`;
+  }
+
+  // Add project
+  if (project) {
+    command += ` -p "${project}"`;
+  }
+
+  // Add RBAC authorizations
+  if (authorizations && authorizations.length > 0) {
+    command += ` -A "${authorizations.join(',')}"`;
+  }
+
+  // Add RBAC profiles
+  if (profiles && profiles.length > 0) {
+    command += ` -P "${profiles.join(',')}"`;
+  }
+
+  // Add RBAC roles
+  if (roles && roles.length > 0) {
+    command += ` -R "${roles.join(',')}"`;
+  }
+
+  // Add username
+  command += ` ${username}`;
+
+  return command;
+};
+
+/**
  * Execute user creation task
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -30,21 +176,10 @@ export const executeUserCreateTask = async metadataJson => {
       username,
       uid,
       gid,
-      groups = [],
-      comment,
-      home_directory,
-      shell = '/bin/bash',
-      create_home = true,
-      skeleton_dir,
-      expire_date,
-      inactive_days,
       authorizations = [],
       profiles = [],
       roles = [],
-      project,
       create_personal_group = true,
-      force_zfs = false,
-      prevent_zfs = false,
     } = metadata;
 
     log.task.debug('User creation task parameters', {
@@ -55,123 +190,22 @@ export const executeUserCreateTask = async metadataJson => {
       has_rbac: authorizations.length > 0 || profiles.length > 0 || roles.length > 0,
     });
 
-    const warnings = [];
+    let warnings = [];
     let createdGroup = null;
 
     // Step 1: Create personal group if requested and no gid specified
     if (create_personal_group && !gid) {
-      log.task.debug('Creating personal group', { groupname: username });
-
-      let groupCommand = `pfexec groupadd`;
-      if (uid) {
-        groupCommand += ` -g ${uid}`;
-      }
-      groupCommand += ` ${username}`;
-
-      const groupResult = await executeCommand(groupCommand);
-
-      if (groupResult.success) {
-        createdGroup = username;
-        log.task.info('Personal group created', { groupname: username, gid: uid });
-      } else {
-        // Check if it's just a warning about name length
-        if (groupResult.error && groupResult.error.includes('name too long')) {
-          warnings.push(`Group name '${username}' is longer than recommended but was created`);
-          createdGroup = username;
-        } else {
-          log.task.warn('Failed to create personal group, continuing without it', {
-            groupname: username,
-            error: groupResult.error,
-          });
-          warnings.push(`Failed to create personal group '${username}': ${groupResult.error}`);
-        }
-      }
+      const { createdGroup: newGroup, warnings: newWarnings } = await createPersonalGroup(
+        username,
+        uid,
+        warnings
+      );
+      createdGroup = newGroup;
+      warnings = newWarnings;
     }
 
-    // Step 2: Build useradd command
-    let command = `pfexec useradd`;
-
-    // Add UID
-    if (uid) {
-      command += ` -u ${uid}`;
-    }
-
-    // Add primary group (personal group if created, or specified gid)
-    if (createdGroup) {
-      command += ` -g ${createdGroup}`;
-    } else if (gid) {
-      command += ` -g ${gid}`;
-    }
-
-    // Add supplementary groups
-    if (groups && groups.length > 0) {
-      command += ` -G ${groups.join(',')}`;
-    }
-
-    // Add comment
-    if (comment) {
-      command += ` -c "${comment}"`;
-    }
-
-    // Add home directory
-    if (home_directory) {
-      command += ` -d "${home_directory}"`;
-    }
-
-    // Add shell
-    if (shell && shell !== '/bin/sh') {
-      command += ` -s "${shell}"`;
-    }
-
-    // Add home directory creation with ZFS options
-    if (create_home) {
-      if (force_zfs) {
-        command += ` -m -z`;
-      } else if (prevent_zfs) {
-        command += ` -m -Z`;
-      } else {
-        command += ` -m`; // Let system decide based on MANAGE_ZFS setting
-      }
-
-      // Add skeleton directory
-      if (skeleton_dir) {
-        command += ` -k "${skeleton_dir}"`;
-      }
-    }
-
-    // Add expiration date
-    if (expire_date) {
-      command += ` -e "${expire_date}"`;
-    }
-
-    // Add inactive days
-    if (inactive_days) {
-      command += ` -f ${inactive_days}`;
-    }
-
-    // Add project
-    if (project) {
-      command += ` -p "${project}"`;
-    }
-
-    // Add RBAC authorizations
-    if (authorizations && authorizations.length > 0) {
-      command += ` -A "${authorizations.join(',')}"`;
-    }
-
-    // Add RBAC profiles
-    if (profiles && profiles.length > 0) {
-      command += ` -P "${profiles.join(',')}"`;
-    }
-
-    // Add RBAC roles
-    if (roles && roles.length > 0) {
-      command += ` -R "${roles.join(',')}"`;
-    }
-
-    // Add username
-    command += ` ${username}`;
-
+    // Step 2: Build useradd command using helper function
+    const command = buildUserCreateCommand(metadata, createdGroup);
     log.task.debug('Executing user creation command', { command });
 
     // Execute user creation
@@ -232,6 +266,115 @@ export const executeUserCreateTask = async metadataJson => {
 };
 
 /**
+ * Helper function to build user modification command
+ * @param {Object} params - User modification parameters
+ * @returns {string} Complete usermod command
+ */
+const buildUserModifyCommand = params => {
+  const {
+    username,
+    new_username,
+    new_uid,
+    new_gid,
+    new_groups,
+    new_comment,
+    new_home_directory,
+    move_home,
+    new_shell,
+    new_expire_date,
+    new_inactive_days,
+    new_project,
+    new_authorizations,
+    new_profiles,
+    new_roles,
+    force_zfs,
+    prevent_zfs,
+  } = params;
+
+  let command = `pfexec usermod`;
+
+  // Add new UID
+  if (new_uid) {
+    command += ` -u ${new_uid}`;
+  }
+
+  // Add new primary group
+  if (new_gid) {
+    command += ` -g ${new_gid}`;
+  }
+
+  // Add new supplementary groups
+  if (new_groups && new_groups.length > 0) {
+    command += ` -G ${new_groups.join(',')}`;
+  }
+
+  // Add new comment
+  if (new_comment !== undefined) {
+    command += ` -c "${new_comment}"`;
+  }
+
+  // Add new home directory with move option
+  if (new_home_directory) {
+    command += ` -d "${new_home_directory}"`;
+
+    if (move_home) {
+      if (force_zfs) {
+        command += ` -m -z`;
+      } else if (prevent_zfs) {
+        command += ` -m -Z`;
+      } else {
+        command += ` -m`;
+      }
+    }
+  }
+
+  // Add new shell
+  if (new_shell) {
+    command += ` -s "${new_shell}"`;
+  }
+
+  // Add new expiration date
+  if (new_expire_date !== undefined) {
+    command += ` -e "${new_expire_date}"`;
+  }
+
+  // Add new inactive days
+  if (new_inactive_days !== undefined) {
+    command += ` -f ${new_inactive_days}`;
+  }
+
+  // Add new project
+  if (new_project) {
+    command += ` -p "${new_project}"`;
+  }
+
+  // Add new RBAC authorizations
+  if (new_authorizations && new_authorizations.length > 0) {
+    command += ` -A "${new_authorizations.join(',')}"`;
+  }
+
+  // Add new RBAC profiles
+  if (new_profiles && new_profiles.length > 0) {
+    command += ` -P "${new_profiles.join(',')}"`;
+  }
+
+  // Add new RBAC roles
+  if (new_roles && new_roles.length > 0) {
+    command += ` -R "${new_roles.join(',')}"`;
+  }
+
+  // Add new username (must be last for usermod -l)
+  if (new_username) {
+    command += ` -l ${new_username}`;
+  }
+
+  // Add current username
+  command += ` ${username}`;
+
+  return command;
+};
+
+/**
  * Execute user modification task
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -254,20 +397,10 @@ export const executeUserModifyTask = async metadataJson => {
       username,
       new_username,
       new_uid,
-      new_gid,
-      new_groups = [],
-      new_comment,
-      new_home_directory,
       move_home = false,
-      new_shell,
-      new_expire_date,
-      new_inactive_days,
       new_authorizations = [],
       new_profiles = [],
       new_roles = [],
-      new_project,
-      force_zfs = false,
-      prevent_zfs = false,
     } = metadata;
 
     log.task.debug('User modification task parameters', {
@@ -278,87 +411,8 @@ export const executeUserModifyTask = async metadataJson => {
       has_rbac: new_authorizations.length > 0 || new_profiles.length > 0 || new_roles.length > 0,
     });
 
-    // Build usermod command
-    let command = `pfexec usermod`;
-
-    // Add new UID
-    if (new_uid) {
-      command += ` -u ${new_uid}`;
-    }
-
-    // Add new primary group
-    if (new_gid) {
-      command += ` -g ${new_gid}`;
-    }
-
-    // Add new supplementary groups
-    if (new_groups && new_groups.length > 0) {
-      command += ` -G ${new_groups.join(',')}`;
-    }
-
-    // Add new comment
-    if (new_comment !== undefined) {
-      command += ` -c "${new_comment}"`;
-    }
-
-    // Add new home directory with move option
-    if (new_home_directory) {
-      command += ` -d "${new_home_directory}"`;
-
-      if (move_home) {
-        if (force_zfs) {
-          command += ` -m -z`;
-        } else if (prevent_zfs) {
-          command += ` -m -Z`;
-        } else {
-          command += ` -m`;
-        }
-      }
-    }
-
-    // Add new shell
-    if (new_shell) {
-      command += ` -s "${new_shell}"`;
-    }
-
-    // Add new expiration date
-    if (new_expire_date !== undefined) {
-      command += ` -e "${new_expire_date}"`;
-    }
-
-    // Add new inactive days
-    if (new_inactive_days !== undefined) {
-      command += ` -f ${new_inactive_days}`;
-    }
-
-    // Add new project
-    if (new_project) {
-      command += ` -p "${new_project}"`;
-    }
-
-    // Add new RBAC authorizations
-    if (new_authorizations && new_authorizations.length > 0) {
-      command += ` -A "${new_authorizations.join(',')}"`;
-    }
-
-    // Add new RBAC profiles
-    if (new_profiles && new_profiles.length > 0) {
-      command += ` -P "${new_profiles.join(',')}"`;
-    }
-
-    // Add new RBAC roles
-    if (new_roles && new_roles.length > 0) {
-      command += ` -R "${new_roles.join(',')}"`;
-    }
-
-    // Add new username (must be last for usermod -l)
-    if (new_username) {
-      command += ` -l ${new_username}`;
-    }
-
-    // Add current username
-    command += ` ${username}`;
-
+    // Build usermod command using helper function
+    const command = buildUserModifyCommand(metadata);
     log.task.debug('Executing user modification command', { command });
 
     const result = await executeCommand(command);

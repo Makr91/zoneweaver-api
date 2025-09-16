@@ -1,7 +1,5 @@
 import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
-import { setRebootRequired } from '../../lib/RebootManager.js';
-import { log } from '../../lib/Logger.js';
 
 /**
  * Execute hostname change task

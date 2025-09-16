@@ -1,6 +1,5 @@
 import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
-import { log } from '../../lib/Logger.js';
 
 /**
  * Package Manager for Package Operations
@@ -42,7 +41,7 @@ export const executePkgInstallTask = async metadataJson => {
     // Add packages
     command += ` ${packages.join(' ')}`;
 
-    const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout
+    const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout ## SHOULD BE CONFIGURABLE IN CONFIG.YAML!!
 
     if (result.success) {
       return {
@@ -90,7 +89,7 @@ export const executePkgUninstallTask = async metadataJson => {
     // Add packages
     command += ` ${packages.join(' ')}`;
 
-    const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout
+    const result = await executeCommand(command, 10 * 60 * 1000); // 10 minute timeout ## SHOULD BE CONFIGURABLE IN CONFIG.YAML!!
 
     if (result.success) {
       return {
@@ -151,7 +150,7 @@ export const executePkgUpdateTask = async metadataJson => {
       command += ` ${packages.join(' ')}`;
     }
 
-    const result = await executeCommand(command, 30 * 60 * 1000); // 30 minute timeout
+    const result = await executeCommand(command, 30 * 60 * 1000); // 30 minute timeout ## SHOULD BE CONFIGURABLE IN CONFIG.YAML!!
 
     if (result.success) {
       return {

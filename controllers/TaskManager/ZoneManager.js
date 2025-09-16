@@ -16,6 +16,37 @@ import os from 'os';
  */
 
 /**
+ * Terminate VNC session for a zone
+ * @param {string} zoneName - Name of zone
+ */
+const terminateVncSession = async zoneName => {
+  try {
+    const session = await VncSessions.findOne({
+      where: { zone_name: zoneName, status: 'active' },
+    });
+
+    if (session && session.process_id) {
+      try {
+        process.kill(session.process_id, 'SIGTERM');
+      } catch (error) {
+        log.task.warn('Failed to kill VNC process', {
+          zone_name: zoneName,
+          process_id: session.process_id,
+          error: error.message,
+        });
+      }
+
+      await session.update({ status: 'stopped' });
+    }
+  } catch (error) {
+    log.task.warn('Failed to terminate VNC session', {
+      zone_name: zoneName,
+      error: error.message,
+    });
+  }
+};
+
+/**
  * Execute zone start task
  * @param {string} zoneName - Name of zone to start
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -96,10 +127,12 @@ export const executeRestartTask = async zoneName => {
   }
 
   // Wait a moment for clean shutdown
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  await new Promise(resolve => {
+    setTimeout(resolve, 2000);
+  });
 
   // Then start
-  return await executeStartTask(zoneName);
+  return executeStartTask(zoneName);
 };
 
 /**
@@ -135,24 +168,27 @@ export const executeDeleteTask = async zoneName => {
       };
     }
 
-    // Remove zone from database
-    await Zones.destroy({ where: { name: zoneName } });
+    // Clean up all database entries in parallel
+    await Promise.all([
+      // Remove zone from database
+      Zones.destroy({ where: { name: zoneName } }),
 
-    // Clean up associated data
-    await NetworkInterfaces.destroy({ where: { zone: zoneName } });
-    await NetworkUsage.destroy({ where: { link: { [Op.like]: `${zoneName}%` } } });
-    await IPAddresses.destroy({ where: { interface: { [Op.like]: `${zoneName}%` } } });
+      // Clean up associated data
+      NetworkInterfaces.destroy({ where: { zone: zoneName } }),
+      NetworkUsage.destroy({ where: { link: { [Op.like]: `${zoneName}%` } } }),
+      IPAddresses.destroy({ where: { interface: { [Op.like]: `${zoneName}%` } } }),
 
-    // Clean up any remaining tasks for this zone
-    await Tasks.update(
-      { status: 'cancelled' },
-      {
-        where: {
-          zone_name: zoneName,
-          status: 'pending',
-        },
-      }
-    );
+      // Clean up any remaining tasks for this zone
+      Tasks.update(
+        { status: 'cancelled' },
+        {
+          where: {
+            zone_name: zoneName,
+            status: 'pending',
+          },
+        }
+      ),
+    ]);
 
     return {
       success: true,
@@ -179,11 +215,11 @@ export const executeDiscoverTask = async () => {
     }
 
     const systemZones = await new Promise((resolve, reject) => {
-      yj.parseAsync(result.output, (err, result) => {
+      yj.parseAsync(result.output, (err, parseResult) => {
         if (err) {
           reject(err);
         } else {
-          resolve(result);
+          resolve(parseResult);
         }
       });
     });
@@ -197,8 +233,10 @@ export const executeDiscoverTask = async () => {
     let orphaned = 0;
 
     // Add new zones found on system but not in database
-    for (const zoneName of systemZoneNames) {
-      if (!dbZoneNames.includes(zoneName)) {
+    const newZonesToCreate = systemZoneNames.filter(zoneName => !dbZoneNames.includes(zoneName));
+
+    const createdZones = await Promise.all(
+      newZonesToCreate.map(async zoneName => {
         const zoneConfig = systemZones[zoneName];
 
         // Get current status
@@ -209,28 +247,32 @@ export const executeDiscoverTask = async () => {
           status = parts[2] || 'configured';
         }
 
-        await Zones.create({
+        return Zones.create({
           name: zoneName,
           zone_id: zoneConfig.zonename || zoneName,
           host: os.hostname(),
           status,
           brand: zoneConfig.brand || 'unknown',
-          configuration: zoneConfig, // Store full configuration including autoboot and attributes
+          configuration: zoneConfig,
           auto_discovered: true,
           last_seen: new Date(),
         });
+      })
+    );
 
-        discovered++;
-      }
-    }
+    discovered = createdZones.length;
 
-    // Mark zones as orphaned if they exist in database but not on system
-    for (const dbZone of dbZones) {
-      if (!systemZoneNames.includes(dbZone.name)) {
-        await dbZone.update({ is_orphaned: true });
-        orphaned++;
-      } else {
-        // Update existing zones
+    // Process orphaned and existing zones in parallel
+    const orphanedZones = dbZones.filter(dbZone => !systemZoneNames.includes(dbZone.name));
+    const existingZones = dbZones.filter(dbZone => systemZoneNames.includes(dbZone.name));
+
+    // Mark zones as orphaned in parallel
+    await Promise.all(orphanedZones.map(dbZone => dbZone.update({ is_orphaned: true })));
+    orphaned = orphanedZones.length;
+
+    // Update existing zones in parallel
+    await Promise.all(
+      existingZones.map(async dbZone => {
         const zoneConfig = systemZones[dbZone.name];
         const statusResult = await executeCommand(`pfexec zoneadm -z ${dbZone.name} list -p`);
         let { status } = dbZone;
@@ -239,15 +281,15 @@ export const executeDiscoverTask = async () => {
           status = parts[2] || dbZone.status;
         }
 
-        await dbZone.update({
+        return dbZone.update({
           status,
           brand: zoneConfig.brand || dbZone.brand,
-          configuration: zoneConfig, // Store full configuration including autoboot and attributes
+          configuration: zoneConfig,
           last_seen: new Date(),
           is_orphaned: false,
         });
-      }
-    }
+      })
+    );
 
     return {
       success: true,
@@ -258,36 +300,5 @@ export const executeDiscoverTask = async () => {
       success: false,
       error: `Zone discovery failed: ${error.message}`,
     };
-  }
-};
-
-/**
- * Terminate VNC session for a zone
- * @param {string} zoneName - Name of zone
- */
-export const terminateVncSession = async zoneName => {
-  try {
-    const session = await VncSessions.findOne({
-      where: { zone_name: zoneName, status: 'active' },
-    });
-
-    if (session && session.process_id) {
-      try {
-        process.kill(session.process_id, 'SIGTERM');
-      } catch (error) {
-        log.task.warn('Failed to kill VNC process', {
-          zone_name: zoneName,
-          process_id: session.process_id,
-          error: error.message,
-        });
-      }
-
-      await session.update({ status: 'stopped' });
-    }
-  } catch (error) {
-    log.task.warn('Failed to terminate VNC session', {
-      zone_name: zoneName,
-      error: error.message,
-    });
   }
 };
