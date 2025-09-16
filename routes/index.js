@@ -335,7 +335,14 @@ router.get('/api-keys/info', verifyApiKey, getApiKeyInfo); // Get current API ke
 router.delete('/api-keys/:id', verifyApiKey, deleteApiKey); // Delete an API key
 router.put('/api-keys/:id/revoke', verifyApiKey, revokeApiKey); // Revoke an API key
 
-// Zone Management Routes
+// Zone Orchestration Management Routes (MUST come before parameterized routes)
+router.get('/zones/orchestration/status', verifyApiKey, getZoneOrchestrationStatus); // Get orchestration control status
+router.post('/zones/orchestration/enable', verifyApiKey, enableOrchestration); // Enable zone orchestration control
+router.post('/zones/orchestration/disable', verifyApiKey, disableOrchestration); // Disable zone orchestration control
+router.get('/zones/priorities', verifyApiKey, getZonePriorities); // List all zones with priorities
+router.post('/zones/orchestration/test', verifyApiKey, testOrchestration); // Test orchestration (dry run)
+
+// Zone Management Routes (parameterized routes come after specific routes)
 router.get('/zones', verifyApiKey, listZones); // List all zones
 router.get('/zones/:zoneName', verifyApiKey, getZoneDetails); // Get zone details
 router.get('/zones/:zoneName/config', verifyApiKey, getZoneConfig); // Get zone configuration
@@ -343,13 +350,6 @@ router.post('/zones/:zoneName/start', verifyApiKey, startZone); // Start zone
 router.post('/zones/:zoneName/stop', verifyApiKey, stopZone); // Stop zone
 router.post('/zones/:zoneName/restart', verifyApiKey, restartZone); // Restart zone
 router.delete('/zones/:zoneName', verifyApiKey, deleteZone); // Delete zone
-
-// Zone Orchestration Management Routes
-router.get('/zones/orchestration/status', verifyApiKey, getZoneOrchestrationStatus); // Get orchestration control status
-router.post('/zones/orchestration/enable', verifyApiKey, enableOrchestration); // Enable zone orchestration control
-router.post('/zones/orchestration/disable', verifyApiKey, disableOrchestration); // Disable zone orchestration control
-router.get('/zones/priorities', verifyApiKey, getZonePriorities); // List all zones with priorities
-router.post('/zones/orchestration/test', verifyApiKey, testOrchestration); // Test orchestration (dry run)
 
 // Task Management Routes
 router.get('/tasks', verifyApiKey, listTasks); // List tasks
