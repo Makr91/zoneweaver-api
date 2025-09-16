@@ -134,7 +134,7 @@ export const executeDeleteIPAddressTask = async metadataJson => {
       if (remainingAddrsResult.success && remainingAddrsResult.output.trim()) {
         // Parse all IP addresses and filter for our interface
         const allAddresses = remainingAddrsResult.output.trim().split('\n');
-        const interfaceAddresses = allAddresses.filter(line => 
+        const interfaceAddresses = allAddresses.filter(line =>
           line.startsWith(`${interfaceName}/`)
         );
 
@@ -151,16 +151,16 @@ export const executeDeleteIPAddressTask = async metadataJson => {
             interface: interfaceName,
             deleted_addrobj: addrobj,
           });
-          
+
           const deleteInterfaceResult = await executeCommand(
             `pfexec ipadm delete-if ${interfaceName}`
           );
 
           if (deleteInterfaceResult.success) {
             cleanupResults.ip_interface_deleted = true;
-            log.task.info('IP interface deleted successfully', { 
+            log.task.info('IP interface deleted successfully', {
               interface: interfaceName,
-              reason: 'no_remaining_addresses'
+              reason: 'no_remaining_addresses',
             });
           } else {
             log.task.warn('Failed to delete IP interface', {

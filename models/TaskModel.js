@@ -166,30 +166,30 @@ const Tasks = db.define(
       // Existing index (keep for backwards compatibility)
       {
         name: 'task_status_priority_idx',
-        fields: ['status', 'priority']
+        fields: ['status', 'priority'],
       },
       // Performance indexes for task queries
       {
         name: 'idx_tasks_created_at',
-        fields: [{ name: 'created_at', order: 'DESC' }]
+        fields: [{ name: 'created_at', order: 'DESC' }],
       },
       {
-        name: 'idx_tasks_updated_at', 
-        fields: [{ name: 'updatedAt', order: 'DESC' }]
+        name: 'idx_tasks_updated_at',
+        fields: [{ name: 'updatedAt', order: 'DESC' }],
       },
       {
         name: 'idx_tasks_operation',
-        fields: ['operation']
+        fields: ['operation'],
       },
       {
         name: 'idx_tasks_operation_created_at',
-        fields: ['operation', { name: 'created_at', order: 'DESC' }]
+        fields: ['operation', { name: 'created_at', order: 'DESC' }],
       },
       {
         name: 'idx_tasks_operation_updated_at',
-        fields: ['operation', { name: 'updatedAt', order: 'DESC' }]
-      }
-    ]
+        fields: ['operation', { name: 'updatedAt', order: 'DESC' }],
+      },
+    ],
   }
 );
 

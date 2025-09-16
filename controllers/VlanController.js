@@ -391,7 +391,7 @@ export const createVlan = async (req, res) => {
         const [, baseName, ppa] = linkMatch;
         const calculatedSuffix = 1000 * vid + parseInt(ppa);
         vlanName = `${baseName}${calculatedSuffix}`;
-        
+
         log.api.debug('VLAN name generation', {
           link,
           vid,

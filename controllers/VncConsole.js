@@ -834,9 +834,12 @@ export const startVncSession = async (req, res) => {
       ps.on('exit', () => {
         const lines = output.split('\n');
         // Find ALL VNC processes for this zone (including webvnc, vnc, etc.)
-        const existingProcesses = lines.filter(line => line.includes('zadm') && 
-                           (line.includes('vnc') || line.includes('webvnc')) &&
-                           line.includes(zoneName));
+        const existingProcesses = lines.filter(
+          line =>
+            line.includes('zadm') &&
+            (line.includes('vnc') || line.includes('webvnc')) &&
+            line.includes(zoneName)
+        );
 
         if (existingProcesses.length > 0) {
           log.websocket.info('Found unhealthy VNC processes - killing', {

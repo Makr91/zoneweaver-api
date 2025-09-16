@@ -296,9 +296,9 @@ export const executeRoleDeleteTask = async metadataJson => {
     // Check if role has a home directory before attempting to remove it
     if (remove_home) {
       log.task.debug('Checking if role has home directory', { rolename });
-      
+
       const checkHomeResult = await executeCommand(`pfexec getent passwd ${rolename}`);
-      
+
       if (checkHomeResult.success && checkHomeResult.output && checkHomeResult.output.trim()) {
         // Parse the getent passwd output: username:x:uid:gid:comment:home_dir:shell
         const fields = checkHomeResult.output.trim().split(':');
@@ -309,9 +309,9 @@ export const executeRoleDeleteTask = async metadataJson => {
             home_dir: fields[5],
           });
         } else {
-          log.task.debug('Role has no home directory or uses root home, skipping -r flag', { 
+          log.task.debug('Role has no home directory or uses root home, skipping -r flag', {
             rolename,
-            home_dir: fields[5] || 'none'
+            home_dir: fields[5] || 'none',
           });
         }
       } else {
@@ -341,7 +341,9 @@ export const executeRoleDeleteTask = async metadataJson => {
 
       let message = `Role ${rolename} deleted successfully`;
       if (remove_home) {
-        message += actuallyRemoveHome ? ' (home directory removed)' : ' (no home directory to remove)';
+        message += actuallyRemoveHome
+          ? ' (home directory removed)'
+          : ' (no home directory to remove)';
       }
 
       return {

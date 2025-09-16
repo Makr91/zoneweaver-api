@@ -19,7 +19,7 @@ import Tasks, { TaskPriority } from '../models/TaskModel.js';
 export const startZoneOrchestration = async () => {
   try {
     const orchestrationConfig = config.getZoneOrchestration();
-    
+
     if (!orchestrationConfig.enabled) {
       log.monitoring.debug('Zone orchestration disabled in configuration');
       return;
@@ -89,7 +89,7 @@ export const startZoneOrchestration = async () => {
  */
 export const getZoneOrchestrationServiceStatus = () => {
   const orchestrationConfig = config.getZoneOrchestration();
-  
+
   return {
     name: 'zone_orchestration',
     enabled: orchestrationConfig.enabled,

@@ -17,8 +17,8 @@ import { log } from '../lib/Logger.js';
  * @param {number} timeout - Timeout in milliseconds
  * @returns {Promise<{success: boolean, output?: string, error?: string, stderr?: string}>}
  */
-const executeCommand = async (command, timeout = 30000) => {
-  return new Promise(resolve => {
+const executeCommand = async (command, timeout = 30000) =>
+  new Promise(resolve => {
     const child = spawn('sh', ['-c', command], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -35,7 +35,7 @@ const executeCommand = async (command, timeout = 30000) => {
           success: false,
           error: `Command timed out after ${timeout}ms`,
           output: stdout,
-          stderr: stderr,
+          stderr,
         });
       }
     }, timeout);
@@ -78,12 +78,11 @@ const executeCommand = async (command, timeout = 30000) => {
           success: false,
           error: error.message,
           output: stdout,
-          stderr: stderr,
+          stderr,
         });
       }
     });
   });
-};
 
 /**
  * Parse system command errors and map to appropriate HTTP status codes
@@ -92,7 +91,9 @@ const executeCommand = async (command, timeout = 30000) => {
  * @returns {Object} Parsed error information
  */
 const parseCommandError = (stderr, exitCode) => {
-  if (exitCode === 0) return { success: true };
+  if (exitCode === 0) {
+    return { success: true };
+  }
 
   const errorLine = stderr.split('\n').find(line => line.includes('ERROR:'));
   const warningLine = stderr.split('\n').find(line => line.includes('WARNING:'));
@@ -161,7 +162,8 @@ const validateUsername = username => {
   if (!usernameRegex.test(username)) {
     return {
       valid: false,
-      message: 'Username must start with a letter or underscore, and contain only lowercase letters, numbers, underscores, and hyphens',
+      message:
+        'Username must start with a letter or underscore, and contain only lowercase letters, numbers, underscores, and hyphens',
     };
   }
 
@@ -212,7 +214,8 @@ const validateGroupName = groupname => {
   if (!groupRegex.test(groupname)) {
     return {
       valid: false,
-      message: 'Group name must start with a letter or underscore, and contain only letters, numbers, underscores, and hyphens',
+      message:
+        'Group name must start with a letter or underscore, and contain only letters, numbers, underscores, and hyphens',
     };
   }
 
@@ -1094,11 +1097,7 @@ export const createSystemUser = async (req, res) => {
 export const deleteSystemUser = async (req, res) => {
   try {
     const { username } = req.params;
-    const {
-      remove_home = false,
-      delete_personal_group = false,
-      created_by = 'api',
-    } = req.query;
+    const { remove_home = false, delete_personal_group = false, created_by = 'api' } = req.query;
 
     log.api.info('User deletion request received', {
       username,
@@ -1119,7 +1118,8 @@ export const deleteSystemUser = async (req, res) => {
           {
             username,
             remove_home: remove_home === 'true' || remove_home === true,
-            delete_personal_group: delete_personal_group === 'true' || delete_personal_group === true,
+            delete_personal_group:
+              delete_personal_group === 'true' || delete_personal_group === true,
           },
           (err, result) => {
             if (err) {
@@ -1649,7 +1649,8 @@ export const modifySystemUser = async (req, res) => {
         uid_change: !!new_uid,
         username_change: !!new_username,
         home_move: move_home,
-        rbac_update: new_authorizations.length > 0 || new_profiles.length > 0 || new_roles.length > 0,
+        rbac_update:
+          new_authorizations.length > 0 || new_profiles.length > 0 || new_roles.length > 0,
       },
     });
   } catch (error) {
@@ -2159,7 +2160,7 @@ export const getSystemRoles = async (req, res) => {
           // Parse attributes
           const attrs = {};
           const attrPairs = attrString.split(';');
-          
+
           for (const pair of attrPairs) {
             const [key, value] = pair.split('=');
             if (key && value) {
@@ -2170,7 +2171,7 @@ export const getSystemRoles = async (req, res) => {
           // Get role info from passwd
           const passwdResult = await executeCommand(`getent passwd ${username}`);
           let roleInfo = { uid: null, gid: null, comment: '', home: '', shell: '' };
-          
+
           if (passwdResult.success) {
             const passwdFields = passwdResult.output.split(':');
             if (passwdFields.length >= 7) {
@@ -2948,7 +2949,7 @@ export const getAvailableRoles = async (req, res) => {
           // Get role comment from passwd
           const passwdResult = await executeCommand(`getent passwd ${rolename}`);
           let comment = '';
-          
+
           if (passwdResult.success) {
             const passwdFields = passwdResult.output.split(':');
             if (passwdFields.length >= 5) {
@@ -3027,8 +3028,8 @@ export const getUserAttributes = async (req, res) => {
 
     // Get user attributes from user_attr
     const userAttrResult = await executeCommand(`grep "^${username}:" /etc/user_attr`);
-    
-    let attributes = {
+
+    const attributes = {
       username,
       type: 'normal',
       authorizations: [],
@@ -3044,7 +3045,7 @@ export const getUserAttributes = async (req, res) => {
       const fields = userAttrResult.output.split(':');
       if (fields.length >= 5) {
         const attrString = fields[4];
-        
+
         // Parse attributes
         if (attrString) {
           const attrPairs = attrString.split(';');
@@ -3053,7 +3054,7 @@ export const getUserAttributes = async (req, res) => {
             if (key && value) {
               const trimmedKey = key.trim();
               const trimmedValue = value.trim();
-              
+
               switch (trimmedKey) {
                 case 'type':
                   attributes.type = trimmedValue;

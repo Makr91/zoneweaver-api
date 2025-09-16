@@ -1,12 +1,7 @@
 import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import {
-  moveItem,
-  copyItem,
-  createArchive,
-  extractArchive,
-} from '../../lib/FileSystemManager.js';
+import { moveItem, copyItem, createArchive, extractArchive } from '../../lib/FileSystemManager.js';
 
 /**
  * File Manager for File Operations

@@ -36,12 +36,12 @@ export const executeArtifactMoveTask = async metadataJson => {
     log.task.info('Artifact move task started', { artifact_id, destination_storage_location_id });
 
     // Find the current task for progress updates (look for recent task with matching operation)
-    const task = await Tasks.findOne({ 
-      where: { 
+    const task = await Tasks.findOne({
+      where: {
         operation: 'artifact_move',
-        status: 'running'
+        status: 'running',
       },
-      order: [['created_at', 'DESC']]
+      order: [['created_at', 'DESC']],
     });
 
     const updateProgress = async (percent, status, info = {}) => {
@@ -51,10 +51,13 @@ export const executeArtifactMoveTask = async metadataJson => {
             progress_percent: percent,
             progress_info: await new Promise((resolve, reject) => {
               yj.stringifyAsync({ status, ...info }, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
+                if (err) {
+                  reject(err);
+                } else {
+                  resolve(result);
+                }
               });
-            })
+            }),
           });
           log.task.debug('Progress updated', { task_id: task.id, percent, status });
         } catch (error) {
@@ -159,12 +162,12 @@ export const executeArtifactCopyTask = async metadataJson => {
     log.task.info('Artifact copy task started', { artifact_id, destination_storage_location_id });
 
     // Find the current task for progress updates (look for recent task with matching operation)
-    const task = await Tasks.findOne({ 
-      where: { 
+    const task = await Tasks.findOne({
+      where: {
         operation: 'artifact_copy',
-        status: 'running'
+        status: 'running',
       },
-      order: [['created_at', 'DESC']]
+      order: [['created_at', 'DESC']],
     });
 
     const updateProgress = async (percent, status, info = {}) => {
@@ -174,10 +177,13 @@ export const executeArtifactCopyTask = async metadataJson => {
             progress_percent: percent,
             progress_info: await new Promise((resolve, reject) => {
               yj.stringifyAsync({ status, ...info }, (err, result) => {
-                if (err) reject(err);
-                else resolve(result);
+                if (err) {
+                  reject(err);
+                } else {
+                  resolve(result);
+                }
               });
-            })
+            }),
           });
           log.task.debug('Progress updated', { task_id: task.id, percent, status });
         } catch (error) {

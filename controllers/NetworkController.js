@@ -192,7 +192,8 @@ export const setHostname = async (req, res) => {
     const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,251}[a-zA-Z0-9])?$/;
     if (!hostnameRegex.test(hostname)) {
       return res.status(400).json({
-        error: 'Invalid hostname format. Must be alphanumeric with hyphens and dots, 1-253 characters',
+        error:
+          'Invalid hostname format. Must be alphanumeric with hyphens and dots, 1-253 characters',
       });
     }
 
@@ -206,7 +207,8 @@ export const setHostname = async (req, res) => {
       }
       if (!/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$/.test(label)) {
         return res.status(400).json({
-          error: 'Invalid hostname format. Each part must start and end with alphanumeric characters',
+          error:
+            'Invalid hostname format. Each part must start and end with alphanumeric characters',
         });
       }
     }

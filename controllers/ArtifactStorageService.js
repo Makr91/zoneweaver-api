@@ -103,7 +103,9 @@ class ArtifactStorageService {
               path: validation.normalizedPath,
             });
 
-            const mkdirResult = await executeCommand(`pfexec mkdir -p "${validation.normalizedPath}"`);
+            const mkdirResult = await executeCommand(
+              `pfexec mkdir -p "${validation.normalizedPath}"`
+            );
 
             if (!mkdirResult.success) {
               throw new Error(`mkdir failed: ${mkdirResult.error}`);
@@ -121,7 +123,7 @@ class ArtifactStorageService {
               create_error: createError?.message || 'Unknown create error',
               create_error_type: typeof createError,
             });
-            
+
             // Mark as disabled since we couldn't create the directory
             directoryEnabled = false;
           }
@@ -145,10 +147,12 @@ class ArtifactStorageService {
       }
 
       // Remove storage locations that are no longer in config
-      const configPaths = this.config.paths.map(p => {
-        const validation = validatePath(p.path);
-        return validation.valid ? validation.normalizedPath : null;
-      }).filter(p => p !== null);
+      const configPaths = this.config.paths
+        .map(p => {
+          const validation = validatePath(p.path);
+          return validation.valid ? validation.normalizedPath : null;
+        })
+        .filter(p => p !== null);
 
       const removedCount = await ArtifactStorageLocation.destroy({
         where: {
@@ -170,7 +174,6 @@ class ArtifactStorageService {
         removed_locations: removedCount,
         duration_ms: duration,
       });
-
     } catch (error) {
       timer.end();
       log.artifact.error('Failed to synchronize configuration', {
@@ -208,8 +211,11 @@ class ArtifactStorageService {
               source: 'initial_scan',
             },
             (err, result) => {
-              if (err) reject(err);
-              else resolve(result);
+              if (err) {
+                reject(err);
+              } else {
+                resolve(result);
+              }
             }
           );
         }),
@@ -218,7 +224,6 @@ class ArtifactStorageService {
       log.artifact.info('Initial scan task created', {
         task_id: task.id,
       });
-
     } catch (error) {
       log.artifact.error('Failed to create initial scan task', {
         error: error?.message || 'Unknown error',
@@ -246,7 +251,6 @@ class ArtifactStorageService {
       log.artifact.info('Cleanup tasks registered', {
         tasks_registered: 1,
       });
-
     } catch (error) {
       log.artifact.error('Failed to register cleanup tasks', {
         error: error.message,
@@ -267,15 +271,12 @@ class ArtifactStorageService {
       }
 
       const retentionDays = this.config.cleanup.orphaned_files_retention_days || 30;
-      const cutoffDate = new Date(Date.now() - (retentionDays * 24 * 60 * 60 * 1000));
+      const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
       // Find artifacts that haven't been verified recently
       const staleArtifacts = await Artifact.findAll({
         where: {
-          [Op.or]: [
-            { last_verified: null },
-            { last_verified: { [Op.lt]: cutoffDate } },
-          ],
+          [Op.or]: [{ last_verified: null }, { last_verified: { [Op.lt]: cutoffDate } }],
         },
         limit: 100, // Process in batches
       });
@@ -306,7 +307,6 @@ class ArtifactStorageService {
           duration_ms: duration,
         });
       }
-
     } catch (error) {
       timer.end();
       log.artifact.error('Artifact cleanup failed', {
@@ -336,8 +336,11 @@ class ArtifactStorageService {
               source: 'periodic_scan',
             },
             (err, result) => {
-              if (err) reject(err);
-              else resolve(result);
+              if (err) {
+                reject(err);
+              } else {
+                resolve(result);
+              }
             }
           );
         }),
@@ -348,7 +351,6 @@ class ArtifactStorageService {
         task_id: task.id,
         run_count: this.stats.scanRuns,
       });
-
     } catch (error) {
       this.stats.totalScanErrors++;
       log.artifact.error('Failed to create periodic scan task', {
@@ -388,7 +390,6 @@ class ArtifactStorageService {
       this.isInitialized = true;
       log.artifact.info('Artifact storage service initialized successfully');
       return true;
-
     } catch (error) {
       log.artifact.error('Failed to initialize artifact storage service', {
         error: error?.message || 'Unknown error',
@@ -432,7 +433,6 @@ class ArtifactStorageService {
       });
 
       return true;
-
     } catch (error) {
       log.artifact.error('Failed to start artifact storage service', {
         error: error.message,
@@ -559,7 +559,6 @@ class ArtifactStorageService {
       }
 
       return stats;
-
     } catch (error) {
       log.artifact.error('Failed to get artifact statistics', {
         error: error.message,
