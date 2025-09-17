@@ -489,7 +489,7 @@ const executeSystemHostTask = (operation, metadata) => {
 };
 
 /**
- * Execute VNC start task for auto-VNC functionality  
+ * Execute VNC start task for auto-VNC functionality
  * @param {string} zoneName - Zone name
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
@@ -820,7 +820,7 @@ const processNextTask = async () => {
               zone_name: task.zone_name,
               trigger_task_id: task.id,
             });
-            
+
             // Create low-priority VNC start task (non-blocking)
             await Tasks.create({
               zone_name: task.zone_name,

@@ -1,10 +1,9 @@
-import { execSync, spawn } from 'child_process';
 import Zones from '../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import VncSessions from '../models/VncSessionModel.js';
-import yj from 'yieldable-json';
-import os from 'os';
-import { log, createTimer } from '../lib/Logger.js';
+import { executeCommand } from '../lib/CommandManager.js';
+import { errorResponse } from './SystemHostController/utils/ResponseHelpers.js';
+import { log } from '../lib/Logger.js';
 
 /**
  * @fileoverview Zone Management controller for Zoneweaver API
@@ -12,54 +11,19 @@ import { log, createTimer } from '../lib/Logger.js';
  */
 
 /**
- * Get current zone status from system (asynchronous)
+ * Get current zone status from system using CommandManager
  * @param {string} zoneName - Name of the zone
  * @returns {Promise<string>} Zone status
  */
-const getSystemZoneStatus = async zoneName =>
-  new Promise(resolve => {
-    const child = spawn('sh', ['-c', `pfexec zoneadm -z ${zoneName} list -p`], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+const getSystemZoneStatus = async zoneName => {
+  const result = await executeCommand(`pfexec zoneadm -z ${zoneName} list -p`);
 
-    let stdout = '';
-    let completed = false;
-
-    // 10 second timeout
-    const timeoutId = setTimeout(() => {
-      if (!completed) {
-        completed = true;
-        child.kill('SIGTERM');
-        resolve('timeout');
-      }
-    }, 10000);
-
-    child.stdout.on('data', data => {
-      stdout += data.toString();
-    });
-
-    child.on('close', code => {
-      if (!completed) {
-        completed = true;
-        clearTimeout(timeoutId);
-
-        if (code === 0) {
-          const parts = stdout.trim().split(':');
-          resolve(parts[2] || 'unknown');
-        } else {
-          resolve('not_found');
-        }
-      }
-    });
-
-    child.on('error', () => {
-      if (!completed) {
-        completed = true;
-        clearTimeout(timeoutId);
-        resolve('not_found');
-      }
-    });
-  });
+  if (result.success) {
+    const parts = result.output.split(':');
+    return parts[2] || 'unknown';
+  }
+  return 'not_found';
+};
 
 /**
  * Validate zone name for security
@@ -129,7 +93,7 @@ export const listZones = async (req, res) => {
       order: [['name', 'ASC']],
     });
 
-    res.json({
+    return res.json({
       zones,
       total: zones.length,
     });
@@ -138,7 +102,7 @@ export const listZones = async (req, res) => {
       error: error.message,
       query_params: req.query,
     });
-    res.status(500).json({ error: 'Failed to retrieve zones' });
+    return res.status(500).json({ error: 'Failed to retrieve zones' });
   }
 };
 
@@ -209,167 +173,70 @@ export const getZoneDetails = async (req, res) => {
       await zone.update({ is_orphaned: true });
     }
 
-    // Get detailed zone configuration from zadm (asynchronously)
-    let configuration = {};
-    let configError = null;
+    // Get all data in parallel for optimal performance (fixes slow frontend loading)
+    const [configResult, vncSession, pendingTasks] = await Promise.all([
+      // Get zone configuration using CommandManager
+      executeCommand(`pfexec zadm show ${zoneName}`),
 
-    try {
-      log.monitoring.debug('Getting zone configuration', {
-        zone_name: zoneName,
-      });
-      const configResult = await new Promise(resolve => {
-        const child = spawn('sh', ['-c', `pfexec zadm show ${zoneName}`], {
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-
-        let stdout = '';
-        let stderr = '';
-        let completed = false;
-
-        const timeoutId = setTimeout(() => {
-          if (!completed) {
-            completed = true;
-            child.kill('SIGTERM');
-            log.monitoring.warn('Zone configuration command timeout', {
-              zone_name: zoneName,
-              timeout_ms: 10000,
-            });
-            resolve({ success: false, error: 'Command timed out after 10 seconds' });
-          }
-        }, 10000);
-
-        child.stdout.on('data', data => {
-          stdout += data.toString();
-        });
-
-        child.stderr.on('data', data => {
-          stderr += data.toString();
-        });
-
-        child.on('close', code => {
-          if (!completed) {
-            completed = true;
-            clearTimeout(timeoutId);
-
-            if (code === 0) {
-              resolve({ success: true, output: stdout });
-            } else {
-              log.monitoring.warn('Zone configuration command failed', {
-                zone_name: zoneName,
-                exit_code: code,
-                stderr: stderr.substring(0, 200),
-              });
-              resolve({ success: false, error: stderr || `Exit code ${code}`, output: stdout });
-            }
-          }
-        });
-
-        child.on('error', error => {
-          if (!completed) {
-            completed = true;
-            clearTimeout(timeoutId);
-            log.monitoring.error('Zone configuration process error', {
-              zone_name: zoneName,
-              error: error.message,
-            });
-            resolve({ success: false, error: error.message });
-          }
-        });
-      });
-
-      if (configResult.success && configResult.output) {
-        try {
-          const configData = JSON.parse(configResult.output);
-
-          // For single zone requests, zadm returns the config directly (not wrapped)
-          if (configData && typeof configData === 'object' && configData.zonename === zoneName) {
-            configuration = configData;
-            log.monitoring.debug('Zone configuration loaded successfully', {
-              zone_name: zoneName,
-              ram: configData.ram,
-              vcpus: configData.vcpus,
-              brand: configData.brand,
-            });
-          } else if (configData && typeof configData === 'object') {
-            // Still use the config even if zonename doesn't match exactly
-            configuration = configData;
-            log.monitoring.warn('Zone configuration zonename mismatch', {
-              expected: zoneName,
-              actual: configData.zonename,
-              ram: configData.ram,
-              vcpus: configData.vcpus,
-              brand: configData.brand,
-            });
-          } else {
-            log.monitoring.warn('Invalid zone configuration format', {
-              zone_name: zoneName,
-              response_type: typeof configData,
-            });
-            configError = 'Invalid configuration format returned by zadm';
-          }
-        } catch (parseError) {
-          log.monitoring.error('Failed to parse zadm JSON output', {
-            zone_name: zoneName,
-            error: parseError.message,
-            raw_output: configResult.output.substring(0, 500),
-          });
-          configError = `Failed to parse zadm output: ${parseError.message}`;
-        }
-      } else {
-        log.monitoring.warn('Zone configuration command failed', {
-          zone_name: zoneName,
-          error: configResult.error,
-        });
-        configError = configResult.error || 'zadm command failed';
-      }
-    } catch (error) {
-      log.monitoring.error('Exception getting zone configuration', {
-        zone_name: zoneName,
-        error: error.message,
-      });
-      configError = error.message;
-    }
-
-    // Get active VNC session if any
-    let activeVncSession = null;
-    try {
-      const vncSession = await VncSessions.findOne({
+      // Get VNC session
+      VncSessions.findOne({
         where: { zone_name: zoneName, status: 'active' },
-      });
-      if (vncSession) {
-        activeVncSession = vncSession.toJSON();
-        // Add console URL
-        activeVncSession.console_url = `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`;
-      }
-    } catch (error) {
-      log.database.warn('Failed to get VNC session for zone', {
-        zone_name: zoneName,
-        error: error.message,
-      });
-    }
+      }).catch(error => {
+        log.database.warn('Failed to get VNC session for zone', {
+          zone_name: zoneName,
+          error: error.message,
+        });
+        return null;
+      }),
 
-    // Get pending tasks for this zone
-    let pendingTasks = [];
-    try {
-      pendingTasks = await Tasks.findAll({
+      // Get pending tasks
+      Tasks.findAll({
         where: {
           zone_name: zoneName,
           status: ['pending', 'running'],
         },
         order: [['created_at', 'DESC']],
         limit: 10,
-      });
-    } catch (error) {
-      log.database.warn('Failed to get tasks for zone', {
-        zone_name: zoneName,
-        error: error.message,
-      });
+      }).catch(error => {
+        log.database.warn('Failed to get tasks for zone', {
+          zone_name: zoneName,
+          error: error.message,
+        });
+        return [];
+      }),
+
+      // Refresh zone data after potential update
+      zone.reload(),
+    ]);
+
+    // Parse zone configuration
+    let configuration = {};
+    if (configResult.success && configResult.output) {
+      try {
+        const configData = JSON.parse(configResult.output);
+        configuration = configData;
+        log.monitoring.debug('Zone configuration loaded successfully', {
+          zone_name: zoneName,
+          ram: configData.ram,
+          vcpus: configData.vcpus,
+          brand: configData.brand,
+        });
+      } catch (parseError) {
+        log.monitoring.error('Failed to parse zadm JSON output', {
+          zone_name: zoneName,
+          error: parseError.message,
+        });
+      }
     }
 
-    // Refresh zone data after potential update
-    await zone.reload();
+    // Process VNC session data
+    let activeVncSession = null;
+    if (vncSession) {
+      activeVncSession = vncSession.toJSON();
+      activeVncSession.console_url = `${req.protocol}://${req.get('host')}/zones/${zoneName}/vnc/console`;
+    }
 
-    res.json({
+    return res.json({
       zone_info: zone.toJSON(),
       configuration,
       active_vnc_session: activeVncSession,
@@ -381,7 +248,7 @@ export const getZoneDetails = async (req, res) => {
       error: error.message,
       zone_name: req.params.zoneName,
     });
-    res.status(500).json({ error: 'Failed to retrieve zone details' });
+    return res.status(500).json({ error: 'Failed to retrieve zone details' });
   }
 };
 
@@ -424,79 +291,36 @@ export const getZoneConfig = async (req, res) => {
     const { zoneName } = req.params;
 
     if (!validateZoneName(zoneName)) {
-      return res.status(400).json({ error: 'Invalid zone name' });
+      return errorResponse(res, 400, 'Invalid zone name');
     }
 
-    // Get zone configuration using zadm show (asynchronously)
-    const configResult = await new Promise(resolve => {
-      const child = spawn('sh', ['-c', `pfexec zadm show ${zoneName}`], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-      let completed = false;
-
-      const timeoutId = setTimeout(() => {
-        if (!completed) {
-          completed = true;
-          child.kill('SIGTERM');
-          resolve({ success: false, error: 'Timeout' });
-        }
-      }, 10000);
-
-      child.stdout.on('data', data => {
-        stdout += data.toString();
-      });
-
-      child.stderr.on('data', data => {
-        stderr += data.toString();
-      });
-
-      child.on('close', code => {
-        if (!completed) {
-          completed = true;
-          clearTimeout(timeoutId);
-
-          if (code === 0) {
-            resolve({ success: true, output: stdout });
-          } else {
-            resolve({ success: false, error: stderr || `Exit code ${code}` });
-          }
-        }
-      });
-
-      child.on('error', error => {
-        if (!completed) {
-          completed = true;
-          clearTimeout(timeoutId);
-          resolve({ success: false, error: error.message });
-        }
-      });
-    });
+    // Get zone configuration using CommandManager
+    const configResult = await executeCommand(`pfexec zadm show ${zoneName}`);
 
     if (!configResult.success) {
       if (configResult.error.includes('does not exist')) {
-        return res.status(404).json({ error: 'Zone not found' });
+        return errorResponse(res, 404, 'Zone not found');
       }
-      return res.status(500).json({
-        error: 'Failed to retrieve zone configuration',
-        details: configResult.error,
-      });
+      return errorResponse(res, 500, 'Failed to retrieve zone configuration', configResult.error);
     }
 
-    const config = JSON.parse(configResult.output);
+    let config;
+    try {
+      config = JSON.parse(configResult.output);
+    } catch (parseError) {
+      return errorResponse(res, 500, 'Failed to parse zone configuration', parseError.message);
+    }
 
-    res.json({
+    return res.json({
       zone_name: zoneName,
-      configuration: config, // zadm show zonename returns config directly, not wrapped
+      configuration: config,
     });
   } catch (error) {
     log.monitoring.error('Error getting zone config', {
       error: error.message,
       zone_name: req.params.zoneName,
     });
-    res.status(500).json({ error: 'Failed to retrieve zone configuration' });
+    return errorResponse(res, 500, 'Failed to retrieve zone configuration');
   }
 };
 
@@ -600,7 +424,7 @@ export const startZone = async (req, res) => {
       status: 'pending',
     });
 
-    res.json({
+    return res.json({
       success: true,
       task_id: task.id,
       zone_name: zoneName,
@@ -614,7 +438,7 @@ export const startZone = async (req, res) => {
       zone_name: req.params.zoneName,
       user: req.entity.name,
     });
-    res.status(500).json({ error: 'Failed to queue start task' });
+    return res.status(500).json({ error: 'Failed to queue start task' });
   }
 };
 
@@ -717,7 +541,7 @@ export const stopZone = async (req, res) => {
       status: 'pending',
     });
 
-    res.json({
+    return res.json({
       success: true,
       task_id: task.id,
       zone_name: zoneName,
@@ -732,7 +556,7 @@ export const stopZone = async (req, res) => {
       zone_name: req.params.zoneName,
       user: req.entity.name,
     });
-    res.status(500).json({ error: 'Failed to queue stop task' });
+    return res.status(500).json({ error: 'Failed to queue stop task' });
   }
 };
 
@@ -794,7 +618,7 @@ export const restartZone = async (req, res) => {
       status: 'pending',
     });
 
-    res.json({
+    return res.json({
       success: true,
       restart_tasks: {
         stop_task_id: stopTask.id,
@@ -811,7 +635,7 @@ export const restartZone = async (req, res) => {
       zone_name: req.params.zoneName,
       user: req.entity.name,
     });
-    res.status(500).json({ error: 'Failed to queue restart tasks' });
+    return res.status(500).json({ error: 'Failed to queue restart tasks' });
   }
 };
 
@@ -906,7 +730,7 @@ export const deleteZone = async (req, res) => {
       tasks.push(deleteTask);
     }
 
-    res.json({
+    return res.json({
       success: true,
       delete_tasks: tasks.map(t => t.id),
       zone_name: zoneName,
@@ -921,6 +745,6 @@ export const deleteZone = async (req, res) => {
       zone_name: req.params.zoneName,
       user: req.entity.name,
     });
-    res.status(500).json({ error: 'Failed to queue delete tasks' });
+    return res.status(500).json({ error: 'Failed to queue delete tasks' });
   }
 };

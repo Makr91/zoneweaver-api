@@ -8,78 +8,6 @@ import { log } from '../lib/Logger.js';
  */
 
 /**
- * Handles a new WebSocket connection for an existing terminal session.
- * @param {import('ws').WebSocket} ws - The WebSocket connection object.
- * @param {string} sessionId - The ID of the terminal session.
- */
-export const handleTerminalConnection = async (ws, sessionId) => {
-  // Get session from database first
-  const session = await TerminalSessions.findByPk(sessionId);
-  if (!session) {
-    ws.send('Terminal session not found in database.');
-    ws.close();
-    return;
-  }
-
-  log.websocket.info('WebSocket connected to terminal session', {
-    session_id: sessionId,
-    terminal_cookie: session.terminal_cookie,
-    status: session.status,
-  });
-
-  // Handle sessions that are still connecting (PTY not ready yet)
-  if (session.status === 'connecting') {
-    ws.send('\r\n🔄 Terminal starting, please wait...\r\n');
-
-    // Wait for PTY to be ready (poll every 100ms for up to 10 seconds)
-    let attempts = 0;
-    const maxAttempts = 100; // 10 seconds max wait
-
-    const waitForPty = async () => {
-      attempts++;
-      const ptyProcess = getPtyProcess(sessionId);
-
-      if (ptyProcess) {
-        // PTY is ready, proceed with normal connection
-        ws.send('\r\n✅ Terminal ready!\r\n');
-        setupTerminalConnection(ws, sessionId, session, ptyProcess);
-        return;
-      }
-
-      // Check if session failed or timed out
-      const updatedSession = await TerminalSessions.findByPk(sessionId);
-      if (updatedSession.status === 'failed') {
-        ws.send('\r\n❌ Terminal failed to start.\r\n');
-        ws.close();
-        return;
-      }
-
-      if (attempts >= maxAttempts) {
-        ws.send('\r\n⏱️ Terminal startup timed out.\r\n');
-        ws.close();
-        return;
-      }
-
-      // Continue waiting
-      setTimeout(waitForPty, 100);
-    };
-
-    waitForPty();
-    return;
-  }
-
-  // Session is active, check if PTY exists
-  const ptyProcess = getPtyProcess(sessionId);
-  if (!ptyProcess) {
-    ws.send('Terminal process not found.');
-    ws.close();
-    return;
-  }
-
-  setupTerminalConnection(ws, sessionId, session, ptyProcess);
-};
-
-/**
  * Sets up the terminal connection between WebSocket and PTY
  * @param {import('ws').WebSocket} ws - The WebSocket connection
  * @param {string} sessionId - The session ID
@@ -164,4 +92,76 @@ const setupTerminalConnection = async (ws, sessionId, session, ptyProcess) => {
       stack: error.stack,
     });
   });
+};
+
+/**
+ * Handles a new WebSocket connection for an existing terminal session.
+ * @param {import('ws').WebSocket} ws - The WebSocket connection object.
+ * @param {string} sessionId - The ID of the terminal session.
+ */
+export const handleTerminalConnection = async (ws, sessionId) => {
+  // Get session from database first
+  const session = await TerminalSessions.findByPk(sessionId);
+  if (!session) {
+    ws.send('Terminal session not found in database.');
+    ws.close();
+    return;
+  }
+
+  log.websocket.info('WebSocket connected to terminal session', {
+    session_id: sessionId,
+    terminal_cookie: session.terminal_cookie,
+    status: session.status,
+  });
+
+  // Handle sessions that are still connecting (PTY not ready yet)
+  if (session.status === 'connecting') {
+    ws.send('\r\n🔄 Terminal starting, please wait...\r\n');
+
+    // Wait for PTY to be ready (poll every 100ms for up to 10 seconds)
+    let attempts = 0;
+    const maxAttempts = 100; // 10 seconds max wait
+
+    const waitForPty = async () => {
+      attempts++;
+      const ptyProcess = getPtyProcess(sessionId);
+
+      if (ptyProcess) {
+        // PTY is ready, proceed with normal connection
+        ws.send('\r\n✅ Terminal ready!\r\n');
+        setupTerminalConnection(ws, sessionId, session, ptyProcess);
+        return;
+      }
+
+      // Check if session failed or timed out
+      const updatedSession = await TerminalSessions.findByPk(sessionId);
+      if (updatedSession.status === 'failed') {
+        ws.send('\r\n❌ Terminal failed to start.\r\n');
+        ws.close();
+        return;
+      }
+
+      if (attempts >= maxAttempts) {
+        ws.send('\r\n⏱️ Terminal startup timed out.\r\n');
+        ws.close();
+        return;
+      }
+
+      // Continue waiting
+      setTimeout(waitForPty, 100);
+    };
+
+    waitForPty();
+    return;
+  }
+
+  // Session is active, check if PTY exists
+  const ptyProcess = getPtyProcess(sessionId);
+  if (!ptyProcess) {
+    ws.send('Terminal process not found.');
+    ws.close();
+    return;
+  }
+
+  setupTerminalConnection(ws, sessionId, session, ptyProcess);
 };
