@@ -175,6 +175,44 @@ class SystemMetricsCollector {
   }
 
   /**
+   * Map kstat memory key to stats field
+   * @param {string} key - Kstat key
+   * @param {string} value - Kstat value
+   * @param {Object} stats - Stats object to update
+   */
+  mapKstatMemoryKey(key, value, stats) {
+    const intValue = parseInt(value) || 0;
+
+    if (key.endsWith(':physmem')) {
+      stats.physmem_pages = intValue;
+    } else if (key.endsWith(':freemem')) {
+      stats.freemem_pages = intValue;
+    } else if (key.endsWith(':availrmem')) {
+      stats.availrmem_pages = intValue;
+    } else if (key.endsWith(':pagestotal')) {
+      stats.pagestotal_pages = intValue;
+    } else if (key.endsWith(':pagesfree')) {
+      stats.pagesfree_pages = intValue;
+    } else if (key.endsWith(':pageslocked')) {
+      stats.pageslocked_pages = intValue;
+    } else if (key.endsWith(':lotsfree')) {
+      stats.lotsfree_pages = intValue;
+    } else if (key.endsWith(':desfree')) {
+      stats.desfree_pages = intValue;
+    } else if (key.endsWith(':minfree')) {
+      stats.minfree_pages = intValue;
+    } else if (key.endsWith(':pp_kernel')) {
+      stats.pp_kernel_pages = intValue;
+    } else if (key.endsWith(':nalloc')) {
+      stats.page_allocs = intValue;
+    } else if (key.endsWith(':nfree')) {
+      stats.page_frees = intValue;
+    } else if (key.endsWith(':nscan')) {
+      stats.page_scans = intValue;
+    }
+  }
+
+  /**
    * Parse kstat memory information
    * @param {string} output - kstat command output
    * @returns {Object} Memory statistics
@@ -193,36 +231,9 @@ class SystemMetricsCollector {
       // Split on whitespace, expecting key and value
       const parts = trimmed.split(/\s+/);
       if (parts.length >= 2) {
-        const key = parts[0];
+        const [key] = parts;
         const value = parts[parts.length - 1]; // Take last part as value
-
-        if (key.endsWith(':physmem')) {
-          stats.physmem_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':freemem')) {
-          stats.freemem_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':availrmem')) {
-          stats.availrmem_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':pagestotal')) {
-          stats.pagestotal_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':pagesfree')) {
-          stats.pagesfree_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':pageslocked')) {
-          stats.pageslocked_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':lotsfree')) {
-          stats.lotsfree_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':desfree')) {
-          stats.desfree_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':minfree')) {
-          stats.minfree_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':pp_kernel')) {
-          stats.pp_kernel_pages = parseInt(value) || 0;
-        } else if (key.endsWith(':nalloc')) {
-          stats.page_allocs = parseInt(value) || 0;
-        } else if (key.endsWith(':nfree')) {
-          stats.page_frees = parseInt(value) || 0;
-        } else if (key.endsWith(':nscan')) {
-          stats.page_scans = parseInt(value) || 0;
-        }
+        this.mapKstatMemoryKey(key, value, stats);
       }
     }
 
@@ -242,11 +253,14 @@ class SystemMetricsCollector {
 
     try {
       // Example: total: 8388608k bytes allocated + 0k reserved = 8388608k used, 16777216k available
-      const match = output.match(/total:\s+(\d+)k.*?=\s+(\d+)k\s+used,\s+(\d+)k\s+available/);
+      const match = output.match(
+        /total:\s+(?<allocated>\d+)k.*?=\s+(?<used>\d+)k\s+used,\s+(?<available>\d+)k\s+available/
+      );
       if (match) {
-        stats.swap_allocated_kb = parseInt(match[1]) || 0;
-        stats.swap_used_kb = parseInt(match[2]) || 0;
-        stats.swap_available_kb = parseInt(match[3]) || 0;
+        const { allocated, used, available } = match.groups;
+        stats.swap_allocated_kb = parseInt(allocated) || 0;
+        stats.swap_used_kb = parseInt(used) || 0;
+        stats.swap_available_kb = parseInt(available) || 0;
         stats.swap_total_kb = stats.swap_used_kb + stats.swap_available_kb;
       }
     } catch (error) {
@@ -371,8 +385,13 @@ class SystemMetricsCollector {
       // Store CPU statistics
       await CPUStats.create(cpuData);
 
-      const coreInfo = perCoreData.length > 0 ? ` (${perCoreData.length} cores)` : '';
+      // Log CPU collection success with core info for monitoring
       if (perCoreData.length > 0) {
+        log.monitoring.debug('CPU statistics collected', {
+          cpu_count: cpuCount,
+          cores_processed: perCoreData.length,
+          hostname: this.hostname,
+        });
       }
 
       await this.updateHostInfo({
@@ -417,7 +436,6 @@ class SystemMetricsCollector {
       const freeMemoryBytes = (kstatStats.freemem_pages || 0) * pageSize;
       const availableMemoryBytes =
         (kstatStats.availrmem_pages || kstatStats.freemem_pages || 0) * pageSize;
-      const usedMemoryBytes = totalMemoryBytes - freeMemoryBytes;
 
       // Use Node.js values as fallback if kstat parsing failed
       const finalTotalBytes = totalMemoryBytes > 0 ? totalMemoryBytes : nodeTotalMem;
@@ -461,9 +479,14 @@ class SystemMetricsCollector {
       // Store memory statistics
       await MemoryStats.create(memoryData);
 
-      const totalGB = (finalTotalBytes / 1024 ** 3).toFixed(1);
-      const usedGB = (finalUsedBytes / 1024 ** 3).toFixed(1);
-      const swapGB = (swapTotalBytes / 1024 ** 3).toFixed(1);
+      // Log memory collection success with statistics for monitoring
+      log.monitoring.debug('Memory statistics collected', {
+        total_memory_gb: (finalTotalBytes / 1024 ** 3).toFixed(1),
+        used_memory_gb: (finalUsedBytes / 1024 ** 3).toFixed(1),
+        swap_total_gb: (swapTotalBytes / 1024 ** 3).toFixed(1),
+        memory_utilization_pct: memoryUtilization.toFixed(2),
+        hostname: this.hostname,
+      });
 
       await this.updateHostInfo({
         last_memory_scan: new Date(),
@@ -499,11 +522,10 @@ class SystemMetricsCollector {
       const parts = line.split(/\s+/);
 
       if (parts.length >= 5) {
-        const swapfilePath = parts[0];
-        const deviceInfo = parts[1];
-        const swaplo = parseInt(parts[2]) || 0;
-        const blocks = parseInt(parts[3]) || 0;
-        const freeBlocks = parseInt(parts[4]) || 0;
+        const [swapfilePath, deviceInfo, swapLoRaw, blocksRaw, freeBlocksRaw] = parts;
+        const swaplo = parseInt(swapLoRaw) || 0;
+        const blocks = parseInt(blocksRaw) || 0;
+        const freeBlocks = parseInt(freeBlocksRaw) || 0;
 
         // Calculate sizes in bytes (512-byte blocks)
         const sizeBytes = blocks * 512;
@@ -512,8 +534,8 @@ class SystemMetricsCollector {
         const utilizationPct = sizeBytes > 0 ? (usedBytes / sizeBytes) * 100 : 0;
 
         // Extract pool assignment from path
-        const poolMatch = swapfilePath.match(/\/dev\/zvol\/dsk\/([^\/]+)/);
-        const poolAssignment = poolMatch ? poolMatch[1] : null;
+        const poolMatch = swapfilePath.match(/\/dev\/zvol\/dsk\/(?<pool>[^/]+)/);
+        const poolAssignment = poolMatch ? poolMatch.groups.pool : null;
 
         // Use clean SwapAreaModel field names (after cleanup migration)
         swapAreas.push({
@@ -558,11 +580,11 @@ class SystemMetricsCollector {
       // Get current active swap devices for this host
       const currentSwapDevices = new Set();
 
-      // Use proper upsert with unique constraint on (host, swapfile)
-      for (const swapArea of swapAreas) {
+      // Use proper upsert with unique constraint on (host, swapfile) - parallel processing
+      const upsertPromises = swapAreas.map(swapArea => {
         currentSwapDevices.add(swapArea.swapfile);
 
-        await SwapArea.upsert(
+        return SwapArea.upsert(
           {
             host: this.hostname,
             ...swapArea,
@@ -571,7 +593,9 @@ class SystemMetricsCollector {
             conflictFields: ['host', 'swapfile'],
           }
         );
-      }
+      });
+
+      await Promise.all(upsertPromises);
 
       // Mark any swap areas that are no longer active as inactive
       // (devices that existed before but are not in current scan)
@@ -605,19 +629,35 @@ class SystemMetricsCollector {
   }
 
   /**
-   * Collect both CPU and memory statistics
+   * Collect CPU, memory, and swap statistics in parallel
    * @returns {Promise<boolean>} Success status
    */
   async collectSystemMetrics() {
     try {
-      // Collect CPU stats
-      const cpuSuccess = await this.collectCPUStats();
-
-      // Collect memory stats
-      const memorySuccess = await this.collectMemoryStats();
-
-      // Collect swap areas
-      const swapSuccess = await this.collectSwapAreas();
+      // Collect all system metrics in parallel for optimal performance
+      const [cpuSuccess, memorySuccess, swapSuccess] = await Promise.all([
+        this.collectCPUStats().catch(error => {
+          log.monitoring.warn('CPU stats collection failed', {
+            error: error.message,
+            hostname: this.hostname,
+          });
+          return false;
+        }),
+        this.collectMemoryStats().catch(error => {
+          log.monitoring.warn('Memory stats collection failed', {
+            error: error.message,
+            hostname: this.hostname,
+          });
+          return false;
+        }),
+        this.collectSwapAreas().catch(error => {
+          log.monitoring.warn('Swap areas collection failed', {
+            error: error.message,
+            hostname: this.hostname,
+          });
+          return false;
+        }),
+      ]);
 
       if (cpuSuccess && memorySuccess && swapSuccess) {
         await this.resetErrorCount();

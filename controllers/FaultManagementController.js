@@ -7,7 +7,6 @@
 
 import { exec } from 'child_process';
 import util from 'util';
-import os from 'os';
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
 
@@ -15,6 +14,348 @@ const execProm = util.promisify(exec);
 
 // Fault cache to store results for configured interval - parameter-aware caching
 const faultCache = new Map();
+
+/**
+ * Helper function to normalize severity levels
+ * @param {string} severity - Raw severity from fmadm
+ * @returns {string} Normalized severity
+ */
+const normalizeSeverity = severity => {
+  if (!severity) {
+    return severity;
+  }
+
+  // Normalize case - capitalize first letter, lowercase rest
+  return severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase();
+};
+
+/**
+ * Helper function to parse detailed fault information
+ * @param {string} section - Detailed fault section
+ * @returns {Object|null} Parsed fault object or null
+ */
+const parseDetailedFault = section => {
+  const fault = { format: 'detailed' };
+  const lines = section.split('\n');
+  let currentField = null;
+  let currentValue = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Skip empty lines
+    if (!trimmed) {
+      // Save current field before skipping
+      if (currentField && currentValue) {
+        fault[currentField] = currentValue.trim();
+        currentField = null;
+        currentValue = '';
+      }
+      continue;
+    }
+
+    // Check if this line starts a new field (contains colon not at the start of indented line)
+    if (line.match(/^[A-Z]/) && line.includes(':')) {
+      // Save previous field
+      if (currentField && currentValue) {
+        fault[currentField] = currentValue.trim();
+      }
+
+      // Parse new field
+      const colonIndex = line.indexOf(':');
+      const fieldName = line.substring(0, colonIndex).trim();
+      const fieldValue = line.substring(colonIndex + 1).trim();
+
+      // Handle special cases
+      if (fieldName === 'Host') {
+        currentField = 'host';
+        currentValue = fieldValue;
+      } else if (fieldName === 'Platform') {
+        // Handle tab-separated fields on same line
+        currentField = 'platform';
+        currentValue = fieldValue.split('\t')[0].trim(); // Take only part before tab
+      } else if (fieldName === 'Fault class') {
+        currentField = 'faultClass';
+        currentValue = fieldValue;
+      } else if (fieldName === 'Affects') {
+        currentField = 'affects';
+        currentValue = fieldValue;
+      } else if (fieldName === 'Problem in') {
+        currentField = 'problemIn';
+        currentValue = fieldValue;
+      } else if (fieldName === 'Description') {
+        currentField = 'description';
+        currentValue = fieldValue;
+      } else if (fieldName === 'Response') {
+        currentField = 'response';
+        currentValue = fieldValue;
+      } else if (fieldName === 'Impact') {
+        currentField = 'impact';
+        currentValue = fieldValue;
+      } else if (fieldName === 'Action') {
+        currentField = 'action';
+        currentValue = fieldValue;
+      } else {
+        // Skip unknown fields like Product_sn, Chassis_id
+        currentField = null;
+        currentValue = '';
+      }
+    } else if (currentField && trimmed) {
+      // This is a continuation line for the current field
+      if (currentValue) {
+        currentValue += ` ${trimmed}`;
+      } else {
+        currentValue = trimmed;
+      }
+    }
+  }
+
+  // Save the last field
+  if (currentField && currentValue) {
+    fault[currentField] = currentValue.trim();
+  }
+
+  return Object.keys(fault).length > 1 ? fault : null;
+};
+
+/**
+ * Helper function to parse a single fault line from tabular output
+ * @param {string} line - Single line from fmadm output
+ * @returns {Object|null} Parsed fault object or null
+ */
+const parseFaultLine = line => {
+  const trimmed = line.trim();
+
+  // Skip empty lines and lines that are clearly not fault data
+  if (!trimmed || trimmed.length < 20) {
+    return null;
+  }
+
+  // Parse the format: "Jan 19 2025     c543b4ad-6cc7-40bc-891a-186100ef16a7  ZFS-8000-CS    Major"
+  // Use regex to match the UUID pattern
+  const uuidPattern =
+    /(?<uuid>[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/;
+  const match = trimmed.match(uuidPattern);
+
+  if (!match) {
+    return null;
+  }
+
+  const { uuid } = match.groups;
+  const beforeUuid = trimmed.substring(0, match.index).trim();
+  const afterUuid = trimmed.substring(match.index + uuid.length).trim();
+
+  // Split the part after UUID to get MSG-ID and SEVERITY
+  const afterParts = afterUuid.split(/\s+/);
+  if (afterParts.length < 2) {
+    return null;
+  }
+
+  const [msgId, severity] = afterParts;
+
+  return {
+    time: beforeUuid,
+    uuid,
+    msgId,
+    severity: normalizeSeverity(severity),
+    format: 'summary',
+  };
+};
+
+/**
+ * Helper function to parse fmadm config output
+ * @param {string} output - Raw fmadm config output
+ * @returns {Array} Parsed module configurations
+ */
+const parseFaultManagerConfig = output => {
+  const modules = [];
+  const lines = output.trim().split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('MODULE')) {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 3) {
+        modules.push({
+          module: parts[0],
+          version: parts[1],
+          description: parts.slice(2).join(' '),
+        });
+      }
+    }
+  }
+
+  return modules;
+};
+
+/**
+ * Helper function to generate faults summary
+ * @param {Array} faults - Array of parsed faults
+ * @returns {Object} Summary statistics
+ */
+const generateFaultsSummary = faults => {
+  const summary = {
+    totalFaults: faults.length,
+    severityLevels: [],
+    faultClasses: [],
+    affectedResources: [],
+  };
+
+  const severityCount = {};
+  const classCount = {};
+
+  for (const fault of faults) {
+    // Count severities
+    if (fault.severity) {
+      severityCount[fault.severity] = (severityCount[fault.severity] || 0) + 1;
+    }
+
+    // Count fault classes from details if available, otherwise from fault object
+    const faultClass = fault.details?.faultClass || fault.faultClass;
+    if (faultClass) {
+      classCount[faultClass] = (classCount[faultClass] || 0) + 1;
+    }
+
+    // Track affected resources from details if available
+    const affects = fault.details?.affects || fault.affects;
+    if (affects && !summary.affectedResources.includes(affects)) {
+      summary.affectedResources.push(affects);
+    }
+  }
+
+  summary.severityLevels = Object.keys(severityCount);
+  summary.faultClasses = Object.keys(classCount);
+  summary.severityBreakdown = severityCount;
+  summary.classBreakdown = classCount;
+
+  return summary;
+};
+
+/**
+ * Helper to save current fault with details
+ * @param {Array} faults - Faults array
+ * @param {Object} currentFault - Current fault being processed
+ * @param {boolean} collectingDetails - Whether collecting details
+ * @param {Array} detailLines - Detail lines collected
+ */
+const saveFaultWithDetails = (faults, currentFault, collectingDetails, detailLines) => {
+  if (!currentFault) {
+    return;
+  }
+
+  if (collectingDetails && detailLines.length > 0) {
+    const detailedInfo = parseDetailedFault(detailLines.join('\n'));
+    if (detailedInfo) {
+      currentFault.details = {
+        host: detailedInfo.host,
+        platform: detailedInfo.platform,
+        faultClass: detailedInfo.faultClass,
+        affects: detailedInfo.affects,
+        problemIn: detailedInfo.problemIn,
+        description: detailedInfo.description,
+        response: detailedInfo.response,
+        impact: detailedInfo.impact,
+        action: detailedInfo.action,
+      };
+    }
+  }
+  faults.push(currentFault);
+};
+
+/**
+ * Helper to check if line should skip processing
+ * @param {string} line - Line to check
+ * @returns {boolean} True if should skip
+ */
+const shouldSkipLine = line => {
+  if (line.match(/^-{15,}/)) {
+    return true;
+  }
+  if (
+    line.includes('TIME') &&
+    line.includes('EVENT-ID') &&
+    line.includes('MSG-ID') &&
+    line.includes('SEVERITY')
+  ) {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Helper to check if line starts detail collection
+ * @param {string} line - Line to check
+ * @returns {boolean} True if starts detail collection
+ */
+const startsDetailCollection = line => {
+  if (line.includes('Host') && line.includes(':')) {
+    return true;
+  }
+  return (
+    line.match(/^[A-Z][^:]*\s*:/) &&
+    (line.includes('Platform') ||
+      line.includes('Fault class') ||
+      line.includes('Affects') ||
+      line.includes('Description') ||
+      line.includes('Response') ||
+      line.includes('Impact') ||
+      line.includes('Action'))
+  );
+};
+
+/**
+ * Helper function to parse fmadm faulty output
+ * @param {string} output - Raw fmadm output
+ * @returns {Array} Parsed fault objects
+ */
+const parseFaultOutput = output => {
+  const faults = [];
+
+  if (!output || !output.trim()) {
+    return faults;
+  }
+
+  const lines = output.trim().split('\n');
+  let currentFault = null;
+  let collectingDetails = false;
+  let detailLines = [];
+
+  for (const line of lines) {
+    if (shouldSkipLine(line)) {
+      continue;
+    }
+
+    if (!line.trim()) {
+      if (collectingDetails) {
+        detailLines.push(line);
+      }
+      continue;
+    }
+
+    const possibleFault = parseFaultLine(line);
+    if (possibleFault) {
+      saveFaultWithDetails(faults, currentFault, collectingDetails, detailLines);
+      currentFault = possibleFault;
+      collectingDetails = false;
+      detailLines = [];
+      continue;
+    }
+
+    if (startsDetailCollection(line)) {
+      collectingDetails = true;
+      detailLines = [line];
+      continue;
+    }
+
+    if (collectingDetails) {
+      detailLines.push(line);
+    }
+  }
+
+  saveFaultWithDetails(faults, currentFault, collectingDetails, detailLines);
+  return faults;
+};
 
 /**
  * @swagger
@@ -155,7 +496,7 @@ export const getFaults = async (req, res) => {
     // Generate summary
     const faultsSummary = generateFaultsSummary(faultData.parsed_faults);
 
-    res.json({
+    return res.json({
       faults: faultData.parsed_faults,
       summary: faultsSummary,
       raw_output: faultData.raw_output,
@@ -168,7 +509,7 @@ export const getFaults = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get system faults',
       details: error.message,
     });
@@ -226,9 +567,9 @@ export const getFaultDetails = async (req, res) => {
       });
     }
 
-    const parsedFault = parseFaultOutput(stdout)[0]; // Should only be one result
+    const [parsedFault] = parseFaultOutput(stdout); // Should only be one result
 
-    res.json({
+    return res.json({
       fault: parsedFault,
       raw_output: stdout,
       uuid,
@@ -240,7 +581,7 @@ export const getFaultDetails = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get fault details',
       details: error.message,
     });
@@ -281,7 +622,7 @@ export const getFaultManagerConfig = async (req, res) => {
 
     const parsedConfig = parseFaultManagerConfig(stdout);
 
-    res.json({
+    return res.json({
       config: parsedConfig,
       raw_output: stdout,
       timestamp: new Date().toISOString(),
@@ -291,7 +632,7 @@ export const getFaultManagerConfig = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get fault manager configuration',
       details: error.message,
     });
@@ -355,7 +696,7 @@ export const acquitFault = async (req, res) => {
     // Clear all cache entries after administrative action
     faultCache.clear();
 
-    res.json({
+    return res.json({
       success: true,
       message: `Successfully acquitted ${target}`,
       target,
@@ -369,7 +710,7 @@ export const acquitFault = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to acquit fault',
       details: error.message,
     });
@@ -426,7 +767,7 @@ export const markRepaired = async (req, res) => {
     // Clear all cache entries after administrative action
     faultCache.clear();
 
-    res.json({
+    return res.json({
       success: true,
       message: `Successfully marked ${fmri} as repaired`,
       fmri,
@@ -439,7 +780,7 @@ export const markRepaired = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to mark resource as repaired',
       details: error.message,
     });
@@ -496,7 +837,7 @@ export const markReplaced = async (req, res) => {
     // Clear all cache entries after administrative action
     faultCache.clear();
 
-    res.json({
+    return res.json({
       success: true,
       message: `Successfully marked ${fmri} as replaced`,
       fmri,
@@ -509,7 +850,7 @@ export const markReplaced = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to mark resource as replaced',
       details: error.message,
     });
@@ -603,409 +944,6 @@ export const getFaultStatusForHealth = async () => {
     };
   }
 };
-
-/**
- * Helper function to parse fmadm faulty output
- * @param {string} output - Raw fmadm output
- * @returns {Array} Parsed fault objects
- */
-function parseFaultOutput(output) {
-  const faults = [];
-
-  if (!output || !output.trim()) {
-    return faults;
-  }
-
-  const lines = output.trim().split('\n');
-  let currentFault = null;
-  let collectingDetails = false;
-  let detailLines = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Skip dash separator lines
-    if (line.match(/^-{15,}/)) {
-      continue;
-    }
-
-    // Skip table header lines
-    if (
-      line.includes('TIME') &&
-      line.includes('EVENT-ID') &&
-      line.includes('MSG-ID') &&
-      line.includes('SEVERITY')
-    ) {
-      continue;
-    }
-
-    // Skip empty lines BUT continue collecting details
-    if (!line.trim()) {
-      if (collectingDetails) {
-        detailLines.push(line); // Keep empty lines as part of details
-      }
-      continue;
-    }
-
-    // Try to parse as fault line (contains UUID)
-    const possibleFault = parseFaultLine(line);
-    if (possibleFault) {
-      // Save previous fault if we were working on one
-      if (currentFault) {
-        if (collectingDetails && detailLines.length > 0) {
-          const detailedInfo = parseDetailedFault(detailLines.join('\n'));
-          if (detailedInfo) {
-            currentFault.details = {
-              host: detailedInfo.host,
-              platform: detailedInfo.platform,
-              faultClass: detailedInfo.faultClass,
-              affects: detailedInfo.affects,
-              problemIn: detailedInfo.problemIn,
-              description: detailedInfo.description,
-              response: detailedInfo.response,
-              impact: detailedInfo.impact,
-              action: detailedInfo.action,
-            };
-          }
-        }
-        faults.push(currentFault);
-      }
-
-      // Start new fault
-      currentFault = possibleFault;
-      collectingDetails = false;
-      detailLines = [];
-      continue;
-    }
-
-    // Check if this is start of detailed section
-    if (line.includes('Host') && line.includes(':')) {
-      collectingDetails = true;
-      detailLines = [line];
-      continue;
-    }
-
-    // If we're collecting details, add this line
-    if (collectingDetails) {
-      detailLines.push(line);
-    }
-
-    // Also start collecting details for any line that looks like a fault field
-    if (
-      !collectingDetails &&
-      line.match(/^[A-Z][^:]*\s*:/) &&
-      (line.includes('Platform') ||
-        line.includes('Fault class') ||
-        line.includes('Affects') ||
-        line.includes('Description') ||
-        line.includes('Response') ||
-        line.includes('Impact') ||
-        line.includes('Action'))
-    ) {
-      collectingDetails = true;
-      detailLines = [line];
-    }
-  }
-
-  // Don't forget the last fault
-  if (currentFault) {
-    if (collectingDetails && detailLines.length > 0) {
-      const detailedInfo = parseDetailedFault(detailLines.join('\n'));
-      if (detailedInfo) {
-        currentFault.details = {
-          host: detailedInfo.host,
-          platform: detailedInfo.platform,
-          faultClass: detailedInfo.faultClass,
-          affects: detailedInfo.affects,
-          problemIn: detailedInfo.problemIn,
-          description: detailedInfo.description,
-          response: detailedInfo.response,
-          impact: detailedInfo.impact,
-          action: detailedInfo.action,
-        };
-      }
-    }
-    faults.push(currentFault);
-  }
-
-  return faults;
-}
-
-/**
- * Helper function to parse a single fault line from tabular output
- * @param {string} line - Single line from fmadm output
- * @returns {Object|null} Parsed fault object or null
- */
-function parseFaultLine(line) {
-  const trimmed = line.trim();
-
-  // Skip empty lines and lines that are clearly not fault data
-  if (!trimmed || trimmed.length < 20) {
-    return null;
-  }
-
-  // Parse the format: "Jan 19 2025     c543b4ad-6cc7-40bc-891a-186100ef16a7  ZFS-8000-CS    Major"
-  // Use regex to match the UUID pattern
-  const uuidPattern =
-    /([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/;
-  const match = trimmed.match(uuidPattern);
-
-  if (!match) {
-    return null;
-  }
-
-  const uuid = match[1];
-  const beforeUuid = trimmed.substring(0, match.index).trim();
-  const afterUuid = trimmed.substring(match.index + uuid.length).trim();
-
-  // Split the part after UUID to get MSG-ID and SEVERITY
-  const afterParts = afterUuid.split(/\s+/);
-  if (afterParts.length < 2) {
-    return null;
-  }
-
-  const msgId = afterParts[0];
-  const severity = afterParts[1];
-
-  return {
-    time: beforeUuid,
-    uuid,
-    msgId,
-    severity: normalizeSeverity(severity),
-    format: 'summary',
-  };
-}
-
-/**
- * Helper function to parse detailed fault information
- * @param {string} section - Detailed fault section
- * @returns {Object|null} Parsed fault object or null
- */
-function parseDetailedFault(section) {
-  log.monitoring.debug('Detail parsing - Section', {
-    section_length: section.length,
-    full_section: JSON.stringify(section),
-  });
-
-  const fault = { format: 'detailed' };
-  const lines = section.split('\n');
-
-  log.monitoring.debug('Detail parsing - Total lines', { line_count: lines.length });
-
-  let currentField = null;
-  let currentValue = '';
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    log.monitoring.debug(`Detail parsing - Line ${i}`, {
-      line,
-      trimmed,
-    });
-
-    // Skip empty lines
-    if (!trimmed) {
-      log.monitoring.debug(`Line ${i}: Empty line - saving current field`, {
-        current_field: currentField,
-      });
-      // Save current field before skipping
-      if (currentField && currentValue) {
-        fault[currentField] = currentValue.trim();
-        log.monitoring.debug('Saved field', {
-          field: currentField,
-          value: currentValue.trim(),
-        });
-        currentField = null;
-        currentValue = '';
-      }
-      continue;
-    }
-
-    // Check if this line starts a new field (contains colon not at the start of indented line)
-    if (line.match(/^[A-Z]/) && line.includes(':')) {
-      log.monitoring.debug(`Line ${i}: Detected field line`);
-
-      // Save previous field
-      if (currentField && currentValue) {
-        fault[currentField] = currentValue.trim();
-        log.monitoring.debug('Saved previous field', {
-          field: currentField,
-          value: currentValue.trim(),
-        });
-      }
-
-      // Parse new field
-      const colonIndex = line.indexOf(':');
-      const fieldName = line.substring(0, colonIndex).trim();
-      const fieldValue = line.substring(colonIndex + 1).trim();
-
-      log.monitoring.debug('Field parsing', {
-        field_name: fieldName,
-        field_value: fieldValue,
-      });
-
-      // Handle special cases
-      if (fieldName === 'Host') {
-        currentField = 'host';
-        currentValue = fieldValue;
-        log.monitoring.debug('Set host field', { value: fieldValue });
-      } else if (fieldName === 'Platform') {
-        // Handle tab-separated fields on same line
-        currentField = 'platform';
-        currentValue = fieldValue.split('\t')[0].trim(); // Take only part before tab
-        log.monitoring.debug('Set platform field', { value: currentValue });
-      } else if (fieldName === 'Fault class') {
-        currentField = 'faultClass';
-        currentValue = fieldValue;
-        log.monitoring.debug('Set faultClass field', { value: fieldValue });
-      } else if (fieldName === 'Affects') {
-        currentField = 'affects';
-        currentValue = fieldValue;
-        log.monitoring.debug('Set affects field', { value: fieldValue });
-      } else if (fieldName === 'Problem in') {
-        currentField = 'problemIn';
-        currentValue = fieldValue;
-        log.monitoring.debug('Set problemIn field', { value: fieldValue });
-      } else if (fieldName === 'Description') {
-        currentField = 'description';
-        currentValue = fieldValue;
-        log.monitoring.debug('Set description field', { value: fieldValue });
-      } else if (fieldName === 'Response') {
-        currentField = 'response';
-        currentValue = fieldValue;
-        log.monitoring.debug('Set response field', { value: fieldValue });
-      } else if (fieldName === 'Impact') {
-        currentField = 'impact';
-        currentValue = fieldValue;
-        log.monitoring.debug('Set impact field', { value: fieldValue });
-      } else if (fieldName === 'Action') {
-        currentField = 'action';
-        currentValue = fieldValue;
-        log.monitoring.debug('Set action field', { value: fieldValue });
-      } else {
-        // Skip unknown fields like Product_sn, Chassis_id
-        log.monitoring.debug('Skipping unknown field', { field_name: fieldName });
-        currentField = null;
-        currentValue = '';
-      }
-    } else if (currentField && trimmed) {
-      log.monitoring.debug(`Line ${i}: Continuation line`, {
-        field: currentField,
-      });
-      // This is a continuation line for the current field
-      if (currentValue) {
-        currentValue += ` ${trimmed}`;
-      } else {
-        currentValue = trimmed;
-      }
-      log.monitoring.debug('Updated field value', {
-        field: currentField,
-        value: currentValue,
-      });
-    } else {
-      log.monitoring.debug(`Line ${i}: Ignored line`);
-    }
-  }
-
-  // Save the last field
-  if (currentField && currentValue) {
-    fault[currentField] = currentValue.trim();
-    log.monitoring.debug('Saved final field', {
-      field: currentField,
-      value: currentValue.trim(),
-    });
-  }
-
-  log.monitoring.debug('Detail parsing - Final fault object', {
-    fault: JSON.stringify(fault),
-  });
-
-  return Object.keys(fault).length > 1 ? fault : null;
-}
-
-/**
- * Helper function to parse fmadm config output
- * @param {string} output - Raw fmadm config output
- * @returns {Array} Parsed module configurations
- */
-function parseFaultManagerConfig(output) {
-  const modules = [];
-  const lines = output.trim().split('\n');
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('MODULE')) {
-      const parts = trimmed.split(/\s+/);
-      if (parts.length >= 3) {
-        modules.push({
-          module: parts[0],
-          version: parts[1],
-          description: parts.slice(2).join(' '),
-        });
-      }
-    }
-  }
-
-  return modules;
-}
-
-/**
- * Helper function to normalize severity levels
- * @param {string} severity - Raw severity from fmadm
- * @returns {string} Normalized severity
- */
-function normalizeSeverity(severity) {
-  if (!severity) {
-    return severity;
-  }
-
-  // Normalize case - capitalize first letter, lowercase rest
-  return severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase();
-}
-
-/**
- * Helper function to generate faults summary
- * @param {Array} faults - Array of parsed faults
- * @returns {Object} Summary statistics
- */
-function generateFaultsSummary(faults) {
-  const summary = {
-    totalFaults: faults.length,
-    severityLevels: [],
-    faultClasses: [],
-    affectedResources: [],
-  };
-
-  const severityCount = {};
-  const classCount = {};
-
-  for (const fault of faults) {
-    // Count severities
-    if (fault.severity) {
-      severityCount[fault.severity] = (severityCount[fault.severity] || 0) + 1;
-    }
-
-    // Count fault classes from details if available, otherwise from fault object
-    const faultClass = fault.details?.faultClass || fault.faultClass;
-    if (faultClass) {
-      classCount[faultClass] = (classCount[faultClass] || 0) + 1;
-    }
-
-    // Track affected resources from details if available
-    const affects = fault.details?.affects || fault.affects;
-    if (affects && !summary.affectedResources.includes(affects)) {
-      summary.affectedResources.push(affects);
-    }
-  }
-
-  summary.severityLevels = Object.keys(severityCount);
-  summary.faultClasses = Object.keys(classCount);
-  summary.severityBreakdown = severityCount;
-  summary.classBreakdown = classCount;
-
-  return summary;
-}
 
 export default {
   getFaults,

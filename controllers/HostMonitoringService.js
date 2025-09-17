@@ -7,7 +7,7 @@
 
 import config from '../config/ConfigLoader.js';
 import NetworkCollector from './NetworkCollectorController/index.js';
-import StorageCollector from './StorageCollector.js';
+import StorageCollector from './StorageController/index.js';
 import DeviceCollector from './DeviceCollector.js';
 import SystemMetricsCollector from './SystemMetricsCollector.js';
 import { cleanupOldTasks } from './TaskQueue.js';
