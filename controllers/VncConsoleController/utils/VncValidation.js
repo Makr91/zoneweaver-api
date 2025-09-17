@@ -71,18 +71,17 @@ export const isPortAvailable = async port => {
       log.websocket.debug('Port is not available (zadm process found)', {
         port,
         process_count: zadmProcesses.length,
+        process_pids: zadmProcesses,
       });
       return false;
     }
   } catch (error) {
-    log.websocket.error('Process check failed', {
+    log.websocket.warn('Process check failed, continuing with other methods', {
       port,
       pattern: `zadm vnc.*:${port}`,
       error: error.message,
-      stack: error.stack,
     });
-    // Don't assume port is available if check failed - fail safe
-    return false;
+    // Continue to other checking methods - don't fail immediately on process check errors
   }
 
   // Method 2: Check database for existing sessions using this port
