@@ -9,6 +9,7 @@ import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../../models/NetworkUsageModel.js';
 import IPAddresses from '../../models/IPAddressModel.js';
 import Routes from '../../models/RoutingTableModel.js';
+import db from '../../config/Database.js';
 import {
   buildNetworkWhereClause,
   buildPagination,
@@ -19,13 +20,18 @@ import {
 } from './utils/QueryHelpers.js';
 import {
   getLatestPerEntity,
-  sampleByEntityAndTime,
-  sortByEntityAndTime,
   buildSamplingMetadata,
   createEmptyResponse,
   addQueryTiming,
   calculateTimeSpan,
 } from './utils/SamplingHelpers.js';
+import {
+  getActiveInterfacesList,
+  getTimeSeriesSampledData,
+  getFallbackSampledData,
+  getDatasetMetadata,
+  createOptimizedResponse,
+} from './utils/NetworkSamplingHelpers.js';
 import { log } from '../../lib/Logger.js';
 
 /**
@@ -175,53 +181,80 @@ export const getNetworkUsage = async (req, res) => {
           )
         );
       }
-      // Historical sampling with time distribution
-      const whereClause = buildNetworkWhereClause({ link, since });
+      // OPTIMIZED: Historical sampling using database window functions
+      try {
+        // Step 1: Get dataset metadata in parallel with interface list
+        const [metadata, activeInterfaces] = await Promise.all([
+          getDatasetMetadata(link, since),
+          link ? [link] : getActiveInterfacesList(link)
+        ]);
 
-      const allData = await NetworkUsage.findAll({
-        attributes: NETWORK_USAGE_ATTRIBUTES,
-        where: whereClause,
-        order: [
-          ['link', 'ASC'],
-          ['scan_timestamp', 'ASC'],
-        ],
-      });
+        if (metadata.totalRecords === 0) {
+          return res.json(createEmptyResponse(startTime, 'sql-ntile-sampling'));
+        }
 
-      if (allData.length === 0) {
-        return res.json(createEmptyResponse(startTime, 'javascript-time-sampling'));
-      }
+        // Step 2: Use optimized SQL sampling instead of JavaScript processing
+        let sampledData;
+        try {
+          // Try window function approach first (works on all modern databases)
+          sampledData = await getTimeSeriesSampledData(
+            Array.isArray(activeInterfaces) ? activeInterfaces : metadata.interfaces,
+            since,
+            requestedLimit
+          );
+        } catch (windowError) {
+          // Fallback to Sequelize-based sampling for older database versions
+          log.database.warn('Window function query failed, using fallback method', {
+            error: windowError.message,
+            database_dialect: db.getDialect()
+          });
+          
+          sampledData = await getFallbackSampledData(
+            Array.isArray(activeInterfaces) ? activeInterfaces : metadata.interfaces,
+            since,
+            requestedLimit
+          );
+        }
 
-      const sampledResults = sampleByEntityAndTime(allData, 'link', requestedLimit);
-      const sortedResults = sortByEntityAndTime(sampledResults, 'link');
-
-      const interfaceNames = [...new Set(sortedResults.map(row => row.link))];
-      const activeInterfaces = sortedResults.filter(
-        row => row.rx_mbps > 0 || row.tx_mbps > 0
-      ).length;
-      const timeSpan = calculateTimeSpan(sortedResults);
-
-      return res.json(
-        addQueryTiming(
-          {
-            usage: sortedResults,
-            totalCount: sortedResults.length,
-            returnedCount: sortedResults.length,
-            sampling: buildSamplingMetadata({
-              applied: true,
-              strategy: 'javascript-time-sampling',
-              entityCount: interfaceNames.length,
-              samplesPerEntity: Math.round(sortedResults.length / interfaceNames.length),
-              requestedSamplesPerEntity: requestedLimit,
-            }),
-            metadata: {
-              timeSpan,
-              activeInterfacesCount: activeInterfaces,
-              interfaceList: interfaceNames.sort(),
-            },
-          },
+        // Step 3: Create optimized response with performance metrics
+        return res.json(createOptimizedResponse(
+          sampledData,
+          metadata,
+          requestedLimit,
           startTime
-        )
-      );
+        ));
+      } catch (optimizationError) {
+        // Ultimate fallback: Log error and use original method if optimization fails
+        log.database.error('Optimization failed, using original method', {
+          error: optimizationError.message,
+          stack: optimizationError.stack,
+        });
+
+        // Original fallback method (should rarely be used)
+        const whereClause = buildNetworkWhereClause({ link, since });
+        const { count, rows } = await NetworkUsage.findAndCountAll({
+          where: whereClause,
+          attributes: NETWORK_USAGE_ATTRIBUTES,
+          limit: Math.min(requestedLimit * 10, 1000), // Limit fallback to prevent memory issues
+          order: [['scan_timestamp', 'DESC']],
+        });
+
+        return res.json(
+          addQueryTiming(
+            {
+              usage: rows,
+              totalCount: count,
+              returnedCount: rows.length,
+              sampling: buildSamplingMetadata({
+                applied: true,
+                strategy: 'fallback-limited-query',
+                note: 'Optimization failed, used limited fallback query'
+              }),
+            },
+            startTime
+          )
+        );
+      }
     }
 
     // Simple query without per-interface logic
