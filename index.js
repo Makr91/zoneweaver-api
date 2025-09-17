@@ -17,7 +17,7 @@ import DatabaseMigrations from './config/DatabaseMigrations.js';
 import router from './routes/index.js';
 import { specs, swaggerUi } from './config/swagger.js';
 import { startTaskProcessor } from './controllers/TaskQueue.js';
-import { startVncSessionCleanup } from './controllers/VncConsole.js';
+import { startVncSessionCleanup } from './controllers/VncConsoleController/index.js';
 import { getZloginCleanupTask } from './controllers/ZloginController.js';
 import { cleanupLogStreamSessions } from './controllers/LogStreamController.js';
 import CleanupService from './controllers/CleanupService.js';

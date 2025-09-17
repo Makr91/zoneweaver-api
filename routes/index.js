@@ -26,7 +26,7 @@ import {
   listVncSessions,
   serveVncConsole,
   proxyVncContent,
-} from '../controllers/VncConsole.js';
+} from '../controllers/VncConsoleController/index.js';
 import {
   getMonitoringStatus,
   getHealthCheck,
