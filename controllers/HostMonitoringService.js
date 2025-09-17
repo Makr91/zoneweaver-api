@@ -6,7 +6,7 @@
  */
 
 import config from '../config/ConfigLoader.js';
-import NetworkCollector from './NetworkCollector.js';
+import NetworkCollector from './NetworkCollectorController/index.js';
 import StorageCollector from './StorageCollector.js';
 import DeviceCollector from './DeviceCollector.js';
 import SystemMetricsCollector from './SystemMetricsCollector.js';

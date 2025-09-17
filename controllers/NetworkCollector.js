@@ -1,30 +1,19 @@
 /**
- * @fileoverview Network Data Collection Controller for Zoneweaver API
- * @description Collects network interface information, statistics, and usage data from OmniOS dladm commands
+ * @fileoverview Network Data Collection Controller for Zoneweaver API - DEPRECATED
+ * @description This file is being refactored into NetworkCollectorController/ modular structure
+ * @deprecated Use NetworkCollectorController/index.js instead
  * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { exec, execSync } from 'child_process';
-import util from 'util';
-import os from 'os';
-import { Op } from 'sequelize';
-import yj from 'yieldable-json';
-import config from '../config/ConfigLoader.js';
-import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
-import NetworkUsage from '../models/NetworkUsageModel.js';
-import IPAddresses from '../models/IPAddressModel.js';
-import Routes from '../models/RoutingTableModel.js';
-import HostInfo from '../models/HostInfoModel.js';
-import { log, createTimer } from '../lib/Logger.js';
-
-const execProm = util.promisify(exec);
+// Import the new modular NetworkCollectorController
+import NetworkCollectorController from './NetworkCollectorController/index.js';
 
 /**
- * Network Data Collector Class
- * @description Handles collection of network interface configuration, statistics, and usage data
+ * @deprecated Legacy NetworkCollector class - Use NetworkCollectorController instead
+ * @description Backwards compatibility wrapper for the refactored NetworkCollectorController
  */
-class NetworkCollector {
+class NetworkCollector extends NetworkCollectorController {
   constructor() {
     this.hostMonitoringConfig = config.getHostMonitoring();
     this.hostname = os.hostname();
