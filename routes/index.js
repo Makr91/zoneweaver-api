@@ -256,7 +256,7 @@ import {
   getAvailableProfiles,
   getAvailableRoles,
   getUserAttributes,
-} from '../controllers/SystemUserController.js';
+} from '../controllers/SystemAccountController/index.js';
 import {
   uploadSingle,
   validateUploadRequest,
