@@ -46,7 +46,7 @@ import {
   getCPUStats,
   getMemoryStats,
   getSystemLoadMetrics,
-} from '../controllers/HostMonitoringController.js';
+} from '../controllers/HostMonitoringController/index.js';
 import {
   listDevices,
   listAvailableDevices,
