@@ -102,6 +102,7 @@ import {
   executeSystemHostHaltTask,
   executeSystemHostRunlevelChangeTask,
 } from './TaskManager/SystemHostManager/index.js';
+import { isVncEnabledAtBoot } from './VncConsoleController/utils/VncCleanupService.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
 import config from '../config/ConfigLoader.js';
@@ -486,6 +487,87 @@ const executeSystemHostTask = (operation, metadata) => {
       return { success: false, error: `Unknown system host operation: ${operation}` };
   }
 };
+
+/**
+ * Execute VNC start task for auto-VNC functionality  
+ * @param {string} zoneName - Zone name
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeVncStartTask = async zoneName => {
+  try {
+    log.task.info('Auto-starting VNC session for zone', { zone_name: zoneName });
+
+    const { spawn } = await import('child_process');
+    const { findAvailablePort } = await import('./VncConsoleController/utils/VncValidation.js');
+    const { sessionManager } = await import('./VncConsoleController/utils/VncSessionManager.js');
+    const VncSessions = (await import('../models/VncSessionModel.js')).default;
+
+    // Check if zone already has VNC session
+    const existingSession = sessionManager.getSessionInfo(zoneName);
+    if (existingSession) {
+      log.task.debug('Zone already has VNC session', {
+        zone_name: zoneName,
+        port: existingSession.port,
+      });
+      return {
+        success: true,
+        message: `Zone ${zoneName} already has active VNC session on port ${existingSession.port}`,
+      };
+    }
+
+    // Find available port
+    const webPort = await findAvailablePort();
+    const netport = `0.0.0.0:${webPort}`;
+
+    // Spawn VNC process
+    const vncProcess = spawn('pfexec', ['zadm', 'vnc', '-w', netport, zoneName], {
+      detached: true,
+      stdio: 'ignore',
+    });
+
+    if (!vncProcess.pid) {
+      throw new Error('Failed to spawn VNC process');
+    }
+
+    // Write session info
+    sessionManager.writeSessionInfo(zoneName, vncProcess.pid, 'auto_vnc', netport);
+
+    // Update database
+    await VncSessions.destroy({ where: { zone_name: zoneName } });
+    await VncSessions.create({
+      zone_name: zoneName,
+      web_port: webPort,
+      host_ip: '127.0.0.1',
+      process_id: vncProcess.pid,
+      status: 'active',
+      created_at: new Date(),
+      last_accessed: new Date(),
+    });
+
+    // Detach process
+    vncProcess.unref();
+
+    log.task.info('Auto-VNC session started', {
+      zone_name: zoneName,
+      port: webPort,
+      pid: vncProcess.pid,
+    });
+
+    return {
+      success: true,
+      message: `VNC session auto-started for zone ${zoneName} on port ${webPort}`,
+    };
+  } catch (error) {
+    log.task.error('Failed to auto-start VNC session', {
+      zone_name: zoneName,
+      error: error.message,
+    });
+    return {
+      success: false,
+      error: `Failed to auto-start VNC session: ${error.message}`,
+    };
+  }
+};
 /**
  * Execute a specific task
  * @param {Object} task - Task object from database
@@ -603,6 +685,11 @@ const executeTask = async task => {
     // Process operations
     if (operation === 'process_trace') {
       return await executeProcessTraceTask(task.metadata);
+    }
+
+    // VNC operations
+    if (operation === 'vnc_start') {
+      return await executeVncStartTask(zone_name);
     }
 
     return { success: false, error: `Unknown operation: ${operation}` };
@@ -724,6 +811,37 @@ const processNextTask = async () => {
     }
 
     if (result.success) {
+      // Auto-start VNC for zones that have VNC enabled at boot after successful zone start
+      if (task.operation === 'start' && task.zone_name !== 'system') {
+        try {
+          const vncEnabled = await isVncEnabledAtBoot(task.zone_name);
+          if (vncEnabled) {
+            log.task.info('Zone has VNC enabled at boot - creating auto-VNC start task', {
+              zone_name: task.zone_name,
+              trigger_task_id: task.id,
+            });
+            
+            // Create low-priority VNC start task (non-blocking)
+            await Tasks.create({
+              zone_name: task.zone_name,
+              operation: 'vnc_start',
+              priority: TaskPriority.LOW,
+              created_by: 'auto_vnc_startup',
+              status: 'pending',
+            });
+          } else {
+            log.task.debug('Zone does not have VNC enabled at boot', {
+              zone_name: task.zone_name,
+            });
+          }
+        } catch (vncCheckError) {
+          log.task.warn('Failed to check VNC boot setting for auto-start', {
+            zone_name: task.zone_name,
+            error: vncCheckError.message,
+          });
+        }
+      }
+
       // Only log slow tasks to reduce noise
       if (executionTime > 5000) {
         log.performance.warn('Slow task execution', {

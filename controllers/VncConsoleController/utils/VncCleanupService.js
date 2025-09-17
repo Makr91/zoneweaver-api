@@ -5,6 +5,7 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
+import fs from 'fs';
 import { Op } from 'sequelize';
 import VncSessions from '../../../models/VncSessionModel.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
@@ -138,35 +139,79 @@ export const cleanupVncSessions = async () => {
 };
 
 /**
- * Clean up orphaned zadm VNC processes using ProcessManager
+ * Clean up orphaned VNC processes that we manage (conservative approach)
  * @returns {Promise<number>} Number of orphaned processes killed
  */
 export const cleanupOrphanedVncProcesses = async () => {
   try {
-    log.websocket.debug('Scanning for orphaned VNC processes');
+    log.websocket.debug('Scanning for orphaned managed VNC processes');
 
-    // Use ProcessManager to find and kill orphaned VNC processes
-    const result = await killProcessesByPattern('zadm vnc', {
-      signal: 'KILL', // Use SIGKILL for aggressive cleanup
-      fullCommandLine: true, // Use -f flag to match full command line
+    let killedCount = 0;
+
+    // Method 1: Clean up VNC processes tracked in database
+    const dbSessions = await VncSessions.findAll({
+      where: { status: 'active' },
     });
 
-    if (result.success && result.killed.length > 0) {
-      log.websocket.info('Killed orphaned VNC processes', {
-        killed_count: result.killed.length,
-        killed_pids: result.killed,
+    const dbCleanupPromises = dbSessions.map(async session => {
+      try {
+        // Check if this database-tracked process is still alive
+        const isAlive = sessionManager.isProcessRunning(session.process_id);
+        if (!isAlive) {
+          // Process is dead but database thinks it's active - clean up
+          await session.update({ status: 'stopped' });
+          log.websocket.debug('Cleaned up dead database VNC session', {
+            zone_name: session.zone_name,
+            pid: session.process_id,
+          });
+          return { cleaned: true, zone_name: session.zone_name };
+        }
+        return { cleaned: false, zone_name: session.zone_name };
+      } catch {
+        // Error checking process - assume it's dead and clean up
+        await session.update({ status: 'stopped' });
+        return { cleaned: true, zone_name: session.zone_name };
+      }
+    });
+
+    const dbResults = await Promise.all(dbCleanupPromises);
+    killedCount += dbResults.filter(result => result.cleaned).length;
+
+    // Method 2: Clean up VNC processes tracked by PID files
+    if (sessionManager.pidDir && fs.existsSync(sessionManager.pidDir)) {
+      const pidFiles = fs.readdirSync(sessionManager.pidDir).filter(file => file.endsWith('.pid'));
+      
+      const pidCleanupPromises = pidFiles.map(async pidFile => {
+        const zoneName = pidFile.replace('.pid', '');
+        const sessionInfo = sessionManager.getSessionInfo(zoneName);
+        
+        if (sessionInfo) {
+          // PID file exists and process is alive - keep it
+          return { cleaned: false, zone_name: zoneName };
+        } else {
+          // PID file exists but process is dead - already cleaned by getSessionInfo()
+          log.websocket.debug('Cleaned up stale PID file', { zone_name: zoneName });
+          return { cleaned: true, zone_name: zoneName };
+        }
       });
+
+      const pidResults = await Promise.all(pidCleanupPromises);
+      killedCount += pidResults.filter(result => result.cleaned).length;
     }
 
-    if (result.errors.length > 0) {
-      log.websocket.warn('Some orphaned processes could not be killed', {
-        errors: result.errors,
+    if (killedCount > 0) {
+      log.websocket.info('Cleaned up orphaned managed VNC sessions', {
+        cleaned_count: killedCount,
       });
+    } else {
+      log.websocket.debug('No orphaned managed VNC sessions found');
     }
 
-    return result.killed.length;
-  } catch {
-    log.websocket.error('Error cleaning up orphaned VNC processes');
+    return killedCount;
+  } catch (error) {
+    log.websocket.error('Error cleaning up orphaned VNC processes', {
+      error: error.message,
+    });
     return 0;
   }
 };
