@@ -9,7 +9,6 @@ import fs from 'fs';
 import { Op } from 'sequelize';
 import VncSessions from '../../../models/VncSessionModel.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
-import { killProcessesByPattern } from '../../../lib/ProcessManager.js';
 import { testVncConnection } from './VncValidation.js';
 import { sessionManager } from './VncSessionManager.js';
 import yj from 'yieldable-json';
@@ -37,7 +36,7 @@ export const isVncEnabledAtBoot = async zoneName => {
     }
 
     // Parse the JSON configuration
-    const config = await new Promise((resolve, reject) => {
+    const zoneConfig = await new Promise((resolve, reject) => {
       yj.parseAsync(configResult.output, (err, result) => {
         if (err) {
           reject(err);
@@ -47,8 +46,8 @@ export const isVncEnabledAtBoot = async zoneName => {
       });
     });
 
-    // Check if VNC is enabled: config.vnc.enabled === "on"
-    const vncEnabled = config.vnc && config.vnc.enabled === 'on';
+    // Check if VNC is enabled: zoneConfig.vnc.enabled === "on"
+    const vncEnabled = zoneConfig.vnc && zoneConfig.vnc.enabled === 'on';
 
     log.websocket.debug('Zone VNC boot setting', {
       zone_name: zoneName,
@@ -180,19 +179,18 @@ export const cleanupOrphanedVncProcesses = async () => {
     // Method 2: Clean up VNC processes tracked by PID files
     if (sessionManager.pidDir && fs.existsSync(sessionManager.pidDir)) {
       const pidFiles = fs.readdirSync(sessionManager.pidDir).filter(file => file.endsWith('.pid'));
-      
-      const pidCleanupPromises = pidFiles.map(async pidFile => {
+
+      const pidCleanupPromises = pidFiles.map(pidFile => {
         const zoneName = pidFile.replace('.pid', '');
         const sessionInfo = sessionManager.getSessionInfo(zoneName);
-        
+
         if (sessionInfo) {
           // PID file exists and process is alive - keep it
           return { cleaned: false, zone_name: zoneName };
-        } else {
-          // PID file exists but process is dead - already cleaned by getSessionInfo()
-          log.websocket.debug('Cleaned up stale PID file', { zone_name: zoneName });
-          return { cleaned: true, zone_name: zoneName };
         }
+        // PID file exists but process is dead - already cleaned by getSessionInfo()
+        log.websocket.debug('Cleaned up stale PID file', { zone_name: zoneName });
+        return { cleaned: true, zone_name: zoneName };
       });
 
       const pidResults = await Promise.all(pidCleanupPromises);

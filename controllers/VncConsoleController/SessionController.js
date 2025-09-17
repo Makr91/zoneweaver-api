@@ -10,7 +10,6 @@ import { spawn } from 'child_process';
 import VncSessions from '../../models/VncSessionModel.js';
 import Zones from '../../models/ZoneModel.js';
 import { executeCommand } from '../../lib/CommandManager.js';
-import { killProcessesByPattern } from '../../lib/ProcessManager.js';
 import {
   directSuccessResponse,
   errorResponse,

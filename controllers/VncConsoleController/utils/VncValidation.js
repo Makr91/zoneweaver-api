@@ -7,7 +7,6 @@
 
 import net from 'net';
 import VncSessions from '../../../models/VncSessionModel.js';
-import { findProcesses } from '../../../lib/ProcessManager.js';
 import { log } from '../../../lib/Logger.js';
 import config from '../../../config/ConfigLoader.js';
 
@@ -54,34 +53,47 @@ export const validateZoneName = zoneName => {
 };
 
 /**
- * Check if port is available using multiple methods
+ * Check if port is available using multiple methods (restored original working logic)
  * @param {number} port - Port to check
  * @returns {Promise<boolean>} True if port is available
  */
 export const isPortAvailable = async port => {
-  // Method 1: Check for existing zadm processes using this port (with full command line matching)
-  try {
-    const zadmProcesses = await findProcesses(`zadm vnc.*:${port}`, { fullCommandLine: true });
-    log.websocket.debug('Process check result', {
-      port,
-      pattern: `zadm vnc.*:${port}`,
-      processes_found: zadmProcesses.length,
+  // Method 1: Check for existing zadm processes using this port (original ps auxww approach)
+  const isPortInUseByZadm = await new Promise(resolve => {
+    const { spawn } = require('child_process');
+    const ps = spawn('ps', ['auxww'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let output = '';
+
+    ps.stdout.on('data', data => {
+      output += data.toString();
     });
-    if (zadmProcesses.length > 0) {
-      log.websocket.debug('Port is not available (zadm process found)', {
-        port,
-        process_count: zadmProcesses.length,
-        process_pids: zadmProcesses,
-      });
-      return false;
-    }
-  } catch (error) {
-    log.websocket.warn('Process check failed, continuing with other methods', {
-      port,
-      pattern: `zadm vnc.*:${port}`,
-      error: error.message,
+
+    ps.on('exit', () => {
+      const lines = output.split('\n');
+      const zadmProcesses = lines.filter(
+        line => line.includes('zadm vnc') && line.includes(`-w 0.0.0.0:${port} `)
+      );
+
+      if (zadmProcesses.length > 0) {
+        log.websocket.debug('Port is not available (zadm process found)', {
+          port,
+          processes: zadmProcesses.map(proc => proc.trim()),
+        });
+        resolve(true);
+      } else {
+        log.websocket.debug('No zadm processes found for port', { port });
+        resolve(false);
+      }
     });
-    // Continue to other checking methods - don't fail immediately on process check errors
+
+    ps.on('error', () => {
+      log.websocket.warn('Error checking for zadm processes', { port });
+      resolve(false);
+    });
+  });
+
+  if (isPortInUseByZadm) {
+    return false;
   }
 
   // Method 2: Check database for existing sessions using this port
