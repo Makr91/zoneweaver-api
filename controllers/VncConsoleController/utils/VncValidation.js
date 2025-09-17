@@ -9,20 +9,39 @@ import net from 'net';
 import VncSessions from '../../../models/VncSessionModel.js';
 import { findProcesses } from '../../../lib/ProcessManager.js';
 import { log } from '../../../lib/Logger.js';
+import config from '../../../config/ConfigLoader.js';
 
 /**
- * VNC port range configuration
- * Using 8000-8100 range to avoid browser port restrictions
+ * Get VNC port range from configuration
+ * @returns {Object} Port range configuration
  */
-export const VNC_PORT_RANGE = {
-  start: 8000,
-  end: 8100,
+const getVncPortRange = () => {
+  const vncConfig = config.getVnc();
+  return {
+    start: vncConfig.web_port_range_start || 8000,
+    end: vncConfig.web_port_range_end || 8100,
+  };
 };
 
 /**
- * VNC session timeout (30 minutes)
+ * VNC port range configuration
+ * Using configured range to avoid browser port restrictions
  */
-export const VNC_SESSION_TIMEOUT = 30 * 60 * 1000;
+export const VNC_PORT_RANGE = getVncPortRange();
+
+/**
+ * Get VNC session timeout from configuration (in milliseconds)
+ * @returns {number} Session timeout in milliseconds
+ */
+const getVncSessionTimeout = () => {
+  const vncConfig = config.getVnc();
+  return (vncConfig.session_timeout || 1800) * 1000; // Convert seconds to milliseconds
+};
+
+/**
+ * VNC session timeout from configuration
+ */
+export const VNC_SESSION_TIMEOUT = getVncSessionTimeout();
 
 /**
  * Validate zone name for security

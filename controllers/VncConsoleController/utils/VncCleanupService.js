@@ -9,10 +9,11 @@ import { Op } from 'sequelize';
 import VncSessions from '../../../models/VncSessionModel.js';
 import { executeCommand } from '../../../lib/CommandManager.js';
 import { killProcessesByPattern } from '../../../lib/ProcessManager.js';
-import { testVncConnection, VNC_SESSION_TIMEOUT } from './VncValidation.js';
+import { testVncConnection } from './VncValidation.js';
 import { sessionManager } from './VncSessionManager.js';
 import yj from 'yieldable-json';
 import { log } from '../../../lib/Logger.js';
+import config from '../../../config/ConfigLoader.js';
 
 /**
  * Check if zone has VNC enabled at boot (from zadm configuration)
@@ -67,7 +68,9 @@ export const isVncEnabledAtBoot = async zoneName => {
  */
 export const cleanupVncSessions = async () => {
   try {
-    const cutoffTime = new Date(Date.now() - VNC_SESSION_TIMEOUT);
+    const vncConfig = config.getVnc();
+    const sessionTimeout = (vncConfig.session_timeout || 1800) * 1000; // Convert seconds to milliseconds
+    const cutoffTime = new Date(Date.now() - sessionTimeout);
     let cleanedCount = 0;
 
     // Clean up old active sessions in database
@@ -239,7 +242,13 @@ export const startVncSessionCleanup = () => {
   // Clean up stale sessions from previous backend instance on startup
   cleanupStaleSessionsOnStartup();
 
-  // Clean up stale sessions every 5 minutes
-  setInterval(cleanupVncSessions, 5 * 60 * 1000);
-  log.websocket.info('VNC session cleanup started');
+  // Get cleanup interval from configuration
+  const vncConfig = config.getVnc();
+  const cleanupInterval = (vncConfig.cleanup_interval || 300) * 1000; // Convert seconds to milliseconds
+
+  // Clean up stale sessions at configured interval
+  setInterval(cleanupVncSessions, cleanupInterval);
+  log.websocket.info('VNC session cleanup started', {
+    cleanup_interval_seconds: cleanupInterval / 1000,
+  });
 };
