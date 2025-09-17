@@ -43,6 +43,11 @@ export const isPortAvailable = async port => {
   // Method 1: Check for existing zadm processes using this port (with full command line matching)
   try {
     const zadmProcesses = await findProcesses(`zadm vnc.*:${port}`, { fullCommandLine: true });
+    log.websocket.debug('Process check result', {
+      port,
+      pattern: `zadm vnc.*:${port}`,
+      processes_found: zadmProcesses.length,
+    });
     if (zadmProcesses.length > 0) {
       log.websocket.debug('Port is not available (zadm process found)', {
         port,
@@ -50,10 +55,15 @@ export const isPortAvailable = async port => {
       });
       return false;
     }
-  } catch {
-    log.websocket.warn('Error checking for zadm processes', {
+  } catch (error) {
+    log.websocket.error('Process check failed', {
       port,
+      pattern: `zadm vnc.*:${port}`,
+      error: error.message,
+      stack: error.stack,
     });
+    // Don't assume port is available if check failed - fail safe
+    return false;
   }
 
   // Method 2: Check database for existing sessions using this port
