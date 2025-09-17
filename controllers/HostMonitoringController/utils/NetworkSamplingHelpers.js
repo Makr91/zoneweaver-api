@@ -59,151 +59,44 @@ export const getTimeSeriesSampledData = async (interfaces, since, samplesPerInte
 
     const interfaceList = interfaces.map(i => `'${i.replace(/'/g, "''")}'`).join(',');
     
-    // Universal cross-database window function query
+    // Simple and fast SQLite time sampling query using NTILE
     const query = `
-      WITH time_sampled AS (
+      WITH sampled_data AS (
         SELECT 
-          link,
-          scan_timestamp,
-          rx_mbps, tx_mbps, rx_bps, tx_bps,
-          interface_speed_mbps, interface_class,
-          time_delta_seconds,
-          ipackets_delta, opackets_delta,
-          rbytes_delta, obytes_delta,
-          ierrors_delta, oerrors_delta,
-          rx_utilization_pct, tx_utilization_pct,
+          link, scan_timestamp, rx_mbps, tx_mbps, rx_bps, tx_bps,
+          interface_speed_mbps, interface_class, time_delta_seconds,
+          ipackets_delta, opackets_delta, rbytes_delta, obytes_delta,
+          ierrors_delta, oerrors_delta, rx_utilization_pct, tx_utilization_pct,
           ipackets, rbytes, ierrors, opackets, obytes, oerrors,
           NTILE(:samplesPerInterface) OVER (
             PARTITION BY link 
             ORDER BY scan_timestamp ASC
-          ) as time_bucket
+          ) as time_bucket,
+          ROW_NUMBER() OVER (
+            PARTITION BY link 
+            ORDER BY scan_timestamp ASC
+          ) as row_num
         FROM network_usage 
         WHERE scan_timestamp >= :since
           AND link IN (${interfaceList})
       ),
-      sampled_points AS (
-        SELECT 
-          link, time_bucket,
-          -- Use FIRST_VALUE to get consistent point-in-time data for each bucket
-          FIRST_VALUE(scan_timestamp) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as scan_timestamp,
-          FIRST_VALUE(rx_mbps) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as rx_mbps,
-          FIRST_VALUE(tx_mbps) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as tx_mbps,
-          FIRST_VALUE(rx_bps) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as rx_bps,
-          FIRST_VALUE(tx_bps) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as tx_bps,
-          FIRST_VALUE(interface_speed_mbps) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as interface_speed_mbps,
-          FIRST_VALUE(interface_class) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as interface_class,
-          FIRST_VALUE(time_delta_seconds) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as time_delta_seconds,
-          FIRST_VALUE(ipackets_delta) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as ipackets_delta,
-          FIRST_VALUE(opackets_delta) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as opackets_delta,
-          FIRST_VALUE(rbytes_delta) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as rbytes_delta,
-          FIRST_VALUE(obytes_delta) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as obytes_delta,
-          FIRST_VALUE(ierrors_delta) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as ierrors_delta,
-          FIRST_VALUE(oerrors_delta) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as oerrors_delta,
-          FIRST_VALUE(rx_utilization_pct) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as rx_utilization_pct,
-          FIRST_VALUE(tx_utilization_pct) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as tx_utilization_pct,
-          FIRST_VALUE(ipackets) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as ipackets,
-          FIRST_VALUE(rbytes) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as rbytes,
-          FIRST_VALUE(ierrors) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as ierrors,
-          FIRST_VALUE(opackets) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as opackets,
-          FIRST_VALUE(obytes) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as obytes,
-          FIRST_VALUE(oerrors) OVER (
-            PARTITION BY link, time_bucket 
-            ORDER BY scan_timestamp ASC
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-          ) as oerrors
-        FROM time_sampled
+      first_in_bucket AS (
+        SELECT *
+        FROM sampled_data
+        WHERE row_num = (
+          SELECT MIN(row_num) 
+          FROM sampled_data s2 
+          WHERE s2.link = sampled_data.link 
+            AND s2.time_bucket = sampled_data.time_bucket
+        )
       )
-      SELECT DISTINCT 
+      SELECT 
         link, scan_timestamp, rx_mbps, tx_mbps, rx_bps, tx_bps,
         interface_speed_mbps, interface_class, time_delta_seconds,
         ipackets_delta, opackets_delta, rbytes_delta, obytes_delta,
         ierrors_delta, oerrors_delta, rx_utilization_pct, tx_utilization_pct,
         ipackets, rbytes, ierrors, opackets, obytes, oerrors
-      FROM sampled_points
+      FROM first_in_bucket
       ORDER BY link ASC, scan_timestamp ASC
     `;
 
@@ -220,7 +113,7 @@ export const getTimeSeriesSampledData = async (interfaces, since, samplesPerInte
       samples_per_interface: samplesPerInterface,
       total_results: results.length,
       query_time_ms: Date.now() - startTime,
-      strategy: 'sql-ntile-sampling'
+      strategy: 'sql-ntile-optimized'
     });
 
     return results;
@@ -457,7 +350,7 @@ export const createOptimizedResponse = (sampledData, metadata, samplesPerInterfa
     totalCount: sampledData.length,
     returnedCount: sampledData.length,
     sampling: buildOptimizedSamplingMetadata({
-      strategy: 'sql-ntile-sampling',
+      strategy: 'sql-ntile-optimized',
       interfaceCount: metadata.interfaceCount,
       samplesPerInterface,
       totalSamples: sampledData.length,

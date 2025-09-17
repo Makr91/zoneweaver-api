@@ -190,7 +190,7 @@ export const getNetworkUsage = async (req, res) => {
         ]);
 
         if (metadata.totalRecords === 0) {
-          return res.json(createEmptyResponse(startTime, 'sql-ntile-sampling'));
+          return res.json(createEmptyResponse(startTime, 'sql-ntile-optimized'));
         }
 
         // Step 2: Use optimized SQL sampling instead of JavaScript processing
