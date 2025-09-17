@@ -18,7 +18,7 @@ import {
   getProcessStats,
 } from '../lib/ProcessManager.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
-import { log, createTimer } from '../lib/Logger.js';
+import { log } from '../lib/Logger.js';
 
 /**
  * @swagger
