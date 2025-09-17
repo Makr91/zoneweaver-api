@@ -40,9 +40,9 @@ export const validateZoneName = zoneName => {
  * @returns {Promise<boolean>} True if port is available
  */
 export const isPortAvailable = async port => {
-  // Method 1: Check for existing zadm processes using this port (reuse ProcessManager pattern)
+  // Method 1: Check for existing zadm processes using this port (with full command line matching)
   try {
-    const zadmProcesses = await findProcesses(`zadm.*vnc.*${port}`);
+    const zadmProcesses = await findProcesses(`zadm vnc.*:${port}`, { fullCommandLine: true });
     if (zadmProcesses.length > 0) {
       log.websocket.debug('Port is not available (zadm process found)', {
         port,

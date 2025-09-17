@@ -171,7 +171,7 @@ import {
   listTimezones,
   getAvailableTimeSyncSystems,
   switchTimeSyncSystem,
-} from '../controllers/TimeSyncController.js';
+} from '../controllers/TimeSyncController/index.js';
 import {
   getARCConfig,
   updateARCConfig,

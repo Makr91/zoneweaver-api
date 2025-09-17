@@ -365,8 +365,20 @@ const handleVncSessionStart = async (req, res, zoneName) => {
   // ONLY KILL IF SESSION IS UNHEALTHY OR MISSING
   log.websocket.debug('Cleaning up unhealthy/missing sessions', { zone_name: zoneName });
 
-  // Use ProcessManager to kill existing VNC processes for this zone
-  await killProcessesByPattern(`zadm.*vnc.*${zoneName}`, { signal: 'KILL' });
+  // Use ProcessManager to kill existing VNC processes for this zone (use port-based targeting for precision)
+  const sessionInfoForCleanup = sessionManager.getSessionInfo(zoneName);
+  if (sessionInfoForCleanup) {
+    await killProcessesByPattern(`zadm vnc.*:${sessionInfoForCleanup.port}`, {
+      signal: 'KILL',
+      fullCommandLine: true,
+    });
+  } else {
+    // Fallback: kill any VNC process for this zone (less precise but necessary)
+    await killProcessesByPattern(`zadm vnc.*${zoneName}$`, {
+      signal: 'KILL',
+      fullCommandLine: true,
+    });
+  }
 
   // Wait for processes to terminate
   await new Promise(resolve => {

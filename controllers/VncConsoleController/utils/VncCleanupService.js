@@ -143,8 +143,9 @@ export const cleanupOrphanedVncProcesses = async () => {
     log.websocket.debug('Scanning for orphaned VNC processes');
 
     // Use ProcessManager to find and kill orphaned VNC processes
-    const result = await killProcessesByPattern('zadm.*vnc', {
+    const result = await killProcessesByPattern('zadm vnc', {
       signal: 'KILL', // Use SIGKILL for aggressive cleanup
+      fullCommandLine: true, // Use -f flag to match full command line
     });
 
     if (result.success && result.killed.length > 0) {
