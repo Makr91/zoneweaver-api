@@ -8,7 +8,9 @@
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
 import { executeDiscoverTask } from './TaskManager/ZoneManager.js';
-import { getAutobootZones } from '../lib/ZoneOrchestrationManager.js';
+import { getAutobootZones, getZonesForOrchestration } from '../lib/ZoneOrchestrationManager.js';
+import { isVncEnabledAtBoot } from './VncConsoleController/utils/VncCleanupService.js';
+import { sessionManager } from './VncConsoleController/utils/VncSessionManager.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 
 /**
@@ -73,6 +75,79 @@ export const startZoneOrchestration = async () => {
       });
     } else {
       log.monitoring.info('Zone orchestration enabled but no autoboot zones found');
+    }
+
+    // Scenario 2: Check already-running zones for missing VNC sessions
+    log.monitoring.info('Checking running zones for missing VNC sessions');
+
+    const runningZonesResult = await getZonesForOrchestration('running');
+
+    if (runningZonesResult.success && runningZonesResult.zones.length > 0) {
+      log.monitoring.info('Found running zones, checking for missing VNC sessions', {
+        running_zones_count: runningZonesResult.zones.length,
+        zones: runningZonesResult.zones.map(z => z.name),
+      });
+
+      // Check each running zone for VNC auto-start eligibility
+      const vncCheckPromises = runningZonesResult.zones.map(async zone => {
+        try {
+          const vncEnabled = await isVncEnabledAtBoot(zone.name);
+          const hasVncSession = sessionManager.getSessionInfo(zone.name);
+
+          return {
+            zone_name: zone.name,
+            vnc_enabled: vncEnabled,
+            has_session: !!hasVncSession,
+            needs_vnc: vncEnabled && !hasVncSession,
+          };
+        } catch (error) {
+          log.monitoring.warn('Failed to check VNC status for running zone', {
+            zone_name: zone.name,
+            error: error.message,
+          });
+          return {
+            zone_name: zone.name,
+            vnc_enabled: false,
+            has_session: false,
+            needs_vnc: false,
+          };
+        }
+      });
+
+      const vncResults = await Promise.all(vncCheckPromises);
+      const zonesNeedingVnc = vncResults.filter(result => result.needs_vnc);
+
+      if (zonesNeedingVnc.length > 0) {
+        log.monitoring.info('Creating auto-VNC tasks for running zones', {
+          zones_needing_vnc: zonesNeedingVnc.length,
+          zones: zonesNeedingVnc.map(z => z.zone_name),
+        });
+
+        // Create VNC start tasks for running zones that need them
+        const vncTaskPromises = zonesNeedingVnc.map(zoneResult => {
+          log.monitoring.debug('Creating VNC start task for running zone', {
+            zone_name: zoneResult.zone_name,
+          });
+
+          return Tasks.create({
+            zone_name: zoneResult.zone_name,
+            operation: 'vnc_start',
+            priority: TaskPriority.LOW,
+            created_by: 'orchestration_startup_vnc',
+            status: 'pending',
+          });
+        });
+
+        await Promise.all(vncTaskPromises);
+
+        log.monitoring.info('Auto-VNC startup tasks created for running zones', {
+          vnc_tasks_created: zonesNeedingVnc.length,
+        });
+      } else {
+        log.monitoring.info('No running zones need VNC sessions');
+      }
+    } else {
+      log.monitoring.info('No running zones found to check for VNC');
     }
   } catch (error) {
     log.monitoring.error('Error during zone orchestration startup', {

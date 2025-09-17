@@ -6,6 +6,7 @@
  */
 
 import net from 'net';
+import { spawn } from 'child_process';
 import VncSessions from '../../../models/VncSessionModel.js';
 import { log } from '../../../lib/Logger.js';
 import config from '../../../config/ConfigLoader.js';
@@ -60,7 +61,6 @@ export const validateZoneName = zoneName => {
 export const isPortAvailable = async port => {
   // Method 1: Check for existing zadm processes using this port (original ps auxww approach)
   const isPortInUseByZadm = await new Promise(resolve => {
-    const { spawn } = require('child_process');
     const ps = spawn('ps', ['auxww'], { stdio: ['ignore', 'pipe', 'ignore'] });
     let output = '';
 
