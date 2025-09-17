@@ -6,7 +6,7 @@ const options = {
     openapi: '3.0.0',
     info: {
       title: 'Zoneweaver API',
-      version: '0.1.14', // x-release-please-version
+      version: '0.2.0', // x-release-please-version
       description: 'API for managing Bhyve virtual machines on OmniOS',
       license: {
         name: 'GPL-3.0',
