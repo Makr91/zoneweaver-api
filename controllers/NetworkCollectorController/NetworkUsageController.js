@@ -130,10 +130,13 @@ export class NetworkUsageController {
       // Try summary data first (without -a flag)
       let stdout;
       try {
-        const result = await execProm(`pfexec dladm show-usage -f ${acctFile} ${interfaceName}`, {
-          timeout,
-        });
-        stdout = result.stdout;
+        const { stdout: resultStdout } = await execProm(
+          `pfexec dladm show-usage -f ${acctFile} ${interfaceName}`,
+          {
+            timeout,
+          }
+        );
+        stdout = resultStdout;
       } catch (summaryError) {
         // If summary fails, try with -a flag to get all records
         if (
@@ -145,11 +148,11 @@ export class NetworkUsageController {
 
         // Try with -a flag for detailed records
         try {
-          const result = await execProm(
+          const { stdout: detailedStdout } = await execProm(
             `pfexec dladm show-usage -a -f ${acctFile} ${interfaceName}`,
             { timeout }
           );
-          stdout = result.stdout;
+          stdout = detailedStdout;
         } catch (detailedError) {
           if (
             detailedError.message.includes('no records') ||
@@ -170,7 +173,7 @@ export class NetworkUsageController {
 
       if (usageData.length > 0) {
         // Override the potentially truncated link name with the actual interface name
-        const usage = usageData[0]; // Take the first entry
+        const [usage] = usageData; // Take the first entry
         usage.link = interfaceName; // Use the full interface name we queried
         return usage;
       }
@@ -315,6 +318,249 @@ export class NetworkUsageController {
   }
 
   /**
+   * Get interface configuration mappings for speed lookups
+   * @returns {Map} Map of interface configurations
+   */
+  async getInterfaceConfigs() {
+    try {
+      const interfaceConfigs = await NetworkInterfaces.findAll({
+        where: { host: this.parser.hostname },
+        attributes: ['link', 'speed', 'class'],
+        order: [['scan_timestamp', 'DESC']],
+        limit: 1000,
+      });
+
+      // Create map for quick lookup of interface speeds
+      const speedMap = new Map();
+      interfaceConfigs.forEach(iface => {
+        const { link, speed, class: ifaceClass } = iface;
+        if (!speedMap.has(link) && speed) {
+          speedMap.set(link, {
+            speed,
+            class: ifaceClass,
+          });
+        }
+      });
+      return speedMap;
+    } catch (error) {
+      log.database.warn('Could not fetch interface configuration for speed data', {
+        error: error.message,
+        hostname: this.parser.hostname,
+      });
+      return new Map();
+    }
+  }
+
+  /**
+   * Get previous usage statistics for bandwidth calculations
+   * @param {number} interfaceCount - Number of interfaces to account for
+   * @returns {Map} Map of previous statistics
+   */
+  async getPreviousUsageStats(interfaceCount) {
+    try {
+      // Calculate minimum age for "previous" records (collection interval - 2 seconds buffer)
+      const collectionInterval = this.hostMonitoringConfig.intervals.network_usage || 20;
+      const minPreviousAge = new Date(Date.now() - (collectionInterval - 2) * 1000);
+
+      const previousStats = await NetworkUsage.findAll({
+        where: {
+          host: this.parser.hostname,
+          scan_timestamp: { [Op.lt]: minPreviousAge }, // Only get records older than collection interval
+        },
+        order: [['scan_timestamp', 'DESC']],
+        limit: interfaceCount * 3, // Get more records to ensure we have data for all interfaces
+      });
+
+      // Group by interface and keep only the most recent "old" entry per interface
+      const grouped = new Map();
+      previousStats.forEach(stat => {
+        const { link } = stat;
+        if (!grouped.has(link)) {
+          grouped.set(link, stat);
+        }
+      });
+
+      log.monitoring.debug('Previous usage records found', {
+        previous_records: grouped.size,
+        current_interfaces: interfaceCount,
+        hostname: this.parser.hostname,
+      });
+
+      return grouped;
+    } catch (error) {
+      log.database.warn('Could not fetch previous usage statistics', {
+        error: error.message,
+        hostname: this.parser.hostname,
+      });
+      return new Map();
+    }
+  }
+
+  /**
+   * Calculate delta values between current and previous stats
+   * @param {Object} currentStat - Current interface statistics
+   * @param {Object} previousStat - Previous interface statistics
+   * @returns {Object} Delta values
+   */
+  calculateDeltaValues(currentStat, previousStat) {
+    const deltaValues = {
+      ipackets_delta: null,
+      rbytes_delta: null,
+      ierrors_delta: null,
+      opackets_delta: null,
+      obytes_delta: null,
+      oerrors_delta: null,
+    };
+
+    if (previousStat) {
+      // Calculate deltas (difference from previous sample)
+      const currentIPackets = parseInt(currentStat.ipackets) || 0;
+      const previousIPackets = parseInt(previousStat.ipackets) || 0;
+      deltaValues.ipackets_delta = Math.max(0, currentIPackets - previousIPackets);
+
+      const currentRBytes = parseInt(currentStat.rbytes) || 0;
+      const previousRBytes = parseInt(previousStat.rbytes) || 0;
+      deltaValues.rbytes_delta = Math.max(0, currentRBytes - previousRBytes);
+
+      const currentIErrors = parseInt(currentStat.ierrors) || 0;
+      const previousIErrors = parseInt(previousStat.ierrors) || 0;
+      deltaValues.ierrors_delta = Math.max(0, currentIErrors - previousIErrors);
+
+      const currentOPackets = parseInt(currentStat.opackets) || 0;
+      const previousOPackets = parseInt(previousStat.opackets) || 0;
+      deltaValues.opackets_delta = Math.max(0, currentOPackets - previousOPackets);
+
+      const currentOBytes = parseInt(currentStat.obytes) || 0;
+      const previousOBytes = parseInt(previousStat.obytes) || 0;
+      deltaValues.obytes_delta = Math.max(0, currentOBytes - previousOBytes);
+
+      const currentOErrors = parseInt(currentStat.oerrors) || 0;
+      const previousOErrors = parseInt(previousStat.oerrors) || 0;
+      deltaValues.oerrors_delta = Math.max(0, currentOErrors - previousOErrors);
+    }
+
+    return deltaValues;
+  }
+
+  /**
+   * Create usage record from statistics
+   * @param {Object} currentStat - Current interface statistics
+   * @param {Object} previousStat - Previous interface statistics
+   * @param {Object} interfaceConfig - Interface configuration
+   * @returns {Object} Usage record
+   */
+  createUsageRecord(currentStat, previousStat, interfaceConfig) {
+    const deltaValues = this.calculateDeltaValues(currentStat, previousStat);
+    const bandwidth = this.calculateInstantaneousBandwidth(currentStat, previousStat);
+
+    // Calculate utilization if we have speed info - use delta bytes, not cumulative
+    let rxUtilization = null;
+    let txUtilization = null;
+
+    if (interfaceConfig && interfaceConfig.speed && bandwidth.time_delta && previousStat) {
+      // Use delta values instead of cumulative counters for accurate utilization
+      const { speed } = interfaceConfig;
+      rxUtilization = this.calculateBandwidthUtilization(
+        deltaValues.rbytes_delta,
+        speed,
+        bandwidth.time_delta
+      );
+      txUtilization = this.calculateBandwidthUtilization(
+        deltaValues.obytes_delta,
+        speed,
+        bandwidth.time_delta
+      );
+    }
+
+    // Validate and create usage record (ensure no NaN values)
+    const safeValue = value => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+      if (isNaN(value)) {
+        log.monitoring.debug('NaN value detected in usage record', {
+          interface: currentStat.link,
+          value,
+          hostname: this.parser.hostname,
+        });
+        return null;
+      }
+      return value;
+    };
+
+    return {
+      host: this.parser.hostname,
+      link: currentStat.link,
+
+      // Raw counters (validated)
+      ipackets: currentStat.ipackets || null,
+      rbytes: currentStat.rbytes || null,
+      ierrors: currentStat.ierrors || null,
+      opackets: currentStat.opackets || null,
+      obytes: currentStat.obytes || null,
+      oerrors: currentStat.oerrors || null,
+
+      // Delta values (validated)
+      ipackets_delta: safeValue(deltaValues.ipackets_delta),
+      rbytes_delta: safeValue(deltaValues.rbytes_delta),
+      ierrors_delta: safeValue(deltaValues.ierrors_delta),
+      opackets_delta: safeValue(deltaValues.opackets_delta),
+      obytes_delta: safeValue(deltaValues.obytes_delta),
+      oerrors_delta: safeValue(deltaValues.oerrors_delta),
+
+      // Calculated bandwidth (validated)
+      rx_bps: safeValue(bandwidth.rx_bps),
+      tx_bps: safeValue(bandwidth.tx_bps),
+      rx_mbps: safeValue(bandwidth.rx_mbps),
+      tx_mbps: safeValue(bandwidth.tx_mbps),
+
+      // Utilization percentages (validated)
+      rx_utilization_pct: safeValue(rxUtilization),
+      tx_utilization_pct: safeValue(txUtilization),
+
+      // Interface information (validated)
+      interface_speed_mbps:
+        interfaceConfig && interfaceConfig.speed ? safeValue(interfaceConfig.speed) : null,
+      interface_class: interfaceConfig ? interfaceConfig.class : null,
+
+      // Metadata (validated)
+      time_delta_seconds: safeValue(bandwidth.time_delta),
+      scan_timestamp: new Date(),
+    };
+  }
+
+  /**
+   * Store usage data in database with batch processing
+   * @param {Array} usageDataResults - Usage data to store
+   */
+  async storeUsageData(usageDataResults) {
+    if (usageDataResults.length === 0) {
+      return;
+    }
+
+    // Store in parallel batches
+    const batchSize = this.hostMonitoringConfig.performance.batch_size;
+    const batches = [];
+    for (let i = 0; i < usageDataResults.length; i += batchSize) {
+      const batch = usageDataResults.slice(i, i + batchSize);
+      batches.push(NetworkUsage.bulkCreate(batch));
+    }
+    await Promise.all(batches);
+
+    await this.hostManager.updateHostInfo({ last_network_usage_scan: new Date() });
+
+    // Log some sample data for verification
+    const activeBandwidth = usageDataResults.filter(u => u.rx_mbps > 0 || u.tx_mbps > 0);
+    if (activeBandwidth.length > 0) {
+      log.monitoring.debug('Active network bandwidth detected', {
+        active_interfaces: activeBandwidth.length,
+        total_interfaces: usageDataResults.length,
+        hostname: this.parser.hostname,
+      });
+    }
+  }
+
+  /**
    * Collect network usage data using link statistics
    * @description Gathers usage data from dladm show-link -s and calculates bandwidth utilization
    */
@@ -333,71 +579,9 @@ export class NetworkUsageController {
         return true;
       }
 
-      // Get interface configuration data for speed information
-      let interfaceConfigs = [];
-      try {
-        interfaceConfigs = await NetworkInterfaces.findAll({
-          where: { host: this.parser.hostname },
-          attributes: ['link', 'speed', 'class'],
-          order: [['scan_timestamp', 'DESC']],
-          limit: 1000,
-        });
-
-        // Create map for quick lookup of interface speeds
-        const speedMap = new Map();
-        interfaceConfigs.forEach(iface => {
-          if (!speedMap.has(iface.link) && iface.speed) {
-            speedMap.set(iface.link, {
-              speed: iface.speed,
-              class: iface.class,
-            });
-          }
-        });
-        interfaceConfigs = speedMap;
-      } catch (error) {
-        log.database.warn('Could not fetch interface configuration for speed data', {
-          error: error.message,
-          hostname: this.parser.hostname,
-        });
-        interfaceConfigs = new Map();
-      }
-
-      // Get previous statistics for bandwidth calculation - use NetworkUsage's own previous records
-      let previousStatsMap = new Map();
-      try {
-        // Calculate minimum age for "previous" records (collection interval - 2 seconds buffer)
-        const collectionInterval = this.hostMonitoringConfig.intervals.network_usage || 20;
-        const minPreviousAge = new Date(Date.now() - (collectionInterval - 2) * 1000);
-
-        const previousStats = await NetworkUsage.findAll({
-          where: {
-            host: this.parser.hostname,
-            scan_timestamp: { [Op.lt]: minPreviousAge }, // Only get records older than collection interval
-          },
-          order: [['scan_timestamp', 'DESC']],
-          limit: interfaceConfigs.size * 3, // Get more records to ensure we have data for all interfaces
-        });
-
-        // Group by interface and keep only the most recent "old" entry per interface
-        const grouped = new Map();
-        previousStats.forEach(stat => {
-          if (!grouped.has(stat.link)) {
-            grouped.set(stat.link, stat);
-          }
-        });
-        previousStatsMap = grouped;
-
-        log.monitoring.debug('Previous usage records found', {
-          previous_records: previousStatsMap.size,
-          current_interfaces: currentStats.length,
-          hostname: this.parser.hostname,
-        });
-      } catch (error) {
-        log.database.warn('Could not fetch previous usage statistics', {
-          error: error.message,
-          hostname: this.parser.hostname,
-        });
-      }
+      // Get interface configurations and previous statistics
+      const interfaceConfigs = await this.getInterfaceConfigs();
+      const previousStatsMap = await this.getPreviousUsageStats(interfaceConfigs.size);
 
       const usageDataResults = [];
 
@@ -406,143 +590,12 @@ export class NetworkUsageController {
         const interfaceConfig = interfaceConfigs.get(currentStat.link);
         const previousStat = previousStatsMap.get(currentStat.link);
 
-        // Calculate delta values from previous sample
-        const deltaValues = {
-          ipackets_delta: null,
-          rbytes_delta: null,
-          ierrors_delta: null,
-          opackets_delta: null,
-          obytes_delta: null,
-          oerrors_delta: null,
-        };
-
-        if (previousStat) {
-          // Calculate deltas (difference from previous sample)
-          const currentIPackets = parseInt(currentStat.ipackets) || 0;
-          const previousIPackets = parseInt(previousStat.ipackets) || 0;
-          deltaValues.ipackets_delta = Math.max(0, currentIPackets - previousIPackets);
-
-          const currentRBytes = parseInt(currentStat.rbytes) || 0;
-          const previousRBytes = parseInt(previousStat.rbytes) || 0;
-          deltaValues.rbytes_delta = Math.max(0, currentRBytes - previousRBytes);
-
-          const currentIErrors = parseInt(currentStat.ierrors) || 0;
-          const previousIErrors = parseInt(previousStat.ierrors) || 0;
-          deltaValues.ierrors_delta = Math.max(0, currentIErrors - previousIErrors);
-
-          const currentOPackets = parseInt(currentStat.opackets) || 0;
-          const previousOPackets = parseInt(previousStat.opackets) || 0;
-          deltaValues.opackets_delta = Math.max(0, currentOPackets - previousOPackets);
-
-          const currentOBytes = parseInt(currentStat.obytes) || 0;
-          const previousOBytes = parseInt(previousStat.obytes) || 0;
-          deltaValues.obytes_delta = Math.max(0, currentOBytes - previousOBytes);
-
-          const currentOErrors = parseInt(currentStat.oerrors) || 0;
-          const previousOErrors = parseInt(previousStat.oerrors) || 0;
-          deltaValues.oerrors_delta = Math.max(0, currentOErrors - previousOErrors);
-        }
-
-        // Calculate instantaneous bandwidth
-        const bandwidth = this.calculateInstantaneousBandwidth(currentStat, previousStat);
-
-        // Calculate utilization if we have speed info - use delta bytes, not cumulative
-        let rxUtilization = null;
-        let txUtilization = null;
-
-        if (interfaceConfig && interfaceConfig.speed && bandwidth.time_delta && previousStat) {
-          // Use delta values instead of cumulative counters for accurate utilization
-          rxUtilization = this.calculateBandwidthUtilization(
-            deltaValues.rbytes_delta,
-            interfaceConfig.speed,
-            bandwidth.time_delta
-          );
-          txUtilization = this.calculateBandwidthUtilization(
-            deltaValues.obytes_delta,
-            interfaceConfig.speed,
-            bandwidth.time_delta
-          );
-        }
-
-        // Validate and create usage record (ensure no NaN values)
-        const safeValue = value => {
-          if (value === null || value === undefined) {
-            return null;
-          }
-          if (isNaN(value)) {
-            log.monitoring.debug('NaN value detected in usage record', {
-              interface: currentStat.link,
-              value,
-              hostname: this.parser.hostname,
-            });
-            return null;
-          }
-          return value;
-        };
-
-        const usageRecord = {
-          host: this.parser.hostname,
-          link: currentStat.link,
-
-          // Raw counters (validated)
-          ipackets: currentStat.ipackets || null,
-          rbytes: currentStat.rbytes || null,
-          ierrors: currentStat.ierrors || null,
-          opackets: currentStat.opackets || null,
-          obytes: currentStat.obytes || null,
-          oerrors: currentStat.oerrors || null,
-
-          // Delta values (validated)
-          ipackets_delta: safeValue(deltaValues.ipackets_delta),
-          rbytes_delta: safeValue(deltaValues.rbytes_delta),
-          ierrors_delta: safeValue(deltaValues.ierrors_delta),
-          opackets_delta: safeValue(deltaValues.opackets_delta),
-          obytes_delta: safeValue(deltaValues.obytes_delta),
-          oerrors_delta: safeValue(deltaValues.oerrors_delta),
-
-          // Calculated bandwidth (validated)
-          rx_bps: safeValue(bandwidth.rx_bps),
-          tx_bps: safeValue(bandwidth.tx_bps),
-          rx_mbps: safeValue(bandwidth.rx_mbps),
-          tx_mbps: safeValue(bandwidth.tx_mbps),
-
-          // Utilization percentages (validated)
-          rx_utilization_pct: safeValue(rxUtilization),
-          tx_utilization_pct: safeValue(txUtilization),
-
-          // Interface information (validated)
-          interface_speed_mbps:
-            interfaceConfig && interfaceConfig.speed ? safeValue(interfaceConfig.speed) : null,
-          interface_class: interfaceConfig ? interfaceConfig.class : null,
-
-          // Metadata (validated)
-          time_delta_seconds: safeValue(bandwidth.time_delta),
-          scan_timestamp: new Date(),
-        };
-
+        const usageRecord = this.createUsageRecord(currentStat, previousStat, interfaceConfig);
         usageDataResults.push(usageRecord);
       }
 
       // Store collected usage data
-      if (usageDataResults.length > 0) {
-        const batchSize = this.hostMonitoringConfig.performance.batch_size;
-        for (let i = 0; i < usageDataResults.length; i += batchSize) {
-          const batch = usageDataResults.slice(i, i + batchSize);
-          await NetworkUsage.bulkCreate(batch);
-        }
-
-        await this.hostManager.updateHostInfo({ last_network_usage_scan: new Date() });
-
-        // Log some sample data for verification
-        const activeBandwidth = usageDataResults.filter(u => u.rx_mbps > 0 || u.tx_mbps > 0);
-        if (activeBandwidth.length > 0) {
-          log.monitoring.debug('Active network bandwidth detected', {
-            active_interfaces: activeBandwidth.length,
-            total_interfaces: usageDataResults.length,
-            hostname: this.parser.hostname,
-          });
-        }
-      }
+      await this.storeUsageData(usageDataResults);
 
       await this.hostManager.resetErrorCount();
       return true;

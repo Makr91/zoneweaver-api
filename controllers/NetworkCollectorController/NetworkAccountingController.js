@@ -62,7 +62,7 @@ export class NetworkAccountingController {
         });
         return true;
       }
-      
+
       log.monitoring.warn('Network accounting enable command succeeded but verification failed', {
         hostname: this.hostname,
         acct_file: acctFile,

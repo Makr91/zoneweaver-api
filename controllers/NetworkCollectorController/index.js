@@ -22,11 +22,14 @@ class NetworkCollector {
   constructor() {
     this.hostMonitoringConfig = config.getHostMonitoring();
     this.hostManager = new NetworkHostManager(this.hostMonitoringConfig);
-    
+
     // Initialize modular controllers
     this.accountingController = new NetworkAccountingController(this.hostMonitoringConfig);
     this.parsingController = new NetworkParsingController();
-    this.configController = new NetworkConfigController(this.hostMonitoringConfig, this.hostManager);
+    this.configController = new NetworkConfigController(
+      this.hostMonitoringConfig,
+      this.hostManager
+    );
     this.usageController = new NetworkUsageController(this.hostMonitoringConfig, this.hostManager);
     this.dataController = new NetworkDataController(this.hostMonitoringConfig, this.hostManager);
     this.cleanupController = new NetworkCleanupController(this.hostMonitoringConfig);
@@ -42,16 +45,16 @@ class NetworkCollector {
    * Initialize network accounting if not already enabled
    * @description Enables network accounting using acctadm if auto_enable_network_accounting is true
    */
-  async initializeNetworkAccounting() {
-    return await this.accountingController.initializeNetworkAccounting();
+  initializeNetworkAccounting() {
+    return this.accountingController.initializeNetworkAccounting();
   }
 
   /**
    * Update host information record
    * @param {Object} updates - Fields to update
    */
-  async updateHostInfo(updates) {
-    return await this.hostManager.updateHostInfo(updates);
+  updateHostInfo(updates) {
+    return this.hostManager.updateHostInfo(updates);
   }
 
   /**
@@ -196,24 +199,24 @@ class NetworkCollector {
    * Collect IP address information
    * @description Gathers IP address assignments from ipadm show-addr
    */
-  async collectIPAddresses() {
-    return await this.dataController.collectIPAddresses();
+  collectIPAddresses() {
+    return this.dataController.collectIPAddresses();
   }
 
   /**
    * Collect routing table information
    * @description Gathers routing table from netstat -rn
    */
-  async collectRoutingTable() {
-    return await this.dataController.collectRoutingTable();
+  collectRoutingTable() {
+    return this.dataController.collectRoutingTable();
   }
 
   /**
    * Collect aggregate configuration
    * @description Gathers aggregate configuration from dladm show-aggr
    */
-  async collectAggregateConfig() {
-    return await this.configController.collectAggregateConfig();
+  collectAggregateConfig() {
+    return this.configController.collectAggregateConfig();
   }
 
   /**
@@ -223,15 +226,11 @@ class NetworkCollector {
   async collectNetworkConfig() {
     // Update legacy property for compatibility
     if (this.configController.isCollecting) {
-      return;
+      return undefined;
     }
     this.isCollecting = this.configController.isCollecting;
 
     const result = await this.configController.collectNetworkConfig();
-    
-    // Collect IP addresses and routing table as part of network config
-    const ipData = await this.dataController.collectIPAddresses();
-    const routeData = await this.dataController.collectRoutingTable();
 
     this.isCollecting = this.configController.isCollecting;
     return result;
@@ -264,8 +263,8 @@ class NetworkCollector {
    * @param {number} timeout - Command timeout in milliseconds
    * @returns {Object|null} Usage data for the interface
    */
-  async collectSingleInterfaceUsage(interfaceName, acctFile, timeout) {
-    return await this.usageController.collectSingleInterfaceUsage(interfaceName, acctFile, timeout);
+  collectSingleInterfaceUsage(interfaceName, acctFile, timeout) {
+    return this.usageController.collectSingleInterfaceUsage(interfaceName, acctFile, timeout);
   }
 
   /**
@@ -293,15 +292,15 @@ class NetworkCollector {
    * Collect network usage data using link statistics
    * @description Gathers usage data from dladm show-link -s and calculates bandwidth utilization
    */
-  async collectNetworkUsage() {
-    return await this.usageController.collectNetworkUsage();
+  collectNetworkUsage() {
+    return this.usageController.collectNetworkUsage();
   }
 
   /**
    * Clean up old data based on retention policies
    */
-  async cleanupOldData() {
-    return await this.cleanupController.cleanupOldData();
+  cleanupOldData() {
+    return this.cleanupController.cleanupOldData();
   }
 }
 

@@ -17,6 +17,21 @@ export class NetworkParsingController {
   }
 
   /**
+   * Parse duplex information from speed field
+   * @param {string} speedField - Speed field from command output
+   * @returns {string|null} Duplex setting or null
+   */
+  parseDuplexFromSpeed(speedField) {
+    if (speedField.includes('-h')) {
+      return 'half';
+    }
+    if (speedField.includes('-f')) {
+      return 'full';
+    }
+    return null;
+  }
+
+  /**
    * Parse dladm show-vnic output (parseable format)
    * @param {string} output - Command output from dladm show-vnic -p -o LINK,OVER,SPEED,MACADDRESS,MACADDRTYPE,VID,ZONE
    * @returns {Array} Parsed interface data
@@ -128,7 +143,7 @@ export class NetworkParsingController {
           state: parts[2],
           auto: parts[3],
           speed: parts[4].includes('G') ? parseInt(parts[4]) * 1000 : parseInt(parts[4]) || null,
-          duplex: parts[4].includes('-h') ? 'half' : parts[4].includes('-f') ? 'full' : null,
+          duplex: this.parseDuplexFromSpeed(parts[4]),
           pause: parts[5] || null,
           scan_timestamp: new Date(),
         });
@@ -247,13 +262,7 @@ export class NetworkParsingController {
       const parts = trimmed.split(':');
       if (parts.length >= 7) {
         // Validate that numeric fields are actually numeric
-        const link = parts[0];
-        const ipackets = parts[1];
-        const rbytes = parts[2];
-        const ierrors = parts[3];
-        const opackets = parts[4];
-        const obytes = parts[5];
-        const oerrors = parts[6];
+        const [link, ipackets, rbytes, ierrors, opackets, obytes, oerrors] = parts;
 
         // Skip if any expected numeric field contains non-numeric data
         if (
@@ -331,7 +340,7 @@ export class NetworkParsingController {
 
       // Need at least 7 parts for valid data
       if (parts.length >= 7) {
-        const linkName = parts[0];
+        const [linkName, durationStr, ipackets, rbytes, opackets, obytes] = parts;
 
         // Skip header data that might have been parsed as a row
         if (
@@ -344,17 +353,17 @@ export class NetworkParsingController {
 
         // Extract bandwidth string and parse numeric value
         const bandwidthStr = parts.slice(6).join(' ');
-        const bandwidthMatch = bandwidthStr.match(/([0-9.]+)\s*Mbps/);
-        const bandwidthMbps = bandwidthMatch ? parseFloat(bandwidthMatch[1]) : null;
+        const bandwidthMatch = bandwidthStr.match(/(?<speed>[0-9.]+)\s*Mbps/);
+        const bandwidthMbps = bandwidthMatch ? parseFloat(bandwidthMatch.groups.speed) : null;
 
         usage.push({
           host: this.hostname,
           link: linkName,
-          duration: parseInt(parts[1]) || null,
-          ipackets: parts[2],
-          rbytes: parts[3],
-          opackets: parts[4],
-          obytes: parts[5],
+          duration: parseInt(durationStr) || null,
+          ipackets,
+          rbytes,
+          opackets,
+          obytes,
           bandwidth: bandwidthStr,
           bandwidth_mbps: bandwidthMbps,
           scan_timestamp: new Date(),
@@ -383,27 +392,26 @@ export class NetworkParsingController {
 
       const parts = line.split(/\s+/);
       if (parts.length >= 4) {
-        const addrobj = parts[0];
-        const interfaceName = addrobj.split('/')[0];
+        const [addrobj, type, state, addr] = parts;
+        const [interfaceName] = addrobj.split('/');
         const ipVersion = addrobj.includes('/v6') ? 'v6' : 'v4';
-        const addr = parts[3];
 
         // Parse IP and prefix
         let ipAddress = addr;
         let prefixLength = null;
 
         if (addr.includes('/')) {
-          const addrParts = addr.split('/');
-          ipAddress = addrParts[0];
-          prefixLength = parseInt(addrParts[1]) || null;
+          const [ip, prefix] = addr.split('/');
+          ipAddress = ip;
+          prefixLength = parseInt(prefix) || null;
         }
 
         addresses.push({
           host: this.hostname,
           addrobj,
           interface: interfaceName,
-          type: parts[1],
-          state: parts[2],
+          type,
+          state,
           addr,
           ip_address: ipAddress,
           prefix_length: prefixLength,
@@ -457,12 +465,8 @@ export class NetworkParsingController {
       const parts = trimmed.split(/\s+/);
 
       if (currentIPVersion === 'v4' && parts.length >= 6) {
-        const destination = parts[0];
-        const gateway = parts[1];
-        const flags = parts[2];
-        const ref = parseInt(parts[3]) || null;
-        const use = parts[4];
-        const interfaceName = parts[5];
+        const [destination, gateway, flags, refStr, use, interfaceName] = parts;
+        const ref = parseInt(refStr) || null;
 
         routes.push({
           host: this.hostname,
@@ -477,12 +481,8 @@ export class NetworkParsingController {
           scan_timestamp: new Date(),
         });
       } else if (currentIPVersion === 'v6' && parts.length >= 6) {
-        const destinationMask = parts[0];
-        const gateway = parts[1];
-        const flags = parts[2];
-        const ref = parseInt(parts[3]) || null;
-        const use = parts[4];
-        const interfaceName = parts[5];
+        const [destinationMask, gateway, flags, refStr, use, interfaceName] = parts;
+        const ref = parseInt(refStr) || null;
 
         routes.push({
           host: this.hostname,

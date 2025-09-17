@@ -44,12 +44,14 @@ export class NetworkDataController {
           },
         });
 
-        // Insert fresh current state data
+        // Insert fresh current state data in parallel batches
         const batchSize = this.hostMonitoringConfig.performance.batch_size;
+        const batches = [];
         for (let i = 0; i < ipData.length; i += batchSize) {
           const batch = ipData.slice(i, i + batchSize);
-          await IPAddresses.bulkCreate(batch);
+          batches.push(IPAddresses.bulkCreate(batch));
         }
+        await Promise.all(batches);
 
         log.monitoring.debug('IP addresses updated', {
           count: ipData.length,
@@ -96,12 +98,14 @@ export class NetworkDataController {
           },
         });
 
-        // Insert fresh current state data
+        // Insert fresh current state data in parallel batches
         const batchSize = this.hostMonitoringConfig.performance.batch_size;
+        const batches = [];
         for (let i = 0; i < routeData.length; i += batchSize) {
           const batch = routeData.slice(i, i + batchSize);
-          await Routes.bulkCreate(batch);
+          batches.push(Routes.bulkCreate(batch));
         }
+        await Promise.all(batches);
 
         log.monitoring.debug('Routes updated', {
           count: routeData.length,
