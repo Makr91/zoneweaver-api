@@ -195,6 +195,25 @@ import {
   listHolds,
 } from '../controllers/ZFSDatasetController.js';
 import {
+  listPools,
+  getPoolDetails,
+  getPoolStatus,
+  createPool,
+  destroyPool,
+  setPoolProperties,
+  addVdev,
+  removeVdev,
+  replaceDevice,
+  onlineDevice,
+  offlineDevice,
+  scrubPool,
+  stopScrub,
+  exportPool,
+  importPool,
+  listImportablePools,
+  upgradePool,
+} from '../controllers/ZPoolController.js';
+import {
   getFaults,
   getFaultDetails,
   getFaultManagerConfig,
@@ -564,6 +583,25 @@ router.post('/storage/snapshots/:snapshot/rollback', verifyApiKey, rollbackSnaps
 router.post('/storage/snapshots/:snapshot/holds', verifyApiKey, holdSnapshot); // Hold snapshot
 router.delete('/storage/snapshots/:snapshot/holds/:tag', verifyApiKey, releaseSnapshot); // Release snapshot hold
 router.get('/storage/snapshots/:snapshot/holds', verifyApiKey, listHolds); // List snapshot holds
+
+// ZFS Pool Management Routes
+router.get('/storage/pools', verifyApiKey, listPools); // List ZFS pools
+router.get('/storage/pools/importable', verifyApiKey, listImportablePools); // List importable pools
+router.post('/storage/pools/import', verifyApiKey, importPool); // Import pool
+router.get('/storage/pools/:pool', verifyApiKey, getPoolDetails); // Get pool details
+router.get('/storage/pools/:pool/status', verifyApiKey, getPoolStatus); // Get pool status
+router.post('/storage/pools', verifyApiKey, createPool); // Create pool
+router.delete('/storage/pools/:pool', verifyApiKey, destroyPool); // Destroy pool
+router.put('/storage/pools/:pool/properties', verifyApiKey, setPoolProperties); // Set pool properties
+router.post('/storage/pools/:pool/vdevs', verifyApiKey, addVdev); // Add vdev to pool
+router.post('/storage/pools/:pool/vdevs/remove', verifyApiKey, removeVdev); // Remove vdev from pool
+router.post('/storage/pools/:pool/devices/replace', verifyApiKey, replaceDevice); // Replace device in pool
+router.post('/storage/pools/:pool/devices/online', verifyApiKey, onlineDevice); // Online device in pool
+router.post('/storage/pools/:pool/devices/offline', verifyApiKey, offlineDevice); // Offline device in pool
+router.post('/storage/pools/:pool/scrub', verifyApiKey, scrubPool); // Start pool scrub
+router.post('/storage/pools/:pool/scrub/stop', verifyApiKey, stopScrub); // Stop pool scrub
+router.post('/storage/pools/:pool/export', verifyApiKey, exportPool); // Export pool
+router.post('/storage/pools/:pool/upgrade', verifyApiKey, upgradePool); // Upgrade pool
 
 // Fault Management Routes
 router.get('/system/fault-management/faults', verifyApiKey, getFaults); // List system faults

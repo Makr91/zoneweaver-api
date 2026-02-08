@@ -115,6 +115,21 @@ import {
   executeHoldSnapshotTask,
   executeReleaseSnapshotTask,
 } from './TaskManager/ZFSDatasetManager.js';
+import {
+  executeCreatePoolTask,
+  executeDestroyPoolTask,
+  executeSetPoolPropertiesTask,
+  executeAddVdevTask,
+  executeRemoveVdevTask,
+  executeReplaceDeviceTask,
+  executeOnlineDeviceTask,
+  executeOfflineDeviceTask,
+  executeScrubPoolTask,
+  executeStopScrubTask,
+  executeExportPoolTask,
+  executeImportPoolTask,
+  executeUpgradePoolTask,
+} from './TaskManager/ZPoolManager.js';
 import { isVncEnabledAtBoot } from './VncConsoleController/utils/VncCleanupService.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
@@ -224,6 +239,21 @@ const OPERATION_CATEGORIES = {
   zfs_rollback_snapshot: 'zfs_snapshot',
   zfs_hold_snapshot: 'zfs_snapshot',
   zfs_release_snapshot: 'zfs_snapshot',
+
+  // ZFS pool operations
+  zpool_create: 'zfs_pool',
+  zpool_destroy: 'zfs_pool',
+  zpool_set_properties: 'zfs_pool',
+  zpool_add_vdev: 'zfs_pool',
+  zpool_remove_vdev: 'zfs_pool',
+  zpool_replace_device: 'zfs_pool',
+  zpool_online_device: 'zfs_pool',
+  zpool_offline_device: 'zfs_pool',
+  zpool_scrub: 'zfs_pool',
+  zpool_stop_scrub: 'zfs_pool',
+  zpool_export: 'zfs_pool',
+  zpool_import: 'zfs_pool',
+  zpool_upgrade: 'zfs_pool',
 };
 
 /**
@@ -471,6 +501,45 @@ const executeZFSTask = (operation, metadata) => {
       return executeReleaseSnapshotTask(metadata);
     default:
       return { success: false, error: `Unknown ZFS operation: ${operation}` };
+  }
+};
+
+/**
+ * Execute ZFS pool management tasks
+ * @param {string} operation - Operation type
+ * @param {string} metadata - Task metadata
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeZPoolTask = (operation, metadata) => {
+  switch (operation) {
+    case 'zpool_create':
+      return executeCreatePoolTask(metadata);
+    case 'zpool_destroy':
+      return executeDestroyPoolTask(metadata);
+    case 'zpool_set_properties':
+      return executeSetPoolPropertiesTask(metadata);
+    case 'zpool_add_vdev':
+      return executeAddVdevTask(metadata);
+    case 'zpool_remove_vdev':
+      return executeRemoveVdevTask(metadata);
+    case 'zpool_replace_device':
+      return executeReplaceDeviceTask(metadata);
+    case 'zpool_online_device':
+      return executeOnlineDeviceTask(metadata);
+    case 'zpool_offline_device':
+      return executeOfflineDeviceTask(metadata);
+    case 'zpool_scrub':
+      return executeScrubPoolTask(metadata);
+    case 'zpool_stop_scrub':
+      return executeStopScrubTask(metadata);
+    case 'zpool_export':
+      return executeExportPoolTask(metadata);
+    case 'zpool_import':
+      return executeImportPoolTask(metadata);
+    case 'zpool_upgrade':
+      return executeUpgradePoolTask(metadata);
+    default:
+      return { success: false, error: `Unknown ZPool operation: ${operation}` };
   }
 };
 
@@ -733,6 +802,11 @@ const executeTask = async task => {
     // ZFS dataset and snapshot operations
     if (operation.startsWith('zfs_')) {
       return await executeZFSTask(operation, task.metadata);
+    }
+
+    // ZFS pool operations
+    if (operation.startsWith('zpool_')) {
+      return await executeZPoolTask(operation, task.metadata);
     }
 
     // File operations
