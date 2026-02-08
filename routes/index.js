@@ -221,7 +221,7 @@ import {
   getLocalTemplate,
   downloadTemplate,
   deleteLocalTemplate,
-} from './controllers/TemplateController.js';
+} from '../controllers/TemplateController.js';
 import {
   getFaults,
   getFaultDetails,
