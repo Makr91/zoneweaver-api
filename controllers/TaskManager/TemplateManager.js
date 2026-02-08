@@ -551,7 +551,7 @@ export const executeTemplateDeleteTask = async metadataJson => {
  * @param {string} zoneName - Zone name
  * @returns {Promise<string>} Boot dataset path
  */
-const getZoneBootDataset = async (zoneConfig, zoneName) => {
+const getZoneBootDataset = async zoneConfig => {
   let dataset = null;
   if (zoneConfig.brand === 'bhyve') {
     // For bhyve, use the bootdisk object from zadm output
@@ -738,7 +738,7 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
     throw new Error(`Failed to parse zone config: ${e.message}`);
   }
 
-  const dataset = await getZoneBootDataset(zoneConfig, zoneName);
+  const dataset = await getZoneBootDataset(zoneConfig);
   if (!dataset) throw new Error(`Could not determine dataset for zone ${zoneName}`);
 
   await updateTaskProgress(task, 20, { status: 'creating_snapshot' });

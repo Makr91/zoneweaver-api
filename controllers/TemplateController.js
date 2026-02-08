@@ -158,6 +158,7 @@ export const listSources = (req, res) => {
  */
 export const listRemoteTemplates = async (req, res) => {
   const { sourceName } = req.params;
+  const userToken = req.headers['x-registry-token'];
 
   try {
     const sourceConfig = findSourceConfig(sourceName);
@@ -165,8 +166,6 @@ export const listRemoteTemplates = async (req, res) => {
       return res.status(404).json({ error: 'Template source not found or disabled' });
     }
 
-    const token = await getRegistryToken(sourceConfig, userToken);
-    const client = createRegistryClient(sourceConfig, token);
     const token = await getRegistryToken(sourceConfig, userToken);
     const client = createRegistryClient(sourceConfig, token);
 
@@ -219,6 +218,7 @@ export const listRemoteTemplates = async (req, res) => {
  */
 export const getRemoteTemplateDetails = async (req, res) => {
   const { sourceName, org, boxName } = req.params;
+  const userToken = req.headers['x-registry-token'];
 
   try {
     const sourceConfig = findSourceConfig(sourceName);
@@ -226,8 +226,6 @@ export const getRemoteTemplateDetails = async (req, res) => {
       return res.status(404).json({ error: 'Template source not found or disabled' });
     }
 
-    const token = await getRegistryToken(sourceConfig, userToken);
-    const client = createRegistryClient(sourceConfig, token);
     const token = await getRegistryToken(sourceConfig, userToken);
     const client = createRegistryClient(sourceConfig, token);
     // Vagrant-compatible metadata endpoint: /{user}/{box}
