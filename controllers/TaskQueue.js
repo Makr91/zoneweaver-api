@@ -617,6 +617,8 @@ const executeTemplateTask = (operation, metadata) => {
       return executeTemplateDeleteTask(metadata);
     case 'template_upload':
       return executeTemplatePublishTask(metadata);
+    case 'template_upload':
+      return executeTemplatePublishTask(metadata);
     default:
       return { success: false, error: `Unknown template operation: ${operation}` };
   }

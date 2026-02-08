@@ -501,33 +501,65 @@ export const executeTemplateDeleteTask = async metadataJson => {
  * @returns {Promise<{boxPath: string, checksum: string}>}
  */
 const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
-  await updateTaskProgress(task, 10, { status: 'creating_snapshot' });
+  await updateTaskProgress(task, 10, { status: 'getting_zone_config' });
 
-  // 1. Create snapshot if not provided
+  // 1. Get zone configuration to identify dataset
+  const configResult = await executeCommand(`pfexec zadm show ${zoneName}`);
+  if (!configResult.success) {
+    throw new Error(`Failed to get zone config: ${configResult.error}`);
+  }
+
+  let zoneConfig;
+  try {
+    zoneConfig = JSON.parse(configResult.output);
+  } catch (e) {
+    throw new Error(`Failed to parse zone config: ${e.message}`);
+  }
+
+  // Identify the boot dataset based on brand
+  let dataset = null;
+  if (zoneConfig.brand === 'bhyve') {
+    // For bhyve, use the bootdisk object from zadm output
+    if (zoneConfig.bootdisk && zoneConfig.bootdisk.path) {
+      dataset = zoneConfig.bootdisk.path;
+    } else if (zoneConfig.attr?.find(a => a.name === 'bootdisk')) {
+      // Fallback for older configs
+      dataset = zoneConfig.attr.find(a => a.name === 'bootdisk').value;
+    }
+
+    if (!dataset) {
+      throw new Error('Could not determine bootdisk for bhyve zone');
+    }
+  } else {
+    // For native zones (ipkg/lipkg), use the zonepath dataset
+    const zonepath = zoneConfig.zonepath;
+    if (!zonepath) throw new Error('Zone has no zonepath');
+
+    const zfsResult = await executeCommand(`pfexec zfs list -H -o name "${zonepath}"`);
+    if (zfsResult.success) {
+      dataset = zfsResult.output.trim();
+    } else {
+      throw new Error(`Failed to resolve dataset for zonepath ${zonepath}`);
+    }
+  }
+
+  if (!dataset) throw new Error(`Could not determine dataset for zone ${zoneName}`);
+
+  await updateTaskProgress(task, 20, { status: 'creating_snapshot' });
+
+  // 2. Create snapshot if not provided
   let snap = snapshotName;
   if (!snap) {
     snap = `export_${Date.now()}`;
-    const snapResult = await executeCommand(`pfexec zoneadm -z ${zoneName} snapshot ${snap}`);
+    const snapResult = await executeCommand(`pfexec zfs snapshot ${dataset}@${snap}`);
     if (!snapResult.success) {
       throw new Error(`Failed to create snapshot: ${snapResult.error}`);
     }
   }
 
-  // Get zone dataset
-  const zone = await Zones.findOne({ where: { name: zoneName } });
-  if (!zone) throw new Error(`Zone ${zoneName} not found`);
+  await updateTaskProgress(task, 30, { status: 'exporting_stream' });
 
-  // We need the dataset name. Usually zones/zoneName or rpool/zones/zoneName
-  // We can get it from 'zfs list'
-  const zfsList = await executeCommand(
-    `pfexec zfs list -H -o name -t filesystem | grep "/${zoneName}$"`
-  );
-  const dataset = zfsList.output.trim();
-  if (!dataset) throw new Error(`Could not determine dataset for zone ${zoneName}`);
-
-  await updateTaskProgress(task, 20, { status: 'exporting_stream' });
-
-  // 2. Send stream to file
+  // 3. Send stream to file
   const zssPath = path.join(tempDir, 'box.zss');
   const sendCmd = `pfexec zfs send -c ${dataset}@${snap} > "${zssPath}"`;
   const sendResult = await executeCommand(sendCmd);
@@ -535,13 +567,16 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
     throw new Error(`Failed to export ZFS stream: ${sendResult.error}`);
   }
 
-  await updateTaskProgress(task, 50, { status: 'creating_metadata' });
+  await updateTaskProgress(task, 60, { status: 'creating_metadata' });
 
-  // 3. Create metadata.json
+  // 4. Create metadata files (matching package.rb logic)
+  
+  // metadata.json
   const metadata = {
     provider: 'zone',
     format: 'zss',
-    brand: zone.brand || 'ipkg',
+    brand: zoneConfig.brand || 'ipkg',
+    architecture: 'amd64', // Default for now
     created_at: new Date().toISOString(),
   };
   await fs.promises.writeFile(
@@ -549,20 +584,42 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
     JSON.stringify(metadata, null, 2)
   );
 
-  await updateTaskProgress(task, 60, { status: 'packaging_box' });
+  // info.json
+  const info = {
+    boxname: zoneName,
+    Author: 'Zoneweaver',
+    'Vagrant-Zones': 'This box was built with Zoneweaver API'
+  };
+  await fs.promises.writeFile(
+    path.join(tempDir, 'info.json'),
+    JSON.stringify(info, null, 2)
+  );
 
-  // 4. Create .box tarball
+  // Vagrantfile
+  const vagrantfileContent = `
+Vagrant.configure("2") do |config|
+  config.vm.provider :zone do |zone|
+    zone.brand = "${zoneConfig.brand || 'ipkg'}"
+  end
+end
+`;
+  await fs.promises.writeFile(path.join(tempDir, 'Vagrantfile'), vagrantfileContent);
+
+  await updateTaskProgress(task, 70, { status: 'packaging_box' });
+
+  // 5. Create .box tarball
   const boxPath = path.join(tempDir, 'vagrant.box');
   // Use pfexec tar to ensure we can read the root-owned zss file
-  const tarCmd = `pfexec tar -cvzf "${boxPath}" -C "${tempDir}" metadata.json box.zss`;
+  // Include all generated files
+  const tarCmd = `pfexec tar -cvzf "${boxPath}" -C "${tempDir}" metadata.json info.json Vagrantfile box.zss`;
   const tarResult = await executeCommand(tarCmd);
   if (!tarResult.success) {
     throw new Error(`Failed to package box: ${tarResult.error}`);
   }
 
-  await updateTaskProgress(task, 80, { status: 'calculating_checksum' });
+  await updateTaskProgress(task, 90, { status: 'calculating_checksum' });
 
-  // 5. Calculate checksum
+  // 6. Calculate checksum
   const hash = crypto.createHash('sha256');
   const readStream = fs.createReadStream(boxPath);
   await new Promise((resolve, reject) => {

@@ -433,3 +433,71 @@ export const deleteLocalTemplate = async (req, res) => {
     return res.status(500).json({ error: 'Failed to create delete task' });
   }
 };
+
+/**
+ * @swagger
+ * /templates/publish:
+ *   post:
+ *     summary: Publish zone as template
+ *     description: Exports a zone to a .box file and uploads it to a registry (async task)
+ *     tags: [Template Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - zone_name
+ *               - source_name
+ *               - organization
+ *               - box_name
+ *               - version
+ *     responses:
+ *       202:
+ *         description: Publish task created
+ */
+export const publishTemplate = async (req, res) => {
+  const {
+    zone_name,
+    source_name,
+    organization,
+    box_name,
+    version,
+    description,
+    snapshot_name,
+    auth_token,
+    created_by = 'api',
+  } = req.body;
+
+  try {
+    if (!zone_name || !source_name || !organization || !box_name || !version) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'template_upload',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          { zone_name, source_name, organization, box_name, version, description, snapshot_name, auth_token },
+          (err, jsonResult) => (err ? reject(err) : resolve(jsonResult))
+        );
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Publish task created for zone ${zone_name}`,
+      task_id: task.id,
+    });
+  } catch (error) {
+    log.api.error('Error creating template publish task', { error: error.message });
+    return res.status(500).json({ error: 'Failed to create publish task' });
+  }
+};
