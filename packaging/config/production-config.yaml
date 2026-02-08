@@ -219,3 +219,18 @@ artifact_storage:
     enabled: true
     orphaned_files_retention_days: 30
     failed_downloads_cleanup: true
+template_sources:
+  enabled: true
+  local_storage_path: "/data/templates"
+  sources:
+    - name: "Default Registry"
+      type: vagrant
+      url: "https://boxvault.startcloud.com"
+      api_key: ""
+      organization: ""
+      enabled: true
+      verify_ssl: true
+  download:
+    timeout_seconds: 3600
+    progress_update_seconds: 10
+    max_download_size_gb: 100

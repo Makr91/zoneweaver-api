@@ -268,6 +268,19 @@ class ConfigLoader {
   }
 
   /**
+   * Gets template sources configuration
+   * @description Returns template source registry configuration for zone templates
+   * @returns {Object} Template sources configuration object
+   * @returns {boolean} returns.enabled - Whether template sources are enabled
+   * @returns {string} returns.local_storage_path - Local path for extracted templates
+   * @returns {Array} returns.sources - Array of registry source configurations
+   * @returns {Object} returns.download - Download settings (timeout, progress, size limits)
+   */
+  getTemplateSources() {
+    return this.config.template_sources;
+  }
+
+  /**
    * Gets zone orchestration configuration
    * @description Returns zone orchestration configuration for priority-based zone management
    * @returns {Object} Zone orchestration configuration object

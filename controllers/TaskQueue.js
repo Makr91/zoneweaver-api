@@ -130,6 +130,10 @@ import {
   executeImportPoolTask,
   executeUpgradePoolTask,
 } from './TaskManager/ZPoolManager.js';
+import {
+  executeTemplateDownloadTask,
+  executeTemplateDeleteTask,
+} from './TaskManager/TemplateManager.js';
 import { isVncEnabledAtBoot } from './VncConsoleController/utils/VncCleanupService.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
@@ -254,6 +258,11 @@ const OPERATION_CATEGORIES = {
   zpool_export: 'zfs_pool',
   zpool_import: 'zfs_pool',
   zpool_upgrade: 'zfs_pool',
+
+  // Template operations
+  template_download: 'template',
+  template_upload: 'template',
+  template_delete: 'template',
 };
 
 /**
@@ -594,6 +603,23 @@ const executeArtifactTask = (operation, metadata) => {
 };
 
 /**
+ * Execute template-related tasks
+ * @param {string} operation - Operation type
+ * @param {string} metadata - Task metadata
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeTemplateTask = (operation, metadata) => {
+  switch (operation) {
+    case 'template_download':
+      return executeTemplateDownloadTask(metadata);
+    case 'template_delete':
+      return executeTemplateDeleteTask(metadata);
+    default:
+      return { success: false, error: `Unknown template operation: ${operation}` };
+  }
+};
+
+/**
  * Execute system host management tasks
  * @param {string} operation - Operation type
  * @param {string} metadata - Task metadata
@@ -817,6 +843,11 @@ const executeTask = async task => {
     // Artifact operations
     if (operation.startsWith('artifact_')) {
       return await executeArtifactTask(operation, task.metadata);
+    }
+
+    // Template operations
+    if (operation.startsWith('template_')) {
+      return await executeTemplateTask(operation, task.metadata);
     }
 
     // System host operations

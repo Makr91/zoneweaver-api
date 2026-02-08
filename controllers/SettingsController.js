@@ -106,6 +106,22 @@ const createBackup = async () => {
  *           type: object
  *         host_monitoring:
  *           type: object
+ *         template_sources:
+ *           type: object
+ *           properties:
+ *             enabled:
+ *               type: boolean
+ *             local_storage_path:
+ *               type: string
+ *             sources:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                   url:
+ *                     type: string
  */
 
 /**

@@ -214,6 +214,15 @@ import {
   upgradePool,
 } from '../controllers/ZPoolController.js';
 import {
+  listSources,
+  listRemoteTemplates,
+  getRemoteTemplateDetails,
+  listLocalTemplates,
+  getLocalTemplate,
+  downloadTemplate,
+  deleteLocalTemplate,
+} from './controllers/TemplateController.js';
+import {
   getFaults,
   getFaultDetails,
   getFaultManagerConfig,
@@ -602,6 +611,15 @@ router.post('/storage/pools/:pool/scrub', verifyApiKey, scrubPool); // Start poo
 router.post('/storage/pools/:pool/scrub/stop', verifyApiKey, stopScrub); // Stop pool scrub
 router.post('/storage/pools/:pool/export', verifyApiKey, exportPool); // Export pool
 router.post('/storage/pools/:pool/upgrade', verifyApiKey, upgradePool); // Upgrade pool
+
+// Template Management Routes
+router.get('/templates/sources', verifyApiKey, listSources);
+router.get('/templates/remote/:sourceName', verifyApiKey, listRemoteTemplates);
+router.get('/templates/remote/:sourceName/:org/:boxName', verifyApiKey, getRemoteTemplateDetails);
+router.get('/templates/local', verifyApiKey, listLocalTemplates);
+router.get('/templates/local/:templateId', verifyApiKey, getLocalTemplate);
+router.post('/templates/pull', verifyApiKey, downloadTemplate);
+router.delete('/templates/local/:templateId', verifyApiKey, deleteLocalTemplate);
 
 // Fault Management Routes
 router.get('/system/fault-management/faults', verifyApiKey, getFaults); // List system faults
