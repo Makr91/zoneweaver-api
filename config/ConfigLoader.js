@@ -31,6 +31,7 @@ class ConfigLoader {
       // Check environment variable first (set by SMF), then fallback to local config
       const configPath =
         process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+      // eslint-disable-next-line no-console
       console.log(`Loading configuration from: ${configPath}`);
       const fileContents = fs.readFileSync(configPath, 'utf8');
       const fullConfig = yaml.load(fileContents);
@@ -38,7 +39,9 @@ class ConfigLoader {
     } catch (error) {
       const attemptedPath =
         process.env.CONFIG_PATH || path.join(process.cwd(), 'config', 'config.yaml');
+      // eslint-disable-next-line no-console
       console.error('Error loading config file:', error);
+      // eslint-disable-next-line no-console
       console.error('Tried path:', attemptedPath);
       throw new Error('Failed to load configuration');
     }
