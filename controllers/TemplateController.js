@@ -58,7 +58,7 @@ const findSourceConfig = sourceName => {
  *       200:
  *         description: List of enabled template sources
  */
-export const listSources = async (req, res) => {
+export const listSources = (req, res) => {
   try {
     const templateConfig = config.getTemplateSources();
     const sources = (templateConfig?.sources || [])
@@ -107,8 +107,8 @@ export const listRemoteTemplates = async (req, res) => {
     }
 
     const client = createRegistryClient(sourceConfig);
-    
-    // If organization is configured, we could list boxes for that org, 
+
+    // If organization is configured, we could list boxes for that org,
     // but /api/discover is the general discovery endpoint for BoxVault
     const response = await client.get('/api/discover');
 
@@ -176,7 +176,7 @@ export const getRemoteTemplateDetails = async (req, res) => {
       box: boxName,
       error: error.message,
     });
-    
+
     if (error.response?.status === 404) {
       return res.status(404).json({ error: 'Template not found on remote source' });
     }
@@ -314,7 +314,9 @@ export const downloadTemplate = async (req, res) => {
     // Check if source exists
     const sourceConfig = findSourceConfig(source_name);
     if (!sourceConfig) {
-      return res.status(400).json({ error: `Template source '${source_name}' not found or disabled` });
+      return res
+        .status(400)
+        .json({ error: `Template source '${source_name}' not found or disabled` });
     }
 
     // Check if already exists locally
@@ -322,9 +324,9 @@ export const downloadTemplate = async (req, res) => {
       where: { source_name, organization, box_name, version, provider, architecture },
     });
     if (existing) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: 'Template already exists locally',
-        template_id: existing.id 
+        template_id: existing.id,
       });
     }
 
