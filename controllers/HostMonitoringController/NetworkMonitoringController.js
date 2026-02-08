@@ -186,7 +186,7 @@ export const getNetworkUsage = async (req, res) => {
         // Step 1: Get dataset metadata in parallel with interface list
         const [metadata, activeInterfaces] = await Promise.all([
           getDatasetMetadata(link, since),
-          link ? [link] : getActiveInterfacesList(link)
+          link ? [link] : getActiveInterfacesList(link),
         ]);
 
         if (metadata.totalRecords === 0) {
@@ -206,9 +206,9 @@ export const getNetworkUsage = async (req, res) => {
           // Fallback to Sequelize-based sampling for older database versions
           log.database.warn('Window function query failed, using fallback method', {
             error: windowError.message,
-            database_dialect: db.getDialect()
+            database_dialect: db.getDialect(),
           });
-          
+
           sampledData = await getFallbackSampledData(
             Array.isArray(activeInterfaces) ? activeInterfaces : metadata.interfaces,
             since,
@@ -217,12 +217,7 @@ export const getNetworkUsage = async (req, res) => {
         }
 
         // Step 3: Create optimized response with performance metrics
-        return res.json(createOptimizedResponse(
-          sampledData,
-          metadata,
-          requestedLimit,
-          startTime
-        ));
+        return res.json(createOptimizedResponse(sampledData, metadata, requestedLimit, startTime));
       } catch (optimizationError) {
         // Ultimate fallback: Log error and use original method if optimization fails
         log.database.error('Optimization failed, using original method', {
@@ -248,7 +243,7 @@ export const getNetworkUsage = async (req, res) => {
               sampling: buildSamplingMetadata({
                 applied: true,
                 strategy: 'fallback-limited-query',
-                note: 'Optimization failed, used limited fallback query'
+                note: 'Optimization failed, used limited fallback query',
               }),
             },
             startTime

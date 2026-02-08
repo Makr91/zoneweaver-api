@@ -1,30 +1,30 @@
 # Basic Jekyll settings
 title: ZoneweaverAPI Documentation
 description: Documentation for the ZoneweaverAPI - Zone Hypervisor Management Backend
-baseurl: "" # Custom domain serves from root
-url: "http://zoneweaver-api.startcloud.com" # Custom domain
+baseurl: '' # Custom domain serves from root
+url: 'http://zoneweaver-api.startcloud.com' # Custom domain
 repository: Makr91/zoneweaver-api # for github-metadata
 
 permalink: pretty
 
 # Include files from root directory instead of just _includes/
-includes_dir: "."
+includes_dir: '.'
 
-# Logo and favicon settings  
+# Logo and favicon settings
 # logo: "/assets/images/logo.png"
-favicon_ico: "/assets/images/favicon.ico"
+favicon_ico: '/assets/images/favicon.ico'
 
 defaults:
   - scope:
-      path: "docs" # an empty string here means all files in the project
-      type: "pages"
+      path: 'docs' # an empty string here means all files in the project
+      type: 'pages'
     values:
-      layout: "default"
+      layout: 'default'
 
 # Explicitly include API documentation files
 include:
-  - "docs/api/*.html"
-  - "docs/api/*.json"
+  - 'docs/api/*.html'
+  - 'docs/api/*.json'
 
 exclude:
   # from https://github.com/jekyll/jekyll/blob/master/lib/site_template/_config.yml:
@@ -40,8 +40,8 @@ exclude:
   - vendor/ruby/
   - bin/
   - lib/
-  - "*.gemspec"
-  - "*.gem"
+  - '*.gemspec'
+  - '*.gem'
   - package.json
   - package-lock.json
   - Rakefile
@@ -49,7 +49,7 @@ exclude:
   - CODE_OF_CONDUCT.md
   - docker-compose.yml
   - Dockerfile
-  - "*.mjs"
+  - '*.mjs'
   - config/
   - controllers/
   - middleware/
@@ -70,10 +70,10 @@ search_enabled: true # Enable the built-in search
 
 # Aux links for header
 aux_links:
-  "View on GitHub":
-    - "https://github.com/Makr91/zoneweaver-api"
-  "Zoneweaver":
-    - "https://zoneweaver.startcloud.com/"
+  'View on GitHub':
+    - 'https://github.com/Makr91/zoneweaver-api'
+  'Zoneweaver':
+    - 'https://zoneweaver.startcloud.com/'
 aux_links_new_tab: true
 
 # Footer content
@@ -81,19 +81,19 @@ footer_content: 'Copyright &copy; 2025 ZoneweaverProject. Distributed under the 
 
 # Back to top link
 back_to_top: true
-back_to_top_text: "Back to top"
+back_to_top_text: 'Back to top'
 
 # Footer last edited timestamp
 last_edit_timestamp: true # show or hide edit time - page must have `last_modified_date` defined in the frontmatter
-last_edit_time_format: "%b %e %Y at %I:%M %p" # uses ruby's time format: https://ruby-doc.org/stdlib-2.7.0/libdoc/time/rdoc/Time.html
+last_edit_time_format: '%b %e %Y at %I:%M %p' # uses ruby's time format: https://ruby-doc.org/stdlib-2.7.0/libdoc/time/rdoc/Time.html
 
 # Footer "Edit this page on GitHub" link text
 gh_edit_link: true # show or hide edit this page link
-gh_edit_link_text: "Edit this page on GitHub"
-gh_edit_repository: "https://github.com/Makr91/zoneweaver-api" # the github URL for your repo
-gh_edit_branch: "main" # the branch that your docs is served from
+gh_edit_link_text: 'Edit this page on GitHub'
+gh_edit_repository: 'https://github.com/Makr91/zoneweaver-api' # the github URL for your repo
+gh_edit_branch: 'main' # the branch that your docs is served from
 gh_edit_source: docs # the source that your files originate from
-gh_edit_view_mode: "tree" # "tree" or "edit" if you want the user to jump into the editor immediately
+gh_edit_view_mode: 'tree' # "tree" or "edit" if you want the user to jump into the editor immediately
 
 liquid:
   error_mode: strict
@@ -124,7 +124,7 @@ enable_copy_code_button: true
 
 # Enable Mermaid diagrams
 mermaid:
-  version: "9.1.6"
+  version: '9.1.6'
 
 compress_html:
   clippings: all

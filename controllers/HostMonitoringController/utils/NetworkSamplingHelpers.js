@@ -50,7 +50,7 @@ export const getActiveInterfacesList = async (linkFilter = null) => {
  */
 export const getTimeSeriesSampledData = async (interfaces, since, samplesPerInterface) => {
   const startTime = Date.now();
-  
+
   try {
     // Handle empty interface list
     if (!interfaces || interfaces.length === 0) {
@@ -58,7 +58,7 @@ export const getTimeSeriesSampledData = async (interfaces, since, samplesPerInte
     }
 
     const interfaceList = interfaces.map(i => `'${i.replace(/'/g, "''")}'`).join(',');
-    
+
     // Simple and fast SQLite time sampling query using NTILE
     const query = `
       WITH sampled_data AS (
@@ -101,11 +101,11 @@ export const getTimeSeriesSampledData = async (interfaces, since, samplesPerInte
     `;
 
     const results = await db.query(query, {
-      replacements: { 
-        samplesPerInterface, 
-        since: new Date(since)
+      replacements: {
+        samplesPerInterface,
+        since: new Date(since),
       },
-      type: QueryTypes.SELECT
+      type: QueryTypes.SELECT,
     });
 
     log.monitoring.debug('Time-series sampling completed', {
@@ -113,7 +113,7 @@ export const getTimeSeriesSampledData = async (interfaces, since, samplesPerInte
       samples_per_interface: samplesPerInterface,
       total_results: results.length,
       query_time_ms: Date.now() - startTime,
-      strategy: 'sql-ntile-optimized'
+      strategy: 'sql-ntile-optimized',
     });
 
     return results;
@@ -132,22 +132,22 @@ export const getTimeSeriesSampledData = async (interfaces, since, samplesPerInte
 /**
  * Fallback sampling method for databases without window function support
  * @param {Array} interfaces - List of interface names
- * @param {string} since - Starting timestamp  
+ * @param {string} since - Starting timestamp
  * @param {number} samplesPerInterface - Number of samples per interface
  * @returns {Promise<Array>} Sampled data using Sequelize methods
  */
 export const getFallbackSampledData = async (interfaces, since, samplesPerInterface) => {
   const startTime = Date.now();
-  
+
   try {
     // Use parallel queries for each interface
-    const interfaceQueries = interfaces.map(async (interfaceName) => {
+    const interfaceQueries = interfaces.map(async interfaceName => {
       // Get total count for this interface
       const totalCount = await NetworkUsage.count({
         where: {
           link: interfaceName,
-          scan_timestamp: { [Op.gte]: new Date(since) }
-        }
+          scan_timestamp: { [Op.gte]: new Date(since) },
+        },
       });
 
       if (totalCount === 0) {
@@ -159,48 +159,48 @@ export const getFallbackSampledData = async (interfaces, since, samplesPerInterf
         return await NetworkUsage.findAll({
           where: {
             link: interfaceName,
-            scan_timestamp: { [Op.gte]: new Date(since) }
+            scan_timestamp: { [Op.gte]: new Date(since) },
           },
           attributes: NETWORK_USAGE_ATTRIBUTES,
           order: [['scan_timestamp', 'ASC']],
-          raw: true
+          raw: true,
         });
       }
 
       // Calculate sampling interval and get distributed samples
       const step = Math.floor(totalCount / samplesPerInterface);
       const sampleQueries = [];
-      
+
       for (let i = 0; i < samplesPerInterface; i++) {
         sampleQueries.push(
           NetworkUsage.findOne({
             where: {
               link: interfaceName,
-              scan_timestamp: { [Op.gte]: new Date(since) }
+              scan_timestamp: { [Op.gte]: new Date(since) },
             },
             attributes: NETWORK_USAGE_ATTRIBUTES,
             order: [['scan_timestamp', 'ASC']],
             offset: i * step,
-            raw: true
+            raw: true,
           })
         );
       }
-      
+
       const samples = await Promise.all(sampleQueries);
       return samples.filter(Boolean); // Remove any null results
     });
-    
+
     const allResults = await Promise.all(interfaceQueries);
     const flatResults = allResults.flat();
-    
+
     log.monitoring.debug('Fallback sampling completed', {
       interfaces_count: interfaces.length,
       samples_per_interface: samplesPerInterface,
       total_results: flatResults.length,
       query_time_ms: Date.now() - startTime,
-      strategy: 'sequelize-fallback-sampling'
+      strategy: 'sequelize-fallback-sampling',
     });
-    
+
     return flatResults.sort((a, b) => {
       if (a.link !== b.link) {
         return a.link.localeCompare(b.link);
@@ -226,9 +226,9 @@ export const getFallbackSampledData = async (interfaces, since, samplesPerInterf
 export const getDatasetMetadata = async (linkFilter, since) => {
   try {
     const whereClause = {
-      scan_timestamp: { [Op.gte]: new Date(since) }
+      scan_timestamp: { [Op.gte]: new Date(since) },
     };
-    
+
     if (linkFilter) {
       whereClause.link = { [Op.like]: `%${linkFilter}%` };
     }
@@ -240,17 +240,17 @@ export const getDatasetMetadata = async (linkFilter, since) => {
         where: whereClause,
         group: ['link'],
         order: [['link', 'ASC']],
-        raw: true
-      })
+        raw: true,
+      }),
     ]);
 
     const interfaces = interfaceList.map(row => row.link);
-    
+
     return {
       totalRecords,
       interfaceCount: interfaces.length,
-      interfaces: interfaces,
-      averageRecordsPerInterface: Math.round(totalRecords / interfaces.length)
+      interfaces,
+      averageRecordsPerInterface: Math.round(totalRecords / interfaces.length),
     };
   } catch (error) {
     log.database.error('Error getting dataset metadata', {
@@ -262,7 +262,7 @@ export const getDatasetMetadata = async (linkFilter, since) => {
       totalRecords: 0,
       interfaceCount: 0,
       interfaces: [],
-      averageRecordsPerInterface: 0
+      averageRecordsPerInterface: 0,
     };
   }
 };
@@ -272,15 +272,13 @@ export const getDatasetMetadata = async (linkFilter, since) => {
  * @param {Array} sampledResults - Array of sampled records
  * @returns {Object|null} Time span metadata or null if insufficient data
  */
-export const calculateOptimizedTimeSpan = (sampledResults) => {
+export const calculateOptimizedTimeSpan = sampledResults => {
   if (!sampledResults || sampledResults.length < 2) {
     return null;
   }
 
-  const timestamps = sampledResults
-    .map(row => new Date(row.scan_timestamp))
-    .sort((a, b) => a - b);
-  
+  const timestamps = sampledResults.map(row => new Date(row.scan_timestamp)).sort((a, b) => a - b);
+
   const [firstRecord] = timestamps;
   const lastRecord = timestamps[timestamps.length - 1];
 
@@ -289,7 +287,7 @@ export const calculateOptimizedTimeSpan = (sampledResults) => {
     end: lastRecord.toISOString(),
     durationMinutes: Math.round((lastRecord - firstRecord) / (1000 * 60)),
     totalSamples: sampledResults.length,
-    uniqueInterfaces: [...new Set(sampledResults.map(row => row.link))].length
+    uniqueInterfaces: [...new Set(sampledResults.map(row => row.link))].length,
   };
 };
 
@@ -306,7 +304,7 @@ export const buildOptimizedSamplingMetadata = (options = {}) => {
     totalSamples = 0,
     originalRecords = 0,
     queryTimeMs = 0,
-    dataReduction = 0
+    dataReduction = 0,
   } = options;
 
   return {
@@ -320,8 +318,9 @@ export const buildOptimizedSamplingMetadata = (options = {}) => {
       sampledRecords: totalSamples,
       dataReduction: `${dataReduction}%`,
       queryTimeMs,
-      efficiency: originalRecords > 0 ? Math.round((originalRecords / totalSamples) * 100) / 100 : 1
-    }
+      efficiency:
+        originalRecords > 0 ? Math.round((originalRecords / totalSamples) * 100) / 100 : 1,
+    },
   };
 };
 
@@ -336,11 +335,12 @@ export const buildOptimizedSamplingMetadata = (options = {}) => {
 export const createOptimizedResponse = (sampledData, metadata, samplesPerInterface, startTime) => {
   const queryTime = Date.now() - startTime;
   const timeSpan = calculateOptimizedTimeSpan(sampledData);
-  
+
   // Calculate data reduction percentage
-  const dataReduction = metadata.totalRecords > 0 
-    ? Math.round(((metadata.totalRecords - sampledData.length) / metadata.totalRecords) * 100)
-    : 0;
+  const dataReduction =
+    metadata.totalRecords > 0
+      ? Math.round(((metadata.totalRecords - sampledData.length) / metadata.totalRecords) * 100)
+      : 0;
 
   const activeInterfaces = sampledData.filter(row => row.rx_mbps > 0 || row.tx_mbps > 0).length;
   const interfaceList = [...new Set(sampledData.map(row => row.link))].sort();
@@ -356,16 +356,19 @@ export const createOptimizedResponse = (sampledData, metadata, samplesPerInterfa
       totalSamples: sampledData.length,
       originalRecords: metadata.totalRecords,
       queryTimeMs: queryTime,
-      dataReduction
+      dataReduction,
     }),
     metadata: {
       timeSpan,
       activeInterfacesCount: activeInterfaces,
       interfaceList,
       originalDataSize: metadata.totalRecords,
-      compressionRatio: metadata.totalRecords > 0 ? Math.round(metadata.totalRecords / sampledData.length * 100) / 100 : 1,
-      averageRecordsPerInterface: metadata.averageRecordsPerInterface
+      compressionRatio:
+        metadata.totalRecords > 0
+          ? Math.round((metadata.totalRecords / sampledData.length) * 100) / 100
+          : 1,
+      averageRecordsPerInterface: metadata.averageRecordsPerInterface,
     },
-    queryTime: `${queryTime}ms`
+    queryTime: `${queryTime}ms`,
   };
 };
