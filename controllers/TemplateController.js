@@ -12,16 +12,73 @@ import { log } from '../lib/Logger.js';
  */
 
 /**
+ * Authenticate with registry to get JWT
+ * @param {Object} sourceConfig - Source configuration
+ * @param {string} [userToken] - Optional user-scoped token to override global key
+ * @returns {Promise<string>} JWT token
+ */
+const getRegistryToken = async (sourceConfig, userToken = null) => {
+  // 1. Prefer user token if provided and looks like a JWT
+  if (userToken && userToken.includes('.') && userToken.split('.').length === 3) {
+    return userToken;
+  }
+
+  // 2. If config has a JWT-like api_key, use it directly
+  if (sourceConfig.api_key && sourceConfig.api_key.includes('.') && sourceConfig.api_key.split('.').length === 3) {
+    return sourceConfig.api_key;
+  }
+
+  // 3. If we have username and api_key (password), try to login to get JWT
+  if (sourceConfig.username && sourceConfig.api_key) {
+    try {
+      const client = axios.create({
+        baseURL: sourceConfig.url,
+        httpsAgent:
+          sourceConfig.verify_ssl === false
+            ? new https.Agent({ rejectUnauthorized: false })
+            : undefined,
+        headers: {
+          'User-Agent': 'Vagrant/2.2.19 Zoneweaver/1.0.0',
+        },
+      });
+
+      const response = await client.post('/api/auth/signin', {
+        username: sourceConfig.username,
+        password: sourceConfig.api_key,
+        stayLoggedIn: true,
+      });
+
+      if (response.data && response.data.accessToken) {
+        return response.data.accessToken;
+      }
+    } catch (error) {
+      log.api.warn('Registry login failed, falling back to raw API key', { error: error.message });
+    }
+  }
+
+  // 4. Fallback to raw API key
+  return userToken || sourceConfig.api_key;
+};
+
+/**
  * Create an authenticated axios client for a registry source
  * @param {Object} sourceConfig - Source configuration
+ * @param {string} token - Valid authentication token
  * @returns {import('axios').AxiosInstance} Configured axios instance
  */
-const createRegistryClient = sourceConfig => {
+const createRegistryClient = (sourceConfig, token) => {
   const headers = {};
-  if (sourceConfig.api_key) {
-    headers.Authorization = `Bearer ${sourceConfig.api_key}`;
+
+  // Set User-Agent to satisfy BoxVault service account expectations
+  headers['User-Agent'] = 'Vagrant/2.2.19 Zoneweaver/1.0.0';
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
     // BoxVault API expects x-access-token for API endpoints
-    headers['x-access-token'] = sourceConfig.api_key;
+    // Only set x-access-token if it looks like a JWT to avoid "jwt malformed" errors
+    if (token.includes('.') && token.split('.').length === 3) {
+      headers['x-access-token'] = token;
+    }
   }
 
   return axios.create({
@@ -108,7 +165,10 @@ export const listRemoteTemplates = async (req, res) => {
       return res.status(404).json({ error: 'Template source not found or disabled' });
     }
 
-    const client = createRegistryClient(sourceConfig);
+    const token = await getRegistryToken(sourceConfig, userToken);
+    const client = createRegistryClient(sourceConfig, token);
+    const token = await getRegistryToken(sourceConfig, userToken);
+    const client = createRegistryClient(sourceConfig, token);
 
     // If organization is configured, we could list boxes for that org,
     // but /api/discover is the general discovery endpoint for BoxVault
@@ -166,7 +226,10 @@ export const getRemoteTemplateDetails = async (req, res) => {
       return res.status(404).json({ error: 'Template source not found or disabled' });
     }
 
-    const client = createRegistryClient(sourceConfig);
+    const token = await getRegistryToken(sourceConfig, userToken);
+    const client = createRegistryClient(sourceConfig, token);
+    const token = await getRegistryToken(sourceConfig, userToken);
+    const client = createRegistryClient(sourceConfig, token);
     // Vagrant-compatible metadata endpoint: /{user}/{box}
     const response = await client.get(`/${org}/${boxName}`);
 

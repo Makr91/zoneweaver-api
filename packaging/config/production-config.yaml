@@ -226,6 +226,7 @@ template_sources:
     - name: "Default Registry"
       type: vagrant
       url: "https://boxvault.startcloud.com"
+      username: ""
       api_key: ""
       organization: ""
       enabled: true
