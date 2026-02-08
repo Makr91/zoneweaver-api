@@ -610,8 +610,8 @@ end
   // 5. Create .box tarball
   const boxPath = path.join(tempDir, 'vagrant.box');
   // Use pfexec tar to ensure we can read the root-owned zss file
-  // Include all generated files
-  const tarCmd = `pfexec tar -cvzf "${boxPath}" -C "${tempDir}" metadata.json info.json Vagrantfile box.zss`;
+  // Use 'E' flag for extended headers to support large files (>8GB) on Solaris
+  const tarCmd = `pfexec tar -cvzEf "${boxPath}" -C "${tempDir}" metadata.json info.json Vagrantfile box.zss`;
   const tarResult = await executeCommand(tarCmd);
   if (!tarResult.success) {
     throw new Error(`Failed to package box: ${tarResult.error}`);

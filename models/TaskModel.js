@@ -27,7 +27,7 @@ const { DataTypes } = Sequelize;
  *         operation:
  *           type: string
  *           description: Type of operation to perform
- *           enum: [start, stop, restart, delete, console_start, console_stop, discover, service_enable, service_disable, service_restart, service_refresh, template_download, template_delete]
+ *           enum: [start, stop, restart, delete, console_start, console_stop, discover, service_enable, service_disable, service_restart, service_refresh, template_download, template_delete, template_upload]
  *           example: "start"
  *         status:
  *           type: string
@@ -73,7 +73,7 @@ export const TaskPriority = {
   CRITICAL: 100, // Delete operations
   HIGH: 80, // Stop operations
   MEDIUM: 60, // Start operations
-  NORMAL: 60, // Alias for MEDIUM
+  NORMAL: 60, // Alias for MEDIUM, whihch is stupid, we should just use MEDIUM
   SERVICE: 50, // Service operations
   LOW: 40, // Restart operations
   BACKGROUND: 20, // Discovery, console operations
