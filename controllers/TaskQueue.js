@@ -102,6 +102,19 @@ import {
   executeSystemHostHaltTask,
   executeSystemHostRunlevelChangeTask,
 } from './TaskManager/SystemHostManager/index.js';
+import {
+  executeCreateDatasetTask,
+  executeDestroyDatasetTask,
+  executeSetPropertiesTask,
+  executeCloneDatasetTask,
+  executePromoteDatasetTask,
+  executeRenameDatasetTask,
+  executeCreateSnapshotTask,
+  executeDestroySnapshotTask,
+  executeRollbackSnapshotTask,
+  executeHoldSnapshotTask,
+  executeReleaseSnapshotTask,
+} from './TaskManager/ZFSDatasetManager.js';
 import { isVncEnabledAtBoot } from './VncConsoleController/utils/VncCleanupService.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
@@ -196,6 +209,21 @@ const OPERATION_CATEGORIES = {
   role_create: 'user_management',
   role_modify: 'user_management',
   role_delete: 'user_management',
+
+  // ZFS dataset operations
+  zfs_create_dataset: 'zfs_dataset',
+  zfs_destroy_dataset: 'zfs_dataset',
+  zfs_set_properties: 'zfs_dataset',
+  zfs_clone_dataset: 'zfs_dataset',
+  zfs_promote_dataset: 'zfs_dataset',
+  zfs_rename_dataset: 'zfs_dataset',
+
+  // ZFS snapshot operations
+  zfs_create_snapshot: 'zfs_snapshot',
+  zfs_destroy_snapshot: 'zfs_snapshot',
+  zfs_rollback_snapshot: 'zfs_snapshot',
+  zfs_hold_snapshot: 'zfs_snapshot',
+  zfs_release_snapshot: 'zfs_snapshot',
 };
 
 /**
@@ -408,6 +436,41 @@ const executeUserTask = (operation, metadata) => {
       return executeRoleDeleteTask(metadata);
     default:
       return { success: false, error: `Unknown user operation: ${operation}` };
+  }
+};
+
+/**
+ * Execute ZFS dataset and snapshot tasks
+ * @param {string} operation - Operation type
+ * @param {string} metadata - Task metadata
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeZFSTask = (operation, metadata) => {
+  switch (operation) {
+    case 'zfs_create_dataset':
+      return executeCreateDatasetTask(metadata);
+    case 'zfs_destroy_dataset':
+      return executeDestroyDatasetTask(metadata);
+    case 'zfs_set_properties':
+      return executeSetPropertiesTask(metadata);
+    case 'zfs_clone_dataset':
+      return executeCloneDatasetTask(metadata);
+    case 'zfs_promote_dataset':
+      return executePromoteDatasetTask(metadata);
+    case 'zfs_rename_dataset':
+      return executeRenameDatasetTask(metadata);
+    case 'zfs_create_snapshot':
+      return executeCreateSnapshotTask(metadata);
+    case 'zfs_destroy_snapshot':
+      return executeDestroySnapshotTask(metadata);
+    case 'zfs_rollback_snapshot':
+      return executeRollbackSnapshotTask(metadata);
+    case 'zfs_hold_snapshot':
+      return executeHoldSnapshotTask(metadata);
+    case 'zfs_release_snapshot':
+      return executeReleaseSnapshotTask(metadata);
+    default:
+      return { success: false, error: `Unknown ZFS operation: ${operation}` };
   }
 };
 
@@ -665,6 +728,11 @@ const executeTask = async task => {
       ].includes(operation)
     ) {
       return await executeUserTask(operation, task.metadata);
+    }
+
+    // ZFS dataset and snapshot operations
+    if (operation.startsWith('zfs_')) {
+      return await executeZFSTask(operation, task.metadata);
     }
 
     // File operations

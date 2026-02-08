@@ -179,6 +179,22 @@ import {
   resetARCConfig,
 } from '../controllers/ARCConfigController.js';
 import {
+  listDatasets,
+  getDatasetDetails,
+  createDataset,
+  destroyDataset,
+  setDatasetProperties,
+  cloneDataset,
+  promoteDataset,
+  renameDataset,
+  createSnapshot,
+  destroySnapshot,
+  rollbackSnapshot,
+  holdSnapshot,
+  releaseSnapshot,
+  listHolds,
+} from '../controllers/ZFSDatasetController.js';
+import {
   getFaults,
   getFaultDetails,
   getFaultManagerConfig,
@@ -530,6 +546,24 @@ router.get('/system/zfs/arc/config', verifyApiKey, getARCConfig); // Get ZFS ARC
 router.put('/system/zfs/arc/config', verifyApiKey, updateARCConfig); // Update ZFS ARC settings
 router.post('/system/zfs/arc/validate', verifyApiKey, validateARCConfig); // Validate ZFS ARC configuration
 router.post('/system/zfs/arc/reset', verifyApiKey, resetARCConfig); // Reset ZFS ARC to defaults
+
+// ZFS Dataset Management Routes
+router.get('/storage/datasets', verifyApiKey, listDatasets); // List ZFS datasets
+router.get('/storage/datasets/:name', verifyApiKey, getDatasetDetails); // Get dataset details
+router.post('/storage/datasets', verifyApiKey, createDataset); // Create dataset
+router.delete('/storage/datasets/:name', verifyApiKey, destroyDataset); // Delete dataset
+router.put('/storage/datasets/:name/properties', verifyApiKey, setDatasetProperties); // Set dataset properties
+router.post('/storage/datasets/:name/clone', verifyApiKey, cloneDataset); // Clone dataset from snapshot
+router.post('/storage/datasets/:name/promote', verifyApiKey, promoteDataset); // Promote clone to independent dataset
+router.post('/storage/datasets/:name/rename', verifyApiKey, renameDataset); // Rename dataset
+
+// ZFS Snapshot Management Routes
+router.post('/storage/datasets/:name/snapshots', verifyApiKey, createSnapshot); // Create snapshot
+router.delete('/storage/snapshots/:snapshot', verifyApiKey, destroySnapshot); // Delete snapshot
+router.post('/storage/snapshots/:snapshot/rollback', verifyApiKey, rollbackSnapshot); // Rollback to snapshot
+router.post('/storage/snapshots/:snapshot/holds', verifyApiKey, holdSnapshot); // Hold snapshot
+router.delete('/storage/snapshots/:snapshot/holds/:tag', verifyApiKey, releaseSnapshot); // Release snapshot hold
+router.get('/storage/snapshots/:snapshot/holds', verifyApiKey, listHolds); // List snapshot holds
 
 // Fault Management Routes
 router.get('/system/fault-management/faults', verifyApiKey, getFaults); // List system faults

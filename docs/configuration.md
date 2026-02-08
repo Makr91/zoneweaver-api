@@ -18,6 +18,19 @@ Complete reference for configuring the ZoneweaverAPI using the configuration fil
 
 ---
 
+
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   HTTP Client   │◄──►│   Express API    │◄──►│  zadm VNC       │
+│   (Browser)     │    │   (Proxy Layer)  │    │  (Native Proc)  │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│  WebSocket      │◄──►│  WebSocketHandler│◄──►│ VNC WebSocket   │
+│  Client         │    │  (lib/)          │    │ (port-based)    │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+
+
 ## Configuration File Location
 
 The main configuration file is located at:
