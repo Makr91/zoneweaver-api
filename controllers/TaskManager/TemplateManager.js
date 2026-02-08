@@ -10,6 +10,7 @@ import { log } from '../../lib/Logger.js';
 import config from '../../config/ConfigLoader.js';
 import Template from '../../models/TemplateModel.js';
 import Tasks from '../../models/TaskModel.js';
+import Zones from '../../models/ZoneModel.js';
 import { Op } from 'sequelize';
 
 /**
@@ -20,14 +21,18 @@ import { Op } from 'sequelize';
 /**
  * Create an authenticated axios client for a registry source
  * @param {Object} sourceConfig - Source configuration from config.yaml
+ * @param {string} [userToken] - Optional user-scoped token to override global key
  * @returns {import('axios').AxiosInstance} Configured axios instance
  */
-const createRegistryClient = sourceConfig => {
+const createRegistryClient = (sourceConfig, userToken = null) => {
   const headers = {};
-  if (sourceConfig.api_key) {
-    headers.Authorization = `Bearer ${sourceConfig.api_key}`;
+  // Prefer user token if provided (Phase II), otherwise fallback to global config key
+  const token = userToken || sourceConfig.api_key;
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
     // BoxVault API expects x-access-token for API endpoints
-    headers['x-access-token'] = sourceConfig.api_key;
+    headers['x-access-token'] = token;
   }
 
   return axios.create({
@@ -37,6 +42,8 @@ const createRegistryClient = sourceConfig => {
       sourceConfig.verify_ssl === false
         ? new https.Agent({ rejectUnauthorized: false })
         : undefined,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
   });
 };
 
@@ -260,7 +267,15 @@ export const executeTemplateDownloadTask = async metadataJson => {
       });
     });
 
-    const { source_name, organization, box_name, version, provider, architecture } = metadata;
+    const {
+      source_name,
+      organization,
+      box_name,
+      version,
+      provider,
+      architecture,
+      auth_token,
+    } = metadata;
 
     log.task.info('Template download task parameters', {
       source_name,
@@ -269,6 +284,7 @@ export const executeTemplateDownloadTask = async metadataJson => {
       version,
       provider,
       architecture,
+      has_auth_token: !!auth_token,
     });
 
     // Find source configuration
@@ -297,7 +313,8 @@ export const executeTemplateDownloadTask = async metadataJson => {
     // Build the download URL following Vagrant-compatible API pattern
     const downloadPath = `/api/organization/${encodeURIComponent(organization)}/box/${encodeURIComponent(box_name)}/version/${encodeURIComponent(version)}/provider/${encodeURIComponent(provider)}/architecture/${encodeURIComponent(architecture)}/file/download`;
 
-    const client = createRegistryClient(sourceConfig);
+    // Pass auth_token if present (Phase II)
+    const client = createRegistryClient(sourceConfig, auth_token);
     const downloadUrl = `${sourceConfig.url}${downloadPath}`;
 
     log.task.info('Starting template download', { url: downloadUrl });
@@ -472,5 +489,241 @@ export const executeTemplateDeleteTask = async metadataJson => {
       stack: error.stack,
     });
     return { success: false, error: `Template deletion failed: ${error.message}` };
+  }
+};
+
+/**
+ * Helper to create a box artifact from a zone (Phase III)
+ * @param {string} zoneName - Name of the zone to export
+ * @param {string} snapshotName - Snapshot to use
+ * @param {string} tempDir - Temporary directory for artifact creation
+ * @param {Object} task - Task object for progress updates
+ * @returns {Promise<{boxPath: string, checksum: string}>}
+ */
+const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
+  await updateTaskProgress(task, 10, { status: 'creating_snapshot' });
+
+  // 1. Create snapshot if not provided
+  let snap = snapshotName;
+  if (!snap) {
+    snap = `export_${Date.now()}`;
+    const snapResult = await executeCommand(`pfexec zoneadm -z ${zoneName} snapshot ${snap}`);
+    if (!snapResult.success) {
+      throw new Error(`Failed to create snapshot: ${snapResult.error}`);
+    }
+  }
+
+  // Get zone dataset
+  const zone = await Zones.findOne({ where: { name: zoneName } });
+  if (!zone) throw new Error(`Zone ${zoneName} not found`);
+
+  // We need the dataset name. Usually zones/zoneName or rpool/zones/zoneName
+  // We can get it from 'zfs list'
+  const zfsList = await executeCommand(
+    `pfexec zfs list -H -o name -t filesystem | grep "/${zoneName}$"`
+  );
+  const dataset = zfsList.output.trim();
+  if (!dataset) throw new Error(`Could not determine dataset for zone ${zoneName}`);
+
+  await updateTaskProgress(task, 20, { status: 'exporting_stream' });
+
+  // 2. Send stream to file
+  const zssPath = path.join(tempDir, 'box.zss');
+  const sendCmd = `pfexec zfs send -c ${dataset}@${snap} > "${zssPath}"`;
+  const sendResult = await executeCommand(sendCmd);
+  if (!sendResult.success) {
+    throw new Error(`Failed to export ZFS stream: ${sendResult.error}`);
+  }
+
+  await updateTaskProgress(task, 50, { status: 'creating_metadata' });
+
+  // 3. Create metadata.json
+  const metadata = {
+    provider: 'zone',
+    format: 'zss',
+    brand: zone.brand || 'ipkg',
+    created_at: new Date().toISOString(),
+  };
+  await fs.promises.writeFile(
+    path.join(tempDir, 'metadata.json'),
+    JSON.stringify(metadata, null, 2)
+  );
+
+  await updateTaskProgress(task, 60, { status: 'packaging_box' });
+
+  // 4. Create .box tarball
+  const boxPath = path.join(tempDir, 'vagrant.box');
+  // Use pfexec tar to ensure we can read the root-owned zss file
+  const tarCmd = `pfexec tar -cvzf "${boxPath}" -C "${tempDir}" metadata.json box.zss`;
+  const tarResult = await executeCommand(tarCmd);
+  if (!tarResult.success) {
+    throw new Error(`Failed to package box: ${tarResult.error}`);
+  }
+
+  await updateTaskProgress(task, 80, { status: 'calculating_checksum' });
+
+  // 5. Calculate checksum
+  const hash = crypto.createHash('sha256');
+  const readStream = fs.createReadStream(boxPath);
+  await new Promise((resolve, reject) => {
+    readStream.on('data', chunk => hash.update(chunk));
+    readStream.on('end', resolve);
+    readStream.on('error', reject);
+  });
+  const checksum = hash.digest('hex');
+
+  return { boxPath, checksum };
+};
+
+/**
+ * Execute template publish task (Phase III)
+ * Exports a zone to a .box file and uploads it to the registry
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeTemplatePublishTask = async metadataJson => {
+  log.task.debug('Template publish task starting');
+  let tempDir = null;
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const {
+      zone_name,
+      source_name,
+      organization,
+      box_name,
+      version,
+      description,
+      auth_token,
+      snapshot_name,
+    } = metadata;
+
+    const task = await findRunningTask('template_upload', zone_name);
+
+    // Find source configuration
+    const sourceConfig = findSourceConfig(source_name);
+    if (!sourceConfig) {
+      return { success: false, error: `Template source not found: ${source_name}` };
+    }
+
+    const client = createRegistryClient(sourceConfig, auth_token);
+
+    // Create temp directory
+    tempDir = path.join(os.tmpdir(), `template_publish_${crypto.randomUUID()}`);
+    await fs.promises.mkdir(tempDir, { recursive: true });
+
+    // 1. Create Box Artifact (Export & Package)
+    const { boxPath, checksum } = await createBoxArtifact(
+      zone_name,
+      snapshot_name,
+      tempDir,
+      task
+    );
+
+    await updateTaskProgress(task, 85, { status: 'uploading_to_registry' });
+
+    // 2. Create Registry Objects (Idempotent-ish)
+    // Create Box
+    try {
+      await client.post(`/api/organization/${organization}/box`, {
+        name: box_name,
+        description: description || `Exported from zone ${zone_name}`,
+        isPublic: false,
+      });
+    } catch (e) {
+      // Ignore if exists (409)
+      if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
+    }
+
+    // Create Version
+    try {
+      await client.post(`/api/organization/${organization}/box/${box_name}/version`, {
+        versionNumber: version,
+        description: description || 'Automated export',
+      });
+    } catch (e) {
+      if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
+    }
+
+    // Create Provider
+    try {
+      await client.post(
+        `/api/organization/${organization}/box/${box_name}/version/${version}/provider`,
+        {
+          name: 'zone',
+        }
+      );
+    } catch (e) {
+      if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
+    }
+
+    // Create Architecture
+    try {
+      await client.post(
+        `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture`,
+        {
+          name: 'amd64',
+          checksum,
+          checksumType: 'SHA256',
+        }
+      );
+    } catch (e) {
+      if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
+    }
+
+    // 3. Upload File
+    const fileStream = fs.createReadStream(boxPath);
+    const stats = fs.statSync(boxPath);
+
+    await client.post(
+      `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture/amd64/file/upload`,
+      fileStream,
+      {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': stats.size,
+          'x-file-name': 'vagrant.box',
+          'x-checksum': checksum,
+          'x-checksum-type': 'SHA256',
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+      }
+    );
+
+    await updateTaskProgress(task, 95, { status: 'releasing_version' });
+
+    // 4. Release Version
+    await client.put(`/api/organization/${organization}/box/${box_name}`, {
+      name: box_name,
+      published: true,
+    });
+
+    await updateTaskProgress(task, 100, { status: 'completed' });
+
+    return {
+      success: true,
+      message: `Successfully exported zone ${zone_name} to ${organization}/${box_name} v${version}`,
+    };
+  } catch (error) {
+    log.task.error('Template publish task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Template publish failed: ${error.message}` };
+  } finally {
+    // Cleanup
+    if (tempDir) {
+      await executeCommand(`pfexec rm -rf "${tempDir}"`);
+    }
   }
 };

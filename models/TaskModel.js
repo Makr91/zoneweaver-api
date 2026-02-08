@@ -73,10 +73,10 @@ export const TaskPriority = {
   CRITICAL: 100, // Delete operations
   HIGH: 80, // Stop operations
   MEDIUM: 60, // Start operations
-  LOW: 40, // Restart operations
   NORMAL: 60, // Alias for MEDIUM
-  BACKGROUND: 20, // Discovery, console operations
   SERVICE: 50, // Service operations
+  LOW: 40, // Restart operations
+  BACKGROUND: 20, // Discovery, console operations
 };
 
 /**

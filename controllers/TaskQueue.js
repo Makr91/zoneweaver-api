@@ -133,6 +133,7 @@ import {
 import {
   executeTemplateDownloadTask,
   executeTemplateDeleteTask,
+  executeTemplatePublishTask,
 } from './TaskManager/TemplateManager.js';
 import { isVncEnabledAtBoot } from './VncConsoleController/utils/VncCleanupService.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
@@ -614,6 +615,8 @@ const executeTemplateTask = (operation, metadata) => {
       return executeTemplateDownloadTask(metadata);
     case 'template_delete':
       return executeTemplateDeleteTask(metadata);
+    case 'template_upload':
+      return executeTemplatePublishTask(metadata);
     default:
       return { success: false, error: `Unknown template operation: ${operation}` };
   }
