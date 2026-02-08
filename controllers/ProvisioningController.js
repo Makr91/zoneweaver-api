@@ -33,7 +33,7 @@ const checkPackage = async binaryName => {
   try {
     await execAsync(`which ${binaryName}`);
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 };
@@ -89,14 +89,20 @@ export const checkAndInstallPackages = async () => {
 
   log.app.info('Starting package provisioning check');
 
-  const missingPackages = [];
-  for (const [packageName, binaryName] of Object.entries(packages)) {
-    const isInstalled = await checkPackage(binaryName);
-    if (!isInstalled) {
-      missingPackages.push({ package: packageName, binary: binaryName });
-      await installPackage(packageName);
-    }
-  }
+  const packageEntries = Object.entries(packages);
+
+  const checks = await Promise.all(
+    packageEntries.map(async ([packageName, binaryName]) => {
+      const isInstalled = await checkPackage(binaryName);
+      return { packageName, binaryName, isInstalled };
+    })
+  );
+
+  const missingPackages = checks
+    .filter(item => !item.isInstalled)
+    .map(item => ({ package: item.packageName, binary: item.binaryName }));
+
+  await Promise.all(missingPackages.map(item => installPackage(item.package)));
 
   if (missingPackages.length > 0) {
     log.app.info('Package provisioning check complete', {
@@ -128,8 +134,18 @@ export const checkAndInstallPackages = async () => {
  */
 export const getProvisioningStatus = async (req, res) => {
   const status = {};
-  for (const [packageName, binaryName] of Object.entries(packages)) {
-    status[packageName] = await checkPackage(binaryName);
-  }
+  const packageEntries = Object.entries(packages);
+
+  const results = await Promise.all(
+    packageEntries.map(async ([packageName, binaryName]) => {
+      const isInstalled = await checkPackage(binaryName);
+      return [packageName, isInstalled];
+    })
+  );
+
+  results.forEach(([name, isInstalled]) => {
+    status[name] = isInstalled;
+  });
+
   res.json(status);
 };

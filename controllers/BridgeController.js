@@ -5,13 +5,15 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
+import util from 'util';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
-import { Op } from 'sequelize';
 import yj from 'yieldable-json';
 import os from 'os';
 import { log } from '../lib/Logger.js';
+
+const execPromise = util.promisify(exec);
 
 /**
  * Execute command safely with proper error handling
@@ -20,11 +22,11 @@ import { log } from '../lib/Logger.js';
  */
 const executeCommand = async command => {
   try {
-    const output = execSync(command, {
+    const { stdout } = await execPromise(command, {
       encoding: 'utf8',
       timeout: 30000, // 30 second timeout
     });
-    return { success: true, output: output.trim() };
+    return { success: true, output: stdout.trim() };
   } catch (error) {
     return {
       success: false,
@@ -33,6 +35,65 @@ const executeCommand = async command => {
     };
   }
 };
+
+/**
+ * Parse live bridge data from dladm output
+ * @param {string} output - Raw output
+ * @param {boolean|string} extended - Whether extended info is requested
+ * @param {number} limit - Limit results
+ * @returns {Array} Parsed bridges
+ */
+const parseLiveBridgeData = (output, extended, limit) =>
+  output
+    ? output
+        .split('\n')
+        .filter(line => line.trim())
+        .map(line => {
+          const parts = line.split(':');
+          if (extended === 'true' || extended === true) {
+            const [
+              bridge,
+              address,
+              priority,
+              bmaxage,
+              bhellotime,
+              bfwddelay,
+              forceproto,
+              tctime,
+              tccount,
+              tchange,
+              desroot,
+              rootcost,
+              rootport,
+            ] = parts;
+            return {
+              bridge,
+              address,
+              priority: parseInt(priority) || null,
+              max_age: parseInt(bmaxage) || null,
+              hello_time: parseInt(bhellotime) || null,
+              forward_delay: parseInt(bfwddelay) || null,
+              force_protocol: parseInt(forceproto) || null,
+              tc_time: parseInt(tctime) || null,
+              tc_count: parseInt(tccount) || null,
+              topology_change: tchange === 'yes',
+              designated_root: desroot,
+              root_cost: parseInt(rootcost) || null,
+              root_port: parseInt(rootport) || null,
+              source: 'live',
+            };
+          }
+          const [bridge, address, priority, desroot] = parts;
+          return {
+            bridge,
+            address,
+            priority: parseInt(priority) || null,
+            designated_root: desroot,
+            source: 'live',
+          };
+        })
+        .slice(0, parseInt(limit))
+    : [];
 
 /**
  * @swagger
@@ -88,9 +149,9 @@ const executeCommand = async command => {
  *         description: Failed to get bridges
  */
 export const getBridges = async (req, res) => {
-  try {
-    const { name, limit = 100, live = false, extended = false } = req.query;
+  const { name, limit = 100, live = false, extended = false } = req.query;
 
+  try {
     if (live === 'true' || live === true) {
       // Get live data directly from dladm
       let command = 'pfexec dladm show-bridge -p';
@@ -114,56 +175,7 @@ export const getBridges = async (req, res) => {
         });
       }
 
-      const bridges = result.output
-        ? result.output
-            .split('\n')
-            .filter(line => line.trim())
-            .map(line => {
-              const parts = line.split(':');
-              if (extended === 'true' || extended === true) {
-                const [
-                  bridge,
-                  address,
-                  priority,
-                  bmaxage,
-                  bhellotime,
-                  bfwddelay,
-                  forceproto,
-                  tctime,
-                  tccount,
-                  tchange,
-                  desroot,
-                  rootcost,
-                  rootport,
-                ] = parts;
-                return {
-                  bridge,
-                  address,
-                  priority: parseInt(priority) || null,
-                  max_age: parseInt(bmaxage) || null,
-                  hello_time: parseInt(bhellotime) || null,
-                  forward_delay: parseInt(bfwddelay) || null,
-                  force_protocol: parseInt(forceproto) || null,
-                  tc_time: parseInt(tctime) || null,
-                  tc_count: parseInt(tccount) || null,
-                  topology_change: tchange === 'yes',
-                  designated_root: desroot,
-                  root_cost: parseInt(rootcost) || null,
-                  root_port: parseInt(rootport) || null,
-                  source: 'live',
-                };
-              }
-              const [bridge, address, priority, desroot] = parts;
-              return {
-                bridge,
-                address,
-                priority: parseInt(priority) || null,
-                designated_root: desroot,
-                source: 'live',
-              };
-            })
-            .slice(0, parseInt(limit))
-        : [];
+      const bridges = parseLiveBridgeData(result.output, extended, limit);
 
       return res.json({
         bridges,
@@ -193,7 +205,7 @@ export const getBridges = async (req, res) => {
       ],
     });
 
-    res.json({
+    return res.json({
       bridges: rows,
       total: count,
       source: 'database',
@@ -205,11 +217,148 @@ export const getBridges = async (req, res) => {
       live,
       name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get bridges',
       details: error.message,
     });
   }
+};
+
+/**
+ * Parse bridge links from dladm output
+ * @param {string} output - Raw output
+ * @returns {Array} Parsed links
+ */
+const parseBridgeLinks = output =>
+  output
+    .split('\n')
+    .filter(line => line.trim())
+    .map(line => {
+      const [
+        link,
+        index,
+        state,
+        uptime,
+        opercost,
+        operp2p,
+        operedge,
+        linkDesroot,
+        descost,
+        desbridge,
+        desport,
+        tcack,
+      ] = line.split(':');
+      return {
+        link,
+        index: parseInt(index) || null,
+        state,
+        uptime: parseInt(uptime) || null,
+        operational_cost: parseInt(opercost) || null,
+        point_to_point: operp2p === 'yes',
+        edge_port: operedge === 'yes',
+        designated_root: linkDesroot,
+        designated_cost: parseInt(descost) || null,
+        designated_bridge: desbridge,
+        designated_port: desport,
+        topology_change_ack: tcack === 'yes',
+      };
+    });
+
+/**
+ * Parse bridge forwarding table from dladm output
+ * @param {string} output - Raw output
+ * @returns {Array} Parsed forwarding table
+ */
+const parseBridgeForwarding = output =>
+  output
+    .split('\n')
+    .filter(line => line.trim())
+    .map(line => {
+      const [dest, age, flags, fwdOutput] = line.split(':');
+      return {
+        destination: dest,
+        age: age || null,
+        flags: flags || '',
+        output: fwdOutput,
+      };
+    });
+
+/**
+ * Fetch live bridge details from system
+ * @param {string} bridge - Bridge name
+ * @param {boolean|string} show_links - Show attached links
+ * @param {boolean|string} show_forwarding - Show forwarding table
+ * @returns {Promise<Object>} Bridge details or error object
+ */
+const fetchLiveBridgeDetails = async (bridge, show_links, show_forwarding) => {
+  // Get bridge details
+  const bridgeResult = await executeCommand(
+    `pfexec dladm show-bridge ${bridge} -p -o bridge,address,priority,bmaxage,bhellotime,bfwddelay,forceproto,tctime,tccount,tchange,desroot,rootcost,rootport`
+  );
+
+  if (!bridgeResult.success) {
+    return {
+      error: `Bridge ${bridge} not found`,
+      details: bridgeResult.error,
+    };
+  }
+
+  const [
+    bridgeName,
+    address,
+    priority,
+    bmaxage,
+    bhellotime,
+    bfwddelay,
+    forceproto,
+    tctime,
+    tccount,
+    tchange,
+    desroot,
+    rootcost,
+    rootport,
+  ] = bridgeResult.output.split(':');
+
+  const bridgeDetails = {
+    bridge: bridgeName,
+    address,
+    priority: parseInt(priority) || null,
+    max_age: parseInt(bmaxage) || null,
+    hello_time: parseInt(bhellotime) || null,
+    forward_delay: parseInt(bfwddelay) || null,
+    force_protocol: parseInt(forceproto) || null,
+    tc_time: parseInt(tctime) || null,
+    tc_count: parseInt(tccount) || null,
+    topology_change: tchange === 'yes',
+    designated_root: desroot,
+    root_cost: parseInt(rootcost) || null,
+    root_port: parseInt(rootport) || null,
+    source: 'live',
+  };
+
+  // Get attached links if requested
+  if (show_links === 'true' || show_links === true) {
+    const linksResult = await executeCommand(
+      `pfexec dladm show-bridge ${bridge} -l -p -o link,index,state,uptime,opercost,operp2p,operedge,desroot,descost,desbridge,desport,tcack`
+    );
+
+    if (linksResult.success && linksResult.output) {
+      bridgeDetails.links = parseBridgeLinks(linksResult.output);
+    }
+  }
+
+  // Get forwarding table if requested
+  if (show_forwarding === 'true' || show_forwarding === true) {
+    const fwdResult = await executeCommand(
+      `pfexec dladm show-bridge ${bridge} -f -p -o dest,age,flags,output`
+    );
+
+    if (fwdResult.success && fwdResult.output) {
+      bridgeDetails.forwarding_table = parseBridgeForwarding(fwdResult.output);
+    }
+  }
+
+  return bridgeDetails;
 };
 
 /**
@@ -259,123 +408,15 @@ export const getBridges = async (req, res) => {
  *         description: Failed to get bridge details
  */
 export const getBridgeDetails = async (req, res) => {
+  const { bridge } = req.params;
+  const { live = false, show_links = false, show_forwarding = false } = req.query;
+
   try {
-    const { bridge } = req.params;
-    const { live = false, show_links = false, show_forwarding = false } = req.query;
-
     if (live === 'true' || live === true) {
-      // Get bridge details
-      const bridgeResult = await executeCommand(
-        `pfexec dladm show-bridge ${bridge} -p -o bridge,address,priority,bmaxage,bhellotime,bfwddelay,forceproto,tctime,tccount,tchange,desroot,rootcost,rootport`
-      );
+      const bridgeDetails = await fetchLiveBridgeDetails(bridge, show_links, show_forwarding);
 
-      if (!bridgeResult.success) {
-        return res.status(404).json({
-          error: `Bridge ${bridge} not found`,
-          details: bridgeResult.error,
-        });
-      }
-
-      const [
-        bridgeName,
-        address,
-        priority,
-        bmaxage,
-        bhellotime,
-        bfwddelay,
-        forceproto,
-        tctime,
-        tccount,
-        tchange,
-        desroot,
-        rootcost,
-        rootport,
-      ] = bridgeResult.output.split(':');
-
-      const bridgeDetails = {
-        bridge: bridgeName,
-        address,
-        priority: parseInt(priority) || null,
-        max_age: parseInt(bmaxage) || null,
-        hello_time: parseInt(bhellotime) || null,
-        forward_delay: parseInt(bfwddelay) || null,
-        force_protocol: parseInt(forceproto) || null,
-        tc_time: parseInt(tctime) || null,
-        tc_count: parseInt(tccount) || null,
-        topology_change: tchange === 'yes',
-        designated_root: desroot,
-        root_cost: parseInt(rootcost) || null,
-        root_port: parseInt(rootport) || null,
-        source: 'live',
-      };
-
-      // Get attached links if requested
-      if (show_links === 'true' || show_links === true) {
-        const linksResult = await executeCommand(
-          `pfexec dladm show-bridge ${bridge} -l -p -o link,index,state,uptime,opercost,operp2p,operedge,desroot,descost,desbridge,desport,tcack`
-        );
-
-        if (linksResult.success && linksResult.output) {
-          const links = linksResult.output
-            .split('\n')
-            .filter(line => line.trim())
-            .map(line => {
-              const [
-                link,
-                index,
-                state,
-                uptime,
-                opercost,
-                operp2p,
-                operedge,
-                linkDesroot,
-                descost,
-                desbridge,
-                desport,
-                tcack,
-              ] = line.split(':');
-              return {
-                link,
-                index: parseInt(index) || null,
-                state,
-                uptime: parseInt(uptime) || null,
-                operational_cost: parseInt(opercost) || null,
-                point_to_point: operp2p === 'yes',
-                edge_port: operedge === 'yes',
-                designated_root: linkDesroot,
-                designated_cost: parseInt(descost) || null,
-                designated_bridge: desbridge,
-                designated_port: desport,
-                topology_change_ack: tcack === 'yes',
-              };
-            });
-
-          bridgeDetails.links = links;
-        }
-      }
-
-      // Get forwarding table if requested
-      if (show_forwarding === 'true' || show_forwarding === true) {
-        const fwdResult = await executeCommand(
-          `pfexec dladm show-bridge ${bridge} -f -p -o dest,age,flags,output`
-        );
-
-        if (fwdResult.success && fwdResult.output) {
-          const forwarding = fwdResult.output
-            .split('\n')
-            .filter(line => line.trim())
-            .map(line => {
-              const [dest, age, flags, output] = line.split(':');
-              return {
-                destination: dest,
-                age: age || null,
-                flags: flags || '',
-                output,
-              };
-            });
-
-          bridgeDetails.forwarding_table = forwarding;
-        }
+      if (bridgeDetails.error) {
+        return res.status(404).json(bridgeDetails);
       }
 
       return res.json(bridgeDetails);
@@ -398,7 +439,7 @@ export const getBridgeDetails = async (req, res) => {
       });
     }
 
-    res.json(bridgeData);
+    return res.json(bridgeData);
   } catch (error) {
     log.api.error('Error getting bridge details', {
       error: error.message,
@@ -406,11 +447,60 @@ export const getBridgeDetails = async (req, res) => {
       bridge,
       live,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get bridge details',
       details: error.message,
     });
   }
+};
+
+/**
+ * Validate bridge creation parameters
+ * @param {Object} params - Request body parameters
+ * @returns {string|null} Error message or null if valid
+ */
+const validateBridgeParams = params => {
+  const { name, protection, priority, max_age, hello_time, forward_delay } = params;
+
+  if (!name) {
+    return 'name is required';
+  }
+
+  const bridgeNameRegex = /^[a-zA-Z][a-zA-Z0-9_]*[a-zA-Z]$/;
+  if (!bridgeNameRegex.test(name) || name.length > 31) {
+    return 'Bridge name must start and end with letter, contain alphanumeric/underscore, and be max 31 characters';
+  }
+
+  if (name === 'default' || name.startsWith('SUNW')) {
+    return 'Bridge name "default" and names starting with "SUNW" are reserved';
+  }
+
+  if (!['stp', 'trill'].includes(protection)) {
+    return 'Protection method must be "stp" or "trill"';
+  }
+
+  if (priority < 0 || priority > 61440 || priority % 4096 !== 0) {
+    return 'Priority must be between 0 and 61440 and divisible by 4096';
+  }
+
+  if (max_age < 6 || max_age > 40) {
+    return 'Max age must be between 6 and 40 seconds';
+  }
+  if (hello_time < 1 || hello_time > 10) {
+    return 'Hello time must be between 1 and 10 seconds';
+  }
+  if (forward_delay < 4 || forward_delay > 30) {
+    return 'Forward delay must be between 4 and 30 seconds';
+  }
+
+  if (2 * (forward_delay - 1) < max_age) {
+    return 'STP constraint violation: 2 * (forward-delay - 1) must be >= max-age';
+  }
+  if (max_age < 2 * (hello_time + 1)) {
+    return 'STP constraint violation: max-age must be >= 2 * (hello-time + 1)';
+  }
+
+  return null;
 };
 
 /**
@@ -501,83 +591,22 @@ export const getBridgeDetails = async (req, res) => {
  *         description: Failed to create bridge task
  */
 export const createBridge = async (req, res) => {
+  const {
+    name,
+    protection = 'stp',
+    priority = 32768,
+    max_age = 20,
+    hello_time = 2,
+    forward_delay = 15,
+    force_protocol = 3,
+    links = [],
+    created_by = 'api',
+  } = req.body;
+
   try {
-    const {
-      name,
-      protection = 'stp',
-      priority = 32768,
-      max_age = 20,
-      hello_time = 2,
-      forward_delay = 15,
-      force_protocol = 3,
-      links = [],
-      created_by = 'api',
-    } = req.body;
-
-    // Validate required fields
-    if (!name) {
-      return res.status(400).json({
-        error: 'name is required',
-      });
-    }
-
-    // Validate bridge name format
-    const bridgeNameRegex = /^[a-zA-Z][a-zA-Z0-9_]*[a-zA-Z]$/;
-    if (!bridgeNameRegex.test(name) || name.length > 31) {
-      return res.status(400).json({
-        error:
-          'Bridge name must start and end with letter, contain alphanumeric/underscore, and be max 31 characters',
-      });
-    }
-
-    // Validate reserved names
-    if (name === 'default' || name.startsWith('SUNW')) {
-      return res.status(400).json({
-        error: 'Bridge name "default" and names starting with "SUNW" are reserved',
-      });
-    }
-
-    // Validate protection method
-    if (!['stp', 'trill'].includes(protection)) {
-      return res.status(400).json({
-        error: 'Protection method must be "stp" or "trill"',
-      });
-    }
-
-    // Validate priority (must be divisible by 4096)
-    if (priority < 0 || priority > 61440 || priority % 4096 !== 0) {
-      return res.status(400).json({
-        error: 'Priority must be between 0 and 61440 and divisible by 4096',
-      });
-    }
-
-    // Validate timing constraints
-    if (max_age < 6 || max_age > 40) {
-      return res.status(400).json({
-        error: 'Max age must be between 6 and 40 seconds',
-      });
-    }
-    if (hello_time < 1 || hello_time > 10) {
-      return res.status(400).json({
-        error: 'Hello time must be between 1 and 10 seconds',
-      });
-    }
-    if (forward_delay < 4 || forward_delay > 30) {
-      return res.status(400).json({
-        error: 'Forward delay must be between 4 and 30 seconds',
-      });
-    }
-
-    // Validate STP constraints
-    if (2 * (forward_delay - 1) < max_age) {
-      return res.status(400).json({
-        error: 'STP constraint violation: 2 * (forward-delay - 1) must be >= max-age',
-      });
-    }
-    if (max_age < 2 * (hello_time + 1)) {
-      return res.status(400).json({
-        error: 'STP constraint violation: max-age must be >= 2 * (hello-time + 1)',
-      });
+    const validationError = validateBridgeParams(req.body);
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
     }
 
     // Check if bridge already exists
@@ -590,13 +619,14 @@ export const createBridge = async (req, res) => {
 
     // Validate links if provided
     if (links && links.length > 0) {
-      for (const link of links) {
-        const linkResult = await executeCommand(`pfexec dladm show-link ${link}`);
-        if (!linkResult.success) {
-          return res.status(400).json({
-            error: `Link ${link} not found or not available`,
-          });
-        }
+      const results = await Promise.all(
+        links.map(link => executeCommand(`pfexec dladm show-link ${link}`))
+      );
+      const failedLinkIndex = results.findIndex(r => !r.success);
+      if (failedLinkIndex !== -1) {
+        return res.status(400).json({
+          error: `Link ${links[failedLinkIndex]} not found or not available`,
+        });
       }
     }
 
@@ -630,7 +660,7 @@ export const createBridge = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Bridge creation task created for ${name}`,
       task_id: task.id,
@@ -645,7 +675,7 @@ export const createBridge = async (req, res) => {
       name,
       protection,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create bridge task',
       details: error.message,
     });
@@ -702,10 +732,10 @@ export const createBridge = async (req, res) => {
  *         description: Failed to create bridge deletion task
  */
 export const deleteBridge = async (req, res) => {
-  try {
-    const { bridge } = req.params;
-    const { force = false, created_by = 'api' } = req.query;
+  const { bridge } = req.params;
+  const { force = false, created_by = 'api' } = req.query;
 
+  try {
     // Check if bridge exists
     const existsResult = await executeCommand(`pfexec dladm show-bridge ${bridge}`);
 
@@ -761,7 +791,7 @@ export const deleteBridge = async (req, res) => {
       created_by,
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Bridge deletion task created for ${bridge}`,
       task_id: task.id,
@@ -772,9 +802,9 @@ export const deleteBridge = async (req, res) => {
     log.api.error('Error deleting bridge', {
       error: error.message,
       stack: error.stack,
-      bridge: req.params.bridge,
+      bridge,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create bridge deletion task',
       details: error.message,
     });
@@ -832,10 +862,10 @@ export const deleteBridge = async (req, res) => {
  *         description: Failed to create link modification task
  */
 export const modifyBridgeLinks = async (req, res) => {
-  try {
-    const { bridge } = req.params;
-    const { operation, links, created_by = 'api' } = req.body;
+  const { bridge } = req.params;
+  const { operation, links, created_by = 'api' } = req.body;
 
+  try {
     // Validate required fields
     if (!operation || !links || !Array.isArray(links) || links.length === 0) {
       return res.status(400).json({
@@ -861,13 +891,14 @@ export const modifyBridgeLinks = async (req, res) => {
 
     // If adding links, validate that they exist
     if (operation === 'add') {
-      for (const link of links) {
-        const linkResult = await executeCommand(`pfexec dladm show-link ${link}`);
-        if (!linkResult.success) {
-          return res.status(400).json({
-            error: `Link ${link} not found or not available`,
-          });
-        }
+      const results = await Promise.all(
+        links.map(link => executeCommand(`pfexec dladm show-link ${link}`))
+      );
+      const failedLinkIndex = results.findIndex(r => !r.success);
+      if (failedLinkIndex !== -1) {
+        return res.status(400).json({
+          error: `Link ${links[failedLinkIndex]} not found or not available`,
+        });
       }
     }
 
@@ -896,7 +927,7 @@ export const modifyBridgeLinks = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Bridge link ${operation} task created for ${bridge}`,
       task_id: task.id,
@@ -911,7 +942,7 @@ export const modifyBridgeLinks = async (req, res) => {
       bridge,
       operation,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create bridge link modification task',
       details: error.message,
     });

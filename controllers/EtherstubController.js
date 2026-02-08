@@ -5,13 +5,15 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
+import util from 'util';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
-import { Op } from 'sequelize';
 import yj from 'yieldable-json';
 import os from 'os';
 import { log } from '../lib/Logger.js';
+
+const execPromise = util.promisify(exec);
 
 /**
  * Execute command safely with proper error handling
@@ -20,11 +22,11 @@ import { log } from '../lib/Logger.js';
  */
 const executeCommand = async command => {
   try {
-    const output = execSync(command, {
+    const { stdout } = await execPromise(command, {
       encoding: 'utf8',
       timeout: 30000, // 30 second timeout
     });
-    return { success: true, output: output.trim() };
+    return { success: true, output: stdout.trim() };
   } catch (error) {
     return {
       success: false,
@@ -82,9 +84,9 @@ const executeCommand = async command => {
  *         description: Failed to get etherstubs
  */
 export const getEtherstubs = async (req, res) => {
-  try {
-    const { name, limit = 100 } = req.query;
+  const { name, limit = 100 } = req.query;
 
+  try {
     // Always get data from database (monitoring data)
     const hostname = os.hostname();
     const whereClause = {
@@ -107,7 +109,7 @@ export const getEtherstubs = async (req, res) => {
       ],
     });
 
-    res.json({
+    return res.json({
       etherstubs: rows,
       source: 'database',
       returned: rows.length,
@@ -118,7 +120,7 @@ export const getEtherstubs = async (req, res) => {
       stack: error.stack,
       name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get etherstubs',
       details: error.message,
     });
@@ -166,9 +168,9 @@ export const getEtherstubs = async (req, res) => {
  *         description: Failed to get etherstub details
  */
 export const getEtherstubDetails = async (req, res) => {
-  try {
-    const { etherstub } = req.params;
+  const { etherstub } = req.params;
 
+  try {
     // Always get data from database
     const hostname = os.hostname();
     const etherstubData = await NetworkInterfaces.findOne({
@@ -186,14 +188,14 @@ export const getEtherstubDetails = async (req, res) => {
       });
     }
 
-    res.json(etherstubData);
+    return res.json(etherstubData);
   } catch (error) {
     log.api.error('Error getting etherstub details', {
       error: error.message,
       stack: error.stack,
       etherstub,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get etherstub details',
       details: error.message,
     });
@@ -252,9 +254,9 @@ export const getEtherstubDetails = async (req, res) => {
  *         description: Failed to create etherstub task
  */
 export const createEtherstub = async (req, res) => {
-  try {
-    const { name, temporary = false, created_by = 'api' } = req.body;
+  const { name, temporary = false, created_by = 'api' } = req.body;
 
+  try {
     // Validate required fields
     if (!name) {
       return res.status(400).json({
@@ -303,7 +305,7 @@ export const createEtherstub = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Etherstub creation task created for ${name}`,
       task_id: task.id,
@@ -316,7 +318,7 @@ export const createEtherstub = async (req, res) => {
       stack: error.stack,
       name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create etherstub task',
       details: error.message,
     });
@@ -379,10 +381,10 @@ export const createEtherstub = async (req, res) => {
  *         description: Failed to create etherstub deletion task
  */
 export const deleteEtherstub = async (req, res) => {
-  try {
-    const { etherstub } = req.params;
-    const { temporary = false, force = false, created_by = 'api' } = req.query;
+  const { etherstub } = req.params;
+  const { temporary = false, force = false, created_by = 'api' } = req.query;
 
+  try {
     // Check if etherstub exists
     const existsResult = await executeCommand(`pfexec dladm show-etherstub ${etherstub}`);
 
@@ -440,7 +442,7 @@ export const deleteEtherstub = async (req, res) => {
       created_by,
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Etherstub deletion task created for ${etherstub}`,
       task_id: task.id,
@@ -452,9 +454,9 @@ export const deleteEtherstub = async (req, res) => {
     log.api.error('Error deleting etherstub', {
       error: error.message,
       stack: error.stack,
-      etherstub: req.params.etherstub,
+      etherstub,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create etherstub deletion task',
       details: error.message,
     });

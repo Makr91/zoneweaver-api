@@ -7,14 +7,13 @@
 
 import crypto from 'crypto';
 import fs from 'fs/promises';
-import path from 'path';
 import config from '../config/ConfigLoader.js';
 import ArtifactStorageLocation from '../models/ArtifactStorageLocationModel.js';
 import Artifact from '../models/ArtifactModel.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import CleanupService from './CleanupService.js';
 import { log, createTimer } from '../lib/Logger.js';
-import { validatePath, getMimeType, executeCommand } from '../lib/FileSystemManager.js';
+import { validatePath, executeCommand } from '../lib/FileSystemManager.js';
 import { Op } from 'sequelize';
 import yj from 'yieldable-json';
 
@@ -72,79 +71,81 @@ class ArtifactStorageService {
         configured_paths: this.config.paths.length,
       });
 
-      // Process each path in config
-      for (const pathConfig of this.config.paths) {
-        const configHash = this.calculateConfigHash(pathConfig);
+      // Process each path in config (parallelized for performance)
+      await Promise.all(
+        this.config.paths.map(async pathConfig => {
+          const configHash = this.calculateConfigHash(pathConfig);
 
-        // Validate path exists and is accessible
-        const validation = validatePath(pathConfig.path);
-        if (!validation.valid) {
-          log.artifact.warn('Invalid storage path in configuration', {
-            name: pathConfig.name,
-            path: pathConfig.path,
-            error: validation.error,
-          });
-          continue;
-        }
-
-        // Ensure directory exists or try to create it
-        let directoryEnabled = pathConfig.enabled !== false;
-        try {
-          await fs.access(validation.normalizedPath);
-          log.artifact.debug('Storage path exists', {
-            name: pathConfig.name,
-            path: validation.normalizedPath,
-          });
-        } catch (error) {
-          // Directory doesn't exist, try to create it safely
-          try {
-            log.artifact.info('Creating storage directory', {
-              name: pathConfig.name,
-              path: validation.normalizedPath,
-            });
-
-            const mkdirResult = await executeCommand(
-              `pfexec mkdir -p "${validation.normalizedPath}"`
-            );
-
-            if (!mkdirResult.success) {
-              throw new Error(`mkdir failed: ${mkdirResult.error}`);
-            }
-
-            log.artifact.info('Storage directory created successfully', {
-              name: pathConfig.name,
-              path: validation.normalizedPath,
-            });
-          } catch (createError) {
-            log.artifact.warn('Failed to create storage directory - marking as disabled', {
+          // Validate path exists and is accessible
+          const validation = validatePath(pathConfig.path);
+          if (!validation.valid) {
+            log.artifact.warn('Invalid storage path in configuration', {
               name: pathConfig.name,
               path: pathConfig.path,
-              original_error: error?.message || 'Unknown error',
-              create_error: createError?.message || 'Unknown create error',
-              create_error_type: typeof createError,
+              error: validation.error,
             });
-
-            // Mark as disabled since we couldn't create the directory
-            directoryEnabled = false;
+            return;
           }
-        }
 
-        // Upsert storage location (always create DB entry, but may be disabled)
-        await ArtifactStorageLocation.upsert({
-          name: pathConfig.name,
-          path: validation.normalizedPath,
-          type: pathConfig.type,
-          enabled: directoryEnabled,
-          config_hash: configHash,
-        });
+          // Ensure directory exists or try to create it
+          let directoryEnabled = pathConfig.enabled !== false;
+          try {
+            await fs.access(validation.normalizedPath);
+            log.artifact.debug('Storage path exists', {
+              name: pathConfig.name,
+              path: validation.normalizedPath,
+            });
+          } catch (error) {
+            // Directory doesn't exist, try to create it safely
+            try {
+              log.artifact.info('Creating storage directory', {
+                name: pathConfig.name,
+                path: validation.normalizedPath,
+              });
 
-        log.artifact.debug('Synchronized storage location', {
-          name: pathConfig.name,
-          path: validation.normalizedPath,
-          type: pathConfig.type,
-          enabled: pathConfig.enabled !== false,
-        });
-      }
+              const mkdirResult = await executeCommand(
+                `pfexec mkdir -p "${validation.normalizedPath}"`
+              );
+
+              if (!mkdirResult.success) {
+                throw new Error(`mkdir failed: ${mkdirResult.error}`);
+              }
+
+              log.artifact.info('Storage directory created successfully', {
+                name: pathConfig.name,
+                path: validation.normalizedPath,
+              });
+            } catch (createError) {
+              log.artifact.warn('Failed to create storage directory - marking as disabled', {
+                name: pathConfig.name,
+                path: pathConfig.path,
+                original_error: error?.message || 'Unknown error',
+                create_error: createError?.message || 'Unknown create error',
+                create_error_type: typeof createError,
+              });
+
+              // Mark as disabled since we couldn't create the directory
+              directoryEnabled = false;
+            }
+          }
+
+          // Upsert storage location (always create DB entry, but may be disabled)
+          await ArtifactStorageLocation.upsert({
+            name: pathConfig.name,
+            path: validation.normalizedPath,
+            type: pathConfig.type,
+            enabled: directoryEnabled,
+            config_hash: configHash,
+          });
+
+          log.artifact.debug('Synchronized storage location', {
+            name: pathConfig.name,
+            path: validation.normalizedPath,
+            type: pathConfig.type,
+            enabled: pathConfig.enabled !== false,
+          });
+        })
+      );
 
       // Remove storage locations that are no longer in config
       const configPaths = this.config.paths
@@ -281,22 +282,27 @@ class ArtifactStorageService {
         limit: 100, // Process in batches
       });
 
-      let removedCount = 0;
-      for (const artifact of staleArtifacts) {
-        try {
-          await fs.access(artifact.path);
-          // File exists, update last_verified
-          await artifact.update({ last_verified: new Date() });
-        } catch (error) {
-          // File doesn't exist, remove record
-          await artifact.destroy();
-          removedCount++;
-          log.artifact.debug('Removed orphaned artifact record', {
-            filename: artifact.filename,
-            path: artifact.path,
-          });
-        }
-      }
+      // Process artifacts in parallel for better performance
+      const results = await Promise.allSettled(
+        staleArtifacts.map(async artifact => {
+          try {
+            await fs.access(artifact.path);
+            // File exists, update last_verified
+            await artifact.update({ last_verified: new Date() });
+            return { removed: false };
+          } catch {
+            // File doesn't exist, remove record
+            await artifact.destroy();
+            log.artifact.debug('Removed orphaned artifact record', {
+              filename: artifact.filename,
+              path: artifact.path,
+            });
+            return { removed: true };
+          }
+        })
+      );
+
+      const removedCount = results.filter(r => r.status === 'fulfilled' && r.value.removed).length;
 
       const duration = timer.end();
 
@@ -576,13 +582,13 @@ const artifactStorageService = new ArtifactStorageService();
  * Initialize artifact storage service
  * @description Exported function to initialize the service
  */
-export const initializeArtifactStorage = async () => await artifactStorageService.initialize();
+export const initializeArtifactStorage = () => artifactStorageService.initialize();
 
 /**
  * Start artifact storage service
  * @description Exported function to start the service
  */
-export const startArtifactStorage = async () => await artifactStorageService.start();
+export const startArtifactStorage = () => artifactStorageService.start();
 
 /**
  * Stop artifact storage service

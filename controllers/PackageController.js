@@ -5,10 +5,9 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import yj from 'yieldable-json';
-import os from 'os';
 import { log } from '../lib/Logger.js';
 
 /**
@@ -17,7 +16,7 @@ import { log } from '../lib/Logger.js';
  * @param {number} timeout - Timeout in milliseconds
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (
+const executeCommand = (
   command,
   timeout = 15 * 60 * 1000 // 15 minute default timeout
 ) =>
@@ -101,9 +100,11 @@ const parsePkgListOutput = output => {
     const line = lines[i].trim();
     if (line) {
       // Format: NAME (PUBLISHER) VERSION IFO
-      const match = line.match(/^(\S+)(?:\s+\(([^)]+)\))?\s+(\S+)\s+(.*)$/);
+      const match = line.match(
+        /^(?<name>\S+)(?:\s+\((?<publisher>[^)]+)\))?\s+(?<version>\S+)\s+(?<flags>.*)$/
+      );
       if (match) {
-        const [, name, publisher, version, flags] = match;
+        const { name, publisher, version, flags } = match.groups;
         packages.push({
           name,
           publisher: publisher || null,
@@ -222,9 +223,9 @@ const parsePkgSearchOutput = output => {
  *         description: Failed to list packages
  */
 export const listPackages = async (req, res) => {
-  try {
-    const { filter, format = 'default', all = false } = req.query;
+  const { filter, format = 'default', all = false } = req.query;
 
+  try {
     let command = 'pfexec pkg list';
 
     if (all === 'true' || all === true) {
@@ -256,7 +257,7 @@ export const listPackages = async (req, res) => {
       packages = parsePkgListOutput(result.output);
     }
 
-    res.json({
+    return res.json({
       packages,
       total: packages.length,
       format,
@@ -271,7 +272,7 @@ export const listPackages = async (req, res) => {
       format,
       all,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to list packages',
       details: error.message,
     });
@@ -337,9 +338,9 @@ export const listPackages = async (req, res) => {
  *         description: Failed to search packages
  */
 export const searchPackages = async (req, res) => {
-  try {
-    const { query, local = false, remote = false } = req.query;
+  const { query, local = false, remote = false } = req.query;
 
+  try {
     if (!query) {
       return res.status(400).json({
         error: 'Search query is required',
@@ -369,7 +370,7 @@ export const searchPackages = async (req, res) => {
 
     const results = parsePkgSearchOutput(result.output);
 
-    res.json({
+    return res.json({
       results,
       total: results.length,
       query,
@@ -384,7 +385,7 @@ export const searchPackages = async (req, res) => {
       local,
       remote,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to search packages',
       details: error.message,
     });
@@ -432,9 +433,9 @@ export const searchPackages = async (req, res) => {
  *         description: Failed to get package information
  */
 export const getPackageInfo = async (req, res) => {
-  try {
-    const { package: pkgName, remote = false } = req.query;
+  const { package: pkgName, remote = false } = req.query;
 
+  try {
     if (!pkgName) {
       return res.status(400).json({
         error: 'Package name is required',
@@ -458,7 +459,7 @@ export const getPackageInfo = async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       package: pkgName,
       info: result.output,
       remote: remote === 'true' || remote === true,
@@ -470,7 +471,7 @@ export const getPackageInfo = async (req, res) => {
       package: pkgName,
       remote,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get package information',
       details: error.message,
     });
@@ -539,15 +540,15 @@ export const getPackageInfo = async (req, res) => {
  *         description: Failed to create installation task
  */
 export const installPackages = async (req, res) => {
-  try {
-    const {
-      packages,
-      accept_licenses = false,
-      dry_run = false,
-      be_name,
-      created_by = 'api',
-    } = req.body;
+  const {
+    packages,
+    accept_licenses = false,
+    dry_run = false,
+    be_name,
+    created_by = 'api',
+  } = req.body;
 
+  try {
     if (!packages || !Array.isArray(packages) || packages.length === 0) {
       return res.status(400).json({
         error: 'packages array is required and must not be empty',
@@ -580,7 +581,7 @@ export const installPackages = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Package installation task created for ${packages.length} package(s)`,
       task_id: task.id,
@@ -595,7 +596,7 @@ export const installPackages = async (req, res) => {
       dry_run,
       created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create package installation task',
       details: error.message,
     });
@@ -645,9 +646,9 @@ export const installPackages = async (req, res) => {
  *         description: Failed to create uninstallation task
  */
 export const uninstallPackages = async (req, res) => {
-  try {
-    const { packages, dry_run = false, be_name, created_by = 'api' } = req.body;
+  const { packages, dry_run = false, be_name, created_by = 'api' } = req.body;
 
+  try {
     if (!packages || !Array.isArray(packages) || packages.length === 0) {
       return res.status(400).json({
         error: 'packages array is required and must not be empty',
@@ -679,7 +680,7 @@ export const uninstallPackages = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Package uninstallation task created for ${packages.length} package(s)`,
       task_id: task.id,
@@ -694,7 +695,7 @@ export const uninstallPackages = async (req, res) => {
       dry_run,
       created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create package uninstallation task',
       details: error.message,
     });

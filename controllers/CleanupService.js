@@ -1,5 +1,4 @@
 import config from '../config/ConfigLoader.js';
-import { Op } from 'sequelize';
 import { log, createTimer } from '../lib/Logger.js';
 
 class CleanupService {
@@ -73,52 +72,58 @@ class CleanupService {
         interval_seconds: this.cleanupConfig.interval,
       });
 
-      let tasksCompleted = 0;
-      let tasksWithErrors = 0;
-      let totalRecordsDeleted = 0;
+      const results = await Promise.all(
+        this.tasks.map(async task => {
+          const taskTimer = createTimer(`cleanup_task_${task.name}`);
+          let recordsDeleted = 0;
+          let success = false;
 
-      for (const task of this.tasks) {
-        const taskTimer = createTimer(`cleanup_task_${task.name}`);
-        try {
-          task.runs++;
+          try {
+            task.runs++;
 
-          let result = null;
+            let result = null;
 
-          if (typeof task.handler === 'function') {
-            // Function-based task
-            result = await task.handler();
-          } else if (task.model && task.where) {
-            // Model-based task (original format)
-            result = await task.model.destroy({ where: task.where });
-            if (result > 0) {
-              totalRecordsDeleted += result;
-              log.database.info('Database cleanup completed', {
-                task_name: task.name,
-                model_name: task.model.name,
-                records_deleted: result,
-                duration_ms: taskTimer.end(),
-              });
+            if (typeof task.handler === 'function') {
+              // Function-based task
+              result = await task.handler();
+            } else if (task.model && task.where) {
+              // Model-based task (original format)
+              result = await task.model.destroy({ where: task.where });
+              if (result > 0) {
+                recordsDeleted = result;
+                log.database.info('Database cleanup completed', {
+                  task_name: task.name,
+                  model_name: task.model.name,
+                  records_deleted: result,
+                  duration_ms: taskTimer.end(),
+                });
+              }
+            } else {
+              throw new Error('Invalid task configuration');
             }
-          } else {
-            throw new Error('Invalid task configuration');
+
+            task.lastSuccess = new Date();
+            success = true;
+          } catch (error) {
+            task.errors++;
+            task.lastError = error.message;
+            this.stats.totalErrors++;
+            this.stats.lastError = `${task.name}: ${error.message}`;
+
+            log.database.error('Cleanup task failed', {
+              task_name: task.name,
+              error: error.message,
+              duration_ms: taskTimer.end(),
+            });
           }
 
-          task.lastSuccess = new Date();
-          tasksCompleted++;
-        } catch (error) {
-          task.errors++;
-          task.lastError = error.message;
-          tasksWithErrors++;
-          this.stats.totalErrors++;
-          this.stats.lastError = `${task.name}: ${error.message}`;
+          return { success, recordsDeleted };
+        })
+      );
 
-          log.database.error('Cleanup task failed', {
-            task_name: task.name,
-            error: error.message,
-            duration_ms: taskTimer.end(),
-          });
-        }
-      }
+      const tasksCompleted = results.filter(r => r.success).length;
+      const tasksWithErrors = results.filter(r => !r.success).length;
+      const totalRecordsDeleted = results.reduce((sum, r) => sum + r.recordsDeleted, 0);
 
       const duration = timer.end();
       this.stats.lastRunTime = new Date();

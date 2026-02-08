@@ -19,6 +19,28 @@ const configPath = getConfigPath();
 const backupDir = path.join(path.dirname(configPath), 'backups');
 
 /**
+ * Create a backup of the config.yaml file
+ */
+const createBackup = async () => {
+  try {
+    await fs.mkdir(backupDir, { recursive: true });
+    const timestamp = Date.now();
+    const backupPath = path.join(backupDir, `config-${timestamp}.yaml`);
+    await fs.copyFile(configPath, backupPath);
+    log.app.info('Created config backup', {
+      backup_path: backupPath,
+      timestamp,
+    });
+  } catch (error) {
+    log.app.error('Failed to create config backup', {
+      error: error.message,
+      stack: error.stack,
+      backup_dir: backupDir,
+    });
+  }
+};
+
+/**
  * @swagger
  * tags:
  *   name: Settings
@@ -120,9 +142,9 @@ export const getSettings = async (req, res) => {
         if (err) {
           reject(err);
         } else {
-          yj.parseAsync(jsonString, (err, result) => {
-            if (err) {
-              reject(err);
+          yj.parseAsync(jsonString, (parseErr, result) => {
+            if (parseErr) {
+              reject(parseErr);
             } else {
               resolve(result);
             }
@@ -139,13 +161,13 @@ export const getSettings = async (req, res) => {
       // We might want to show some API key settings, but not all
     }
 
-    res.json(sanitizedConfig);
+    return res.json(sanitizedConfig);
   } catch (error) {
     log.api.error('Error getting settings', {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to get settings', details: error.message });
+    return res.status(500).json({ error: 'Failed to get settings', details: error.message });
   }
 };
 
@@ -197,7 +219,7 @@ export const updateSettings = async (req, res) => {
     // 7. Reload the configuration in the ConfigLoader
     config.load();
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Settings updated successfully. Some changes may require a server restart.',
     });
@@ -206,29 +228,7 @@ export const updateSettings = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to update settings', details: error.message });
-  }
-};
-
-/**
- * Create a backup of the config.yaml file
- */
-const createBackup = async () => {
-  try {
-    await fs.mkdir(backupDir, { recursive: true });
-    const timestamp = Date.now();
-    const backupPath = path.join(backupDir, `config-${timestamp}.yaml`);
-    await fs.copyFile(configPath, backupPath);
-    log.app.info('Created config backup', {
-      backup_path: backupPath,
-      timestamp,
-    });
-  } catch (error) {
-    log.app.error('Failed to create config backup', {
-      error: error.message,
-      stack: error.stack,
-      backup_dir: backupDir,
-    });
+    return res.status(500).json({ error: 'Failed to update settings', details: error.message });
   }
 };
 
@@ -303,7 +303,7 @@ export const createConfigBackup = async (req, res) => {
       timestamp,
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Backup created successfully',
       backup: {
@@ -316,7 +316,7 @@ export const createConfigBackup = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to create backup', details: error.message });
+    return res.status(500).json({ error: 'Failed to create backup', details: error.message });
   }
 };
 
@@ -344,14 +344,14 @@ export const listBackups = async (req, res) => {
       .filter(backup => backup !== null)
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    res.json(backups);
+    return res.json(backups);
   } catch (error) {
     log.api.error('Error listing backups', {
       error: error.message,
       stack: error.stack,
       backup_dir: backupDir,
     });
-    res.status(500).json({ error: 'Failed to list backups', details: error.message });
+    return res.status(500).json({ error: 'Failed to list backups', details: error.message });
   }
 };
 
@@ -379,9 +379,9 @@ export const listBackups = async (req, res) => {
  *         description: Failed to delete backup
  */
 export const deleteBackup = async (req, res) => {
-  try {
-    const { filename } = req.params;
+  const { filename } = req.params;
 
+  try {
     // Basic security check to prevent path traversal
     if (filename.includes('..')) {
       return res.status(400).json({ error: 'Invalid filename' });
@@ -395,7 +395,7 @@ export const deleteBackup = async (req, res) => {
     // Delete the file
     await fs.unlink(backupPath);
 
-    res.json({ success: true, message: `Backup ${filename} deleted successfully.` });
+    return res.json({ success: true, message: `Backup ${filename} deleted successfully.` });
   } catch (error) {
     if (error.code === 'ENOENT') {
       return res.status(404).json({ error: 'Backup not found' });
@@ -405,7 +405,7 @@ export const deleteBackup = async (req, res) => {
       stack: error.stack,
       filename,
     });
-    res.status(500).json({ error: 'Failed to delete backup', details: error.message });
+    return res.status(500).json({ error: 'Failed to delete backup', details: error.message });
   }
 };
 
@@ -431,8 +431,9 @@ export const deleteBackup = async (req, res) => {
  *         description: Failed to restore backup
  */
 export const restoreBackup = async (req, res) => {
+  const { filename } = req.params;
+
   try {
-    const { filename } = req.params;
     const backupPath = path.join(backupDir, filename);
 
     // Check if backup file exists
@@ -447,7 +448,7 @@ export const restoreBackup = async (req, res) => {
     // Reload the configuration
     config.load();
 
-    res.json({
+    return res.json({
       success: true,
       message: `Restored configuration from ${filename}. A server restart may be required.`,
     });
@@ -457,7 +458,7 @@ export const restoreBackup = async (req, res) => {
       stack: error.stack,
       filename,
     });
-    res.status(500).json({ error: 'Failed to restore backup', details: error.message });
+    return res.status(500).json({ error: 'Failed to restore backup', details: error.message });
   }
 };
 
@@ -484,10 +485,10 @@ export const restoreBackup = async (req, res) => {
  *       500:
  *         description: Failed to initiate server restart
  */
-export const restartServer = async (req, res) => {
+export const restartServer = (req, res) => {
   try {
     // Send success response immediately before initiating restart
-    res.json({
+    const response = res.json({
       success: true,
       message:
         'Server restart initiated. Please wait 30-60 seconds before reconnecting. The server will reload all configuration changes.',
@@ -508,7 +509,7 @@ export const restartServer = async (req, res) => {
               detached: true,
               stdio: 'ignore',
             },
-            (error, stdout, stderr) => {
+            (error, _stdout, _stderr) => {
               // This callback likely won't execute since the process will be killed
               // but we include it for completeness
               if (error) {
@@ -525,12 +526,14 @@ export const restartServer = async (req, res) => {
           });
         });
     }, 1000); // 1 second delay to ensure HTTP response is fully sent
+
+    return response;
   } catch (error) {
     log.api.error('Error initiating server restart', {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to initiate server restart',
       details: error.message,

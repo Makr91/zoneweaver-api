@@ -6,15 +6,7 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import {
-  getServices,
-  getServiceDetails,
-  enableService,
-  disableService,
-  restartService,
-  refreshService,
-  getProperties,
-} from '../lib/ServiceManager.js';
+import { getServices, getServiceDetails, getProperties } from '../lib/ServiceManager.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { log } from '../lib/Logger.js';
 
@@ -69,11 +61,12 @@ import { log } from '../lib/Logger.js';
  *         description: Failed to retrieve services
  */
 export const listServices = async (req, res) => {
+  const { pattern, zone, all } = req.query;
+
   try {
-    const { pattern, zone, all } = req.query;
     const options = { pattern, zone, all };
     const services = await getServices(options);
-    res.json(services);
+    return res.json(services);
   } catch (error) {
     log.api.error('Error listing services', {
       error: error.message,
@@ -81,7 +74,7 @@ export const listServices = async (req, res) => {
       pattern,
       zone,
     });
-    res.status(500).json({ error: 'Failed to retrieve services' });
+    return res.status(500).json({ error: 'Failed to retrieve services' });
   }
 };
 
@@ -111,18 +104,20 @@ export const listServices = async (req, res) => {
  *         description: Failed to retrieve service details
  */
 export const getServiceDetailsController = async (req, res) => {
+  const { fmri } = req.params;
+  let decodedFmri = fmri;
+
   try {
-    const { fmri } = req.params;
-    const decodedFmri = decodeURIComponent(fmri);
+    decodedFmri = decodeURIComponent(fmri);
     const service = await getServiceDetails(decodedFmri);
-    res.json(service);
+    return res.json(service);
   } catch (error) {
     log.api.error('Error getting service details', {
       error: error.message,
       stack: error.stack,
       fmri: decodedFmri,
     });
-    res.status(500).json({ error: 'Failed to retrieve service details' });
+    return res.status(500).json({ error: 'Failed to retrieve service details' });
   }
 };
 
@@ -155,11 +150,12 @@ export const getServiceDetailsController = async (req, res) => {
  *         description: Failed to perform action
  */
 export const serviceAction = async (req, res) => {
-  try {
-    const { action, fmri, options } = req.body;
+  const { action, fmri } = req.body;
+  let decodedFmri = fmri;
 
+  try {
     // Decode FMRI for proper storage and execution
-    const decodedFmri = decodeURIComponent(fmri);
+    decodedFmri = decodeURIComponent(fmri);
 
     const task = await Tasks.create({
       zone_name: decodedFmri,
@@ -169,7 +165,7 @@ export const serviceAction = async (req, res) => {
       status: 'pending',
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: `Task created for action ${action} on service ${decodedFmri}`,
       task_id: task.id,
@@ -178,11 +174,11 @@ export const serviceAction = async (req, res) => {
     log.api.error('Error creating service action task', {
       error: error.message,
       stack: error.stack,
-      action: req.body.action,
+      action,
       fmri: decodedFmri,
       created_by: req.entity?.name,
     });
-    res.status(500).json({ error: `Failed to create task for action ${req.body.action}` });
+    return res.status(500).json({ error: `Failed to create task for action ${action}` });
   }
 };
 
@@ -212,17 +208,19 @@ export const serviceAction = async (req, res) => {
  *         description: Failed to retrieve service properties
  */
 export const getPropertiesController = async (req, res) => {
+  const { fmri } = req.params;
+  let decodedFmri = fmri;
+
   try {
-    const { fmri } = req.params;
-    const decodedFmri = decodeURIComponent(fmri);
+    decodedFmri = decodeURIComponent(fmri);
     const properties = await getProperties(decodedFmri);
-    res.json(properties);
+    return res.json(properties);
   } catch (error) {
     log.api.error('Error getting service properties', {
       error: error.message,
       stack: error.stack,
       fmri: decodedFmri,
     });
-    res.status(500).json({ error: 'Failed to retrieve service properties' });
+    return res.status(500).json({ error: 'Failed to retrieve service properties' });
   }
 };

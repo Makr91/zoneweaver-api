@@ -103,18 +103,17 @@ export const executeSetPropertiesTask = async metadataJson => {
     });
     const { name, properties } = metadata;
 
-    const results = [];
+    const results = await Promise.all(
+      Object.entries(properties).map(async ([key, value]) => {
+        const command = `pfexec zfs set ${key}=${value} ${name}`;
+        const result = await executeCommand(command);
 
-    for (const [key, value] of Object.entries(properties)) {
-      const command = `pfexec zfs set ${key}=${value} ${name}`;
-      const result = await executeCommand(command);
-
-      if (!result.success) {
-        results.push({ property: key, success: false, error: result.error });
-      } else {
-        results.push({ property: key, success: true });
-      }
-    }
+        if (!result.success) {
+          return { property: key, success: false, error: result.error };
+        }
+        return { property: key, success: true };
+      })
+    );
 
     const failed = results.filter(r => !r.success);
 

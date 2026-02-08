@@ -23,7 +23,6 @@ import {
   buildSamplingMetadata,
   createEmptyResponse,
   addQueryTiming,
-  calculateTimeSpan,
 } from './utils/SamplingHelpers.js';
 import {
   getActiveInterfacesList,

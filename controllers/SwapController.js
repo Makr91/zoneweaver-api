@@ -11,11 +11,40 @@ import os from 'os';
 import { Op } from 'sequelize';
 import SwapArea from '../models/SwapAreaModel.js';
 import MemoryStats from '../models/MemoryStatsModel.js';
-import ZFSPools from '../models/ZFSPoolModel.js';
-import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
 
 const execProm = util.promisify(exec);
+
+/**
+ * Helper function to parse ZFS size strings (e.g., "1.2T", "500G", "2.5M")
+ * @param {string} sizeString - Size string from ZFS commands
+ * @returns {number} Size in bytes
+ */
+const parseZfsSize = sizeString => {
+  const sizeRegex = /^(?<value>[\d.]+)(?<unit>[KMGTPEZ]?)$/i;
+  const match = sizeString.match(sizeRegex);
+
+  if (!match) {
+    return 0;
+  }
+
+  const { value: valueStr, unit: unitStr } = match.groups;
+  const value = parseFloat(valueStr);
+  const unit = unitStr.toUpperCase();
+
+  const multipliers = {
+    '': 1,
+    K: 1024,
+    M: 1024 ** 2,
+    G: 1024 ** 3,
+    T: 1024 ** 4,
+    P: 1024 ** 5,
+    E: 1024 ** 6,
+    Z: 1024 ** 7,
+  };
+
+  return value * (multipliers[unit] || 1);
+};
 
 /**
  * @swagger
@@ -68,10 +97,10 @@ const execProm = util.promisify(exec);
  *         description: Failed to get swap areas
  */
 export const listSwapAreas = async (req, res) => {
-  try {
-    const { limit = 100, offset = 0, pool, active_only = true, host } = req.query;
-    const hostname = host || os.hostname();
+  const { limit = 100, offset = 0, pool, active_only = true, host } = req.query;
+  const hostname = host || os.hostname();
 
+  try {
     const whereClause = { host: hostname };
     if (pool) {
       whereClause.pool_assignment = pool;
@@ -90,7 +119,7 @@ export const listSwapAreas = async (req, res) => {
       ],
     });
 
-    res.json({
+    return res.json({
       swapAreas: rows,
       totalCount: count,
       pagination: {
@@ -106,7 +135,7 @@ export const listSwapAreas = async (req, res) => {
       host: hostname,
       filters: { pool, active_only },
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to list swap areas',
       details: error.message,
     });
@@ -170,10 +199,10 @@ export const listSwapAreas = async (req, res) => {
  *         description: Failed to get swap summary
  */
 export const getSwapSummary = async (req, res) => {
-  try {
-    const { host } = req.query;
-    const hostname = host || os.hostname();
+  const { host } = req.query;
+  const hostname = host || os.hostname();
 
+  try {
     // Get current swap areas
     const swapAreas = await SwapArea.findAll({
       where: {
@@ -257,7 +286,7 @@ export const getSwapSummary = async (req, res) => {
       }
     });
 
-    res.json({
+    return res.json({
       host: hostname,
       totalSwapGB: (totalSwapBytes / 1024 ** 3).toFixed(2),
       usedSwapGB: (usedSwapBytes / 1024 ** 3).toFixed(2),
@@ -292,7 +321,7 @@ export const getSwapSummary = async (req, res) => {
       stack: error.stack,
       host: hostname,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get swap summary',
       details: error.message,
     });
@@ -334,9 +363,10 @@ export const getSwapSummary = async (req, res) => {
  *         description: Failed to add swap area
  */
 export const addSwapArea = async (req, res) => {
-  try {
-    const { path, swaplow, swaplen } = req.body;
+  const { path, swaplow, swaplen } = req.body;
+  let poolAssignment = null;
 
+  try {
     if (!path) {
       return res.status(400).json({
         error: 'Path is required',
@@ -344,8 +374,8 @@ export const addSwapArea = async (req, res) => {
     }
 
     // Extract pool assignment from path
-    const poolMatch = path.match(/\/dev\/zvol\/dsk\/([^\/]+)/);
-    const poolAssignment = poolMatch ? poolMatch[1] : null;
+    const poolMatch = path.match(/\/dev\/zvol\/dsk\/(?<pool>[^/]+)/);
+    poolAssignment = poolMatch ? poolMatch.groups.pool : null;
 
     // Safety checks for rpool operations
     if (poolAssignment === 'rpool') {
@@ -357,7 +387,7 @@ export const addSwapArea = async (req, res) => {
         );
         const zpoolData = zpoolOutput.trim().split('\t');
         if (zpoolData.length >= 3) {
-          const freeSpace = zpoolData[2];
+          const [, , freeSpace] = zpoolData;
           const freeBytes = parseZfsSize(freeSpace);
           const requestedBytes = swaplen ? swaplen * 512 : 0;
           const bufferBytes = freeBytes * 0.05; // 5% buffer
@@ -394,7 +424,7 @@ export const addSwapArea = async (req, res) => {
     });
 
     // Execute swap add command
-    const { stdout, stderr } = await execProm(command, { timeout: 30000 });
+    await execProm(command, { timeout: 30000 });
 
     // Remove verbose stderr logging - swap commands output to stderr even on success
 
@@ -422,7 +452,7 @@ export const addSwapArea = async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Swap area added successfully',
       path,
@@ -437,7 +467,7 @@ export const addSwapArea = async (req, res) => {
       path,
       poolAssignment,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to add swap area',
       details: error.message,
     });
@@ -476,9 +506,9 @@ export const addSwapArea = async (req, res) => {
  *         description: Failed to remove swap area
  */
 export const removeSwapArea = async (req, res) => {
-  try {
-    const { path, swaplow } = req.body;
+  const { path, swaplow } = req.body;
 
+  try {
     if (!path) {
       return res.status(400).json({
         error: 'Path is required',
@@ -518,7 +548,7 @@ export const removeSwapArea = async (req, res) => {
     });
 
     // Execute swap remove command
-    const { stdout, stderr } = await execProm(command, { timeout: 30000 });
+    await execProm(command, { timeout: 30000 });
 
     // Remove verbose stderr logging - swap commands output to stderr even on success
 
@@ -545,7 +575,7 @@ export const removeSwapArea = async (req, res) => {
       }
     );
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Swap area removed successfully',
       path,
@@ -558,7 +588,7 @@ export const removeSwapArea = async (req, res) => {
       stack: error.stack,
       path,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to remove swap area',
       details: error.message,
     });
@@ -617,9 +647,9 @@ export const removeSwapArea = async (req, res) => {
  *         description: Failed to get hosts with low swap
  */
 export const getHostsWithLowSwap = async (req, res) => {
-  try {
-    const { threshold = 50, limit = 100 } = req.query;
+  const { threshold = 50, limit = 100 } = req.query;
 
+  try {
     // Get latest memory stats for all hosts where swap utilization exceeds threshold
     const hostsWithLowSwap = await MemoryStats.findAll({
       attributes: [
@@ -665,7 +695,7 @@ export const getHostsWithLowSwap = async (req, res) => {
       last_checked: record.scan_timestamp,
     }));
 
-    res.json({
+    return res.json({
       hostsWithLowSwap: results,
       totalCount: results.length,
       threshold: parseFloat(threshold),
@@ -680,39 +710,9 @@ export const getHostsWithLowSwap = async (req, res) => {
       stack: error.stack,
       threshold,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get hosts with low swap',
       details: error.message,
     });
   }
 };
-
-/**
- * Helper function to parse ZFS size strings (e.g., "1.2T", "500G", "2.5M")
- * @param {string} sizeString - Size string from ZFS commands
- * @returns {number} Size in bytes
- */
-function parseZfsSize(sizeString) {
-  const sizeRegex = /^([\d.]+)([KMGTPEZ]?)$/i;
-  const match = sizeString.match(sizeRegex);
-
-  if (!match) {
-    return 0;
-  }
-
-  const value = parseFloat(match[1]);
-  const unit = match[2].toUpperCase();
-
-  const multipliers = {
-    '': 1,
-    K: 1024,
-    M: 1024 ** 2,
-    G: 1024 ** 3,
-    T: 1024 ** 4,
-    P: 1024 ** 5,
-    E: 1024 ** 6,
-    Z: 1024 ** 7,
-  };
-
-  return value * (multipliers[unit] || 1);
-}

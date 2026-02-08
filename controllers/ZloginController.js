@@ -1,10 +1,8 @@
 import os from 'os';
 import pty from 'node-pty';
 import ZloginSessions from '../models/ZloginSessionModel.js';
-import { Op } from 'sequelize';
 import Zones from '../models/ZoneModel.js';
 import fs from 'fs';
-import path from 'path';
 import { spawn } from 'child_process';
 import { log } from '../lib/Logger.js';
 
@@ -12,8 +10,6 @@ import { log } from '../lib/Logger.js';
  * @fileoverview Zlogin Session Controller for Zoneweaver API
  * @description Manages the lifecycle of zlogin pseudo-terminal sessions for zones.
  */
-
-const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
 /**
  * In-memory store for active pty processes.
@@ -34,7 +30,7 @@ class ZloginSessionManager {
    * @param {string} zoneName - The zone name to check
    * @returns {Promise<number|null>} The PID if found, null otherwise
    */
-  async findRunningZloginProcess(zoneName) {
+  findRunningZloginProcess(zoneName) {
     try {
       const psProcess = spawn('ps', ['auxww'], { stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -85,7 +81,7 @@ class ZloginSessionManager {
    * @param {number} pid - The process ID to kill
    * @returns {Promise<boolean>} True if successfully killed
    */
-  async killZloginProcess(pid) {
+  killZloginProcess(pid) {
     try {
       log.websocket.info('Killing zlogin process', { pid });
       const killProcess = spawn('pfexec', ['kill', '-9', pid.toString()], {
@@ -148,12 +144,14 @@ class ZloginSessionManager {
           },
         });
 
-        for (const session of staleSessions) {
-          log.websocket.debug('Cleaning up stale database session', {
-            session_id: session.id,
-          });
-          await session.destroy();
-        }
+        await Promise.all(
+          staleSessions.map(session => {
+            log.websocket.debug('Cleaning up stale database session', {
+              session_id: session.id,
+            });
+            return session.destroy();
+          })
+        );
 
         log.websocket.info('Cleanup completed', {
           zone_name: zoneName,
@@ -179,18 +177,22 @@ class ZloginSessionManager {
         status: ['active', 'connecting'],
       },
     });
-    let cleanedCount = 0;
-    for (const session of activeSessions) {
-      try {
-        // Skip PID check for sessions that don't have a PID yet (connecting state)
-        if (session.pid !== null) {
-          process.kill(session.pid, 0);
+
+    const results = await Promise.all(
+      activeSessions.map(async session => {
+        try {
+          // Skip PID check for sessions that don't have a PID yet (connecting state)
+          if (session.pid !== null) {
+            process.kill(session.pid, 0);
+          }
+          return 0;
+        } catch {
+          await session.update({ status: 'closed' });
+          return 1;
         }
-      } catch (e) {
-        await session.update({ status: 'closed' });
-        cleanedCount++;
-      }
-    }
+      })
+    );
+    const cleanedCount = results.reduce((a, b) => a + b, 0);
     log.websocket.info('Zlogin startup cleanup completed', {
       cleaned_count: cleanedCount,
     });
@@ -223,7 +225,7 @@ export const startZloginSessionCleanup = () => {
  * @param {string} sessionId - The zlogin session ID
  * @returns {Promise<boolean>} True if session is healthy
  */
-const testZloginSessionHealth = async sessionId => {
+const testZloginSessionHealth = sessionId => {
   try {
     // Check if PTY process exists in memory
     const ptyProcess = activePtyProcesses.get(sessionId);
@@ -240,7 +242,7 @@ const testZloginSessionHealth = async sessionId => {
     try {
       process.kill(ptyProcess.pid, 0); // Signal 0 checks if process exists
       return true;
-    } catch (error) {
+    } catch {
       // Process doesn't exist
       activePtyProcesses.delete(sessionId);
       return false;
@@ -465,13 +467,13 @@ export const startZloginSession = async (req, res) => {
       session_id: session.id,
       status: session.status,
     });
-    res.json(session);
+    return res.json(session);
   } catch (error) {
     log.websocket.error('Error starting zlogin session', {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to start zlogin session' });
+    return res.status(500).json({ error: 'Failed to start zlogin session' });
   }
 };
 
@@ -510,13 +512,13 @@ export const getZloginSessionInfo = async (req, res) => {
       return res.status(404).json({ error: 'Zlogin session not found' });
     }
 
-    res.json(session);
+    return res.json(session);
   } catch (error) {
     log.websocket.error('Error getting zlogin session info', {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to get zlogin session info' });
+    return res.status(500).json({ error: 'Failed to get zlogin session info' });
   }
 };
 
@@ -614,11 +616,17 @@ export const getZloginPtyProcess = sessionId => activePtyProcesses.get(sessionId
  * @param {string} sessionId - The ID of the zlogin session.
  */
 export const handleZloginConnection = (ws, sessionId) => {
+  let stateName = 'OTHER';
+  if (ws.readyState === ws.OPEN) {
+    stateName = 'OPEN';
+  } else if (ws.readyState === ws.CONNECTING) {
+    stateName = 'CONNECTING';
+  }
+
   log.websocket.debug('[ZLOGIN-WS] handleZloginConnection called', {
     session_id: sessionId,
     websocket_state: ws.readyState,
-    state_name:
-      ws.readyState === ws.OPEN ? 'OPEN' : ws.readyState === ws.CONNECTING ? 'CONNECTING' : 'OTHER',
+    state_name: stateName,
   });
 
   const ptyProcess = getZloginPtyProcess(sessionId);

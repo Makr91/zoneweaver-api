@@ -90,6 +90,13 @@ import fs from 'fs';
  *         description: Failed to browse directory
  */
 export const browseDirectory = async (req, res) => {
+  const {
+    path: dirPath = '/',
+    show_hidden = false,
+    sort_by = 'name',
+    sort_order = 'asc',
+  } = req.query;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -98,13 +105,6 @@ export const browseDirectory = async (req, res) => {
         error: 'File browser is disabled',
       });
     }
-
-    const {
-      path: dirPath = '/',
-      show_hidden = false,
-      sort_by = 'name',
-      sort_order = 'asc',
-    } = req.query;
 
     const items = await listDirectory(dirPath);
 
@@ -137,14 +137,19 @@ export const browseDirectory = async (req, res) => {
           bVal = b.name.toLowerCase();
       }
 
-      const result = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      let result = 0;
+      if (aVal < bVal) {
+        result = -1;
+      } else if (aVal > bVal) {
+        result = 1;
+      }
       return sort_order === 'desc' ? -result : result;
     });
 
     // Calculate parent path
     const parentPath = path.dirname(dirPath);
 
-    res.json({
+    return res.json({
       items: filteredItems,
       current_path: dirPath,
       parent_path: parentPath !== dirPath ? parentPath : null,
@@ -166,7 +171,7 @@ export const browseDirectory = async (req, res) => {
       return res.status(404).json({ error: 'Directory not found' });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to browse directory',
       details: error.message,
     });
@@ -220,6 +225,9 @@ export const browseDirectory = async (req, res) => {
  *         description: Failed to create directory
  */
 export const createFolder = async (req, res) => {
+  const { path: parentPath, name, mode, uid, gid } = req.body;
+  let fullPath;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -229,15 +237,13 @@ export const createFolder = async (req, res) => {
       });
     }
 
-    const { path: parentPath, name, mode, uid, gid } = req.body;
-
     if (!parentPath || !name) {
       return res.status(400).json({
         error: 'path and name are required',
       });
     }
 
-    const fullPath = path.join(parentPath, name);
+    fullPath = path.join(parentPath, name);
 
     const options = {};
     if (mode) {
@@ -254,7 +260,7 @@ export const createFolder = async (req, res) => {
 
     const itemInfo = await getItemInfo(fullPath);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: `Directory '${name}' created successfully`,
       item: itemInfo,
@@ -275,7 +281,7 @@ export const createFolder = async (req, res) => {
       return res.status(403).json({ error: error.message });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create directory',
       details: error.message,
     });
@@ -433,7 +439,7 @@ export const uploadFile = async (req, res) => {
       destination: filePath,
     });
 
-    res.status(201).json(response);
+    return res.status(201).json(response);
   } catch (error) {
     timer.end({ error: error.message });
     log.filesystem.error('File upload failed', {
@@ -453,7 +459,7 @@ export const uploadFile = async (req, res) => {
     }
 
     requestLogger.error(500, error.message);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to upload file',
       details: error.message,
     });
@@ -492,6 +498,8 @@ export const uploadFile = async (req, res) => {
  *         description: Download failed
  */
 export const downloadFile = async (req, res) => {
+  const { path: filePath } = req.query;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -500,8 +508,6 @@ export const downloadFile = async (req, res) => {
         error: 'File browser is disabled',
       });
     }
-
-    const { path: filePath } = req.query;
 
     if (!filePath) {
       return res.status(400).json({
@@ -532,7 +538,6 @@ export const downloadFile = async (req, res) => {
 
     // Stream the file
     const readStream = fs.createReadStream(normalizedPath);
-    readStream.pipe(res);
 
     readStream.on('error', error => {
       log.filesystem.error('Error streaming file', {
@@ -541,12 +546,16 @@ export const downloadFile = async (req, res) => {
         path: normalizedPath,
       });
       if (!res.headersSent) {
-        res.status(500).json({
+        return res.status(500).json({
           error: 'Failed to download file',
           details: error.message,
         });
       }
+      return undefined;
     });
+
+    readStream.pipe(res);
+    return res;
   } catch (error) {
     log.api.error('Error downloading file', {
       error: error.message,
@@ -562,7 +571,7 @@ export const downloadFile = async (req, res) => {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to download file',
       details: error.message,
     });
@@ -609,6 +618,8 @@ export const downloadFile = async (req, res) => {
  *         description: Failed to read file
  */
 export const readFile = async (req, res) => {
+  const { path: filePath } = req.query;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -617,8 +628,6 @@ export const readFile = async (req, res) => {
         error: 'File browser is disabled',
       });
     }
-
-    const { path: filePath } = req.query;
 
     if (!filePath) {
       return res.status(400).json({
@@ -629,7 +638,7 @@ export const readFile = async (req, res) => {
     const content = await readFileContent(filePath);
     const itemInfo = await getItemInfo(filePath);
 
-    res.json({
+    return res.json({
       content,
       file_info: itemInfo,
       encoding: 'utf8',
@@ -658,7 +667,7 @@ export const readFile = async (req, res) => {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to read file',
       details: error.message,
     });
@@ -715,6 +724,8 @@ export const readFile = async (req, res) => {
  *         description: Failed to write file
  */
 export const writeFile = async (req, res) => {
+  const { path: filePath, content, backup = false, uid, gid, mode } = req.body;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -723,8 +734,6 @@ export const writeFile = async (req, res) => {
         error: 'File browser is disabled',
       });
     }
-
-    const { path: filePath, content, backup = false, uid, gid, mode } = req.body;
 
     if (!filePath || content === undefined) {
       return res.status(400).json({
@@ -747,7 +756,7 @@ export const writeFile = async (req, res) => {
 
     const itemInfo = await getItemInfo(filePath);
 
-    res.json({
+    return res.json({
       success: true,
       message: `File written successfully${backup ? ' (backup created)' : ''}`,
       file_info: itemInfo,
@@ -769,7 +778,7 @@ export const writeFile = async (req, res) => {
       return res.status(403).json({ error: error.message });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to write file',
       details: error.message,
     });
@@ -813,6 +822,8 @@ export const writeFile = async (req, res) => {
  *         description: Failed to create move task
  */
 export const moveFileItem = async (req, res) => {
+  const { source, destination } = req.body;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -821,8 +832,6 @@ export const moveFileItem = async (req, res) => {
         error: 'File browser is disabled',
       });
     }
-
-    const { source, destination } = req.body;
 
     if (!source || !destination) {
       return res.status(400).json({
@@ -854,7 +863,7 @@ export const moveFileItem = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Move task created for '${path.basename(source)}'`,
       task_id: task.id,
@@ -873,7 +882,7 @@ export const moveFileItem = async (req, res) => {
       return res.status(403).json({ error: error.message });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create move task',
       details: error.message,
     });
@@ -917,6 +926,8 @@ export const moveFileItem = async (req, res) => {
  *         description: Failed to create copy task
  */
 export const copyFileItem = async (req, res) => {
+  const { source, destination } = req.body;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -925,8 +936,6 @@ export const copyFileItem = async (req, res) => {
         error: 'File browser is disabled',
       });
     }
-
-    const { source, destination } = req.body;
 
     if (!source || !destination) {
       return res.status(400).json({
@@ -958,7 +967,7 @@ export const copyFileItem = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Copy task created for '${path.basename(source)}'`,
       task_id: task.id,
@@ -977,7 +986,7 @@ export const copyFileItem = async (req, res) => {
       return res.status(403).json({ error: error.message });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create copy task',
       details: error.message,
     });
@@ -1023,6 +1032,8 @@ export const copyFileItem = async (req, res) => {
  *         description: Failed to rename item
  */
 export const renameItem = async (req, res) => {
+  const { path: itemPath, new_name } = req.body;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -1031,8 +1042,6 @@ export const renameItem = async (req, res) => {
         error: 'File browser is disabled',
       });
     }
-
-    const { path: itemPath, new_name } = req.body;
 
     if (!itemPath || !new_name) {
       return res.status(400).json({
@@ -1056,7 +1065,7 @@ export const renameItem = async (req, res) => {
 
     const itemInfo = await getItemInfo(newPath);
 
-    res.json({
+    return res.json({
       success: true,
       message: `Item renamed to '${sanitizedName}' successfully`,
       item: itemInfo,
@@ -1079,7 +1088,7 @@ export const renameItem = async (req, res) => {
       return res.status(403).json({ error: error.message });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to rename item',
       details: error.message,
     });
@@ -1229,7 +1238,7 @@ export const deleteFileItem = async (req, res) => {
       size: itemInfo.size,
     });
 
-    res.json(response);
+    return res.json(response);
   } catch (error) {
     timer.end({ error: error.message });
     log.filesystem.error('File deletion failed', {
@@ -1250,7 +1259,7 @@ export const deleteFileItem = async (req, res) => {
     }
 
     requestLogger.error(500, error.message);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to delete item',
       details: error.message,
     });
@@ -1301,6 +1310,8 @@ export const deleteFileItem = async (req, res) => {
  *         description: Failed to create archive task
  */
 export const createArchiveTask = async (req, res) => {
+  const { sources, archive_path, format } = req.body;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -1309,8 +1320,6 @@ export const createArchiveTask = async (req, res) => {
         error: 'Archive operations are disabled',
       });
     }
-
-    const { sources, archive_path, format } = req.body;
 
     if (!sources || !Array.isArray(sources) || sources.length === 0) {
       return res.status(400).json({
@@ -1349,7 +1358,7 @@ export const createArchiveTask = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Archive creation task created for ${sources.length} items`,
       task_id: task.id,
@@ -1370,7 +1379,7 @@ export const createArchiveTask = async (req, res) => {
       return res.status(403).json({ error: error.message });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create archive task',
       details: error.message,
     });
@@ -1414,6 +1423,8 @@ export const createArchiveTask = async (req, res) => {
  *         description: Failed to create extraction task
  */
 export const extractArchiveTask = async (req, res) => {
+  const { archive_path, extract_path } = req.body;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -1422,8 +1433,6 @@ export const extractArchiveTask = async (req, res) => {
         error: 'Archive operations are disabled',
       });
     }
-
-    const { archive_path, extract_path } = req.body;
 
     if (!archive_path || !extract_path) {
       return res.status(400).json({
@@ -1455,7 +1464,7 @@ export const extractArchiveTask = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Archive extraction task created for '${path.basename(archive_path)}'`,
       task_id: task.id,
@@ -1474,7 +1483,7 @@ export const extractArchiveTask = async (req, res) => {
       return res.status(403).json({ error: error.message });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create extraction task',
       details: error.message,
     });
@@ -1531,6 +1540,8 @@ export const extractArchiveTask = async (req, res) => {
  *         description: Failed to update permissions
  */
 export const changePermissions = async (req, res) => {
+  const { path: itemPath, uid, gid, mode, recursive = false } = req.body;
+
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -1539,8 +1550,6 @@ export const changePermissions = async (req, res) => {
         error: 'File browser is disabled',
       });
     }
-
-    const { path: itemPath, uid, gid, mode, recursive = false } = req.body;
 
     if (!itemPath) {
       return res.status(400).json({
@@ -1605,7 +1614,7 @@ export const changePermissions = async (req, res) => {
     // Get updated item info
     const itemInfo = await getItemInfo(itemPath);
 
-    res.json({
+    return res.json({
       success: true,
       message: `Permissions updated successfully for '${itemInfo.name}'`,
       item: itemInfo,
@@ -1635,7 +1644,7 @@ export const changePermissions = async (req, res) => {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to update permissions',
       details: error.message,
     });

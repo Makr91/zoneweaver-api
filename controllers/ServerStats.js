@@ -1,9 +1,6 @@
 import os from 'os';
 import util from 'util';
-import { spawn, exec, execSync } from 'child_process';
-import Zones from '../models/ZoneModel.js';
-import VncSessions from '../models/VncSessionModel.js';
-import Tasks from '../models/TaskModel.js';
+import { exec } from 'child_process';
 import { log } from '../lib/Logger.js';
 const execProm = util.promisify(exec);
 
@@ -67,7 +64,7 @@ export const serverStats = async (req, res) => {
 
     // Zone information with proper error handling
     try {
-      const allzones = execSync('zoneadm list -ic | grep -v global', { encoding: 'utf8' });
+      const { stdout: allzones } = await execProm('zoneadm list -ic | grep -v global');
       returnObject.allzones = allzones
         .trim()
         .split('\n')
@@ -81,7 +78,7 @@ export const serverStats = async (req, res) => {
     }
 
     try {
-      const runningzones = execSync('zoneadm list | grep -v global', { encoding: 'utf8' });
+      const { stdout: runningzones } = await execProm('zoneadm list | grep -v global');
       returnObject.runningzones = runningzones
         .trim()
         .split('\n')

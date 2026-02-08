@@ -7,7 +7,7 @@
 
 import { spawn } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocket } from 'ws';
 import { Op } from 'sequelize';
 import fs from 'fs/promises';
 import path from 'path';
@@ -22,316 +22,133 @@ import { log, createTimer } from '../lib/Logger.js';
 const activeSessions = new Map();
 
 /**
- * @swagger
- * /system/logs/{logname}/stream/start:
- *   post:
- *     summary: Start log stream session
- *     description: Creates a new log streaming session for WebSocket connection
- *     tags: [Log Streaming]
- *     parameters:
- *       - in: path
- *         name: logname
- *         required: true
- *         schema:
- *           type: string
- *         description: Log file name to stream
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               follow_lines:
- *                 type: integer
- *                 default: 50
- *                 description: Initial number of lines to show
- *               grep_pattern:
- *                 type: string
- *                 description: Filter pattern for log lines
- *     responses:
- *       200:
- *         description: Log stream session created
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 session_id:
- *                   type: string
- *                 websocket_url:
- *                   type: string
- *                 logname:
- *                   type: string
- *                 status:
- *                   type: string
- *       404:
- *         description: Log file not found
- *       400:
- *         description: Invalid parameters or security violation
- *       500:
- *         description: Failed to create stream session
+ * Helper function to format file size
+ * @param {number} bytes - File size in bytes
+ * @returns {string} Formatted file size
  */
-export const startLogStream = async (req, res) => {
-  try {
-    const { logname } = req.params;
-    const { follow_lines = 50, grep_pattern } = req.body || {};
-    const logsConfig = config.getSystemLogs();
-
-    if (!logsConfig?.enabled) {
-      return res.status(503).json({
-        error: 'System logs are disabled in configuration',
-      });
-    }
-
-    // Find the log file in allowed paths
-    const logPath = await findLogFile(logname, logsConfig.allowed_paths);
-    if (!logPath) {
-      return res.status(404).json({
-        error: `Log file '${logname}' not found in allowed directories`,
-      });
-    }
-
-    // Security validation
-    const securityCheck = await validateLogFileAccess(logPath, logsConfig);
-    if (!securityCheck.allowed) {
-      return res.status(400).json({
-        error: securityCheck.reason,
-      });
-    }
-
-    // Check if file is binary - refuse to stream binary files
-    const isBinary = await isBinaryFile(logPath);
-    if (isBinary) {
-      return res.status(400).json({
-        error: `Cannot stream log file '${logname}' - file contains binary data`,
-        details: 'Binary files are not supported for streaming',
-        logname,
-        suggestion: 'Use system tools like hexdump or strings for binary file analysis',
-      });
-    }
-
-    // Check concurrent session limit
-    if (activeSessions.size >= (logsConfig.max_concurrent_streams || 10)) {
-      return res.status(429).json({
-        error: 'Maximum concurrent log streams reached',
-      });
-    }
-
-    const sessionId = uuidv4();
-    const cookie = `logstream_${Date.now()}_${sessionId}`;
-
-    // Create session record
-    const sessionRecord = await LogStreamSession.create({
-      session_id: sessionId,
-      cookie,
-      logname,
-      log_path: logPath,
-      follow_lines,
-      grep_pattern: grep_pattern || null,
-      status: 'created',
-      created_at: new Date(),
-    });
-
-    const websocketUrl = `/logs/stream/${sessionId}`;
-
-    log.websocket.info('Log stream session created', {
-      session_id: sessionId,
-      logname,
-      log_path: logPath,
-      follow_lines,
-      grep_pattern,
-    });
-
-    res.json({
-      session_id: sessionId,
-      websocket_url: websocketUrl,
-      logname,
-      log_path: logPath,
-      follow_lines,
-      grep_pattern: grep_pattern || null,
-      status: 'created',
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    log.websocket.error('Error starting log stream', {
-      error: error.message,
-      logname: req.params.logname,
-    });
-    res.status(500).json({
-      error: 'Failed to start log stream',
-      details: error.message,
-    });
+const formatFileSize = bytes => {
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  if (bytes === 0) {
+    return '0 B';
   }
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / 1024 ** i).toFixed(2)} ${sizes[i]}`;
 };
 
 /**
- * @swagger
- * /system/logs/stream/sessions:
- *   get:
- *     summary: List active log stream sessions
- *     description: Returns list of currently active log streaming sessions
- *     tags: [Log Streaming]
- *     responses:
- *       200:
- *         description: Active log stream sessions
- *       500:
- *         description: Failed to list sessions
+ * Helper function to validate log file access
+ * @param {string} logPath - Full path to log file
+ * @param {Object} logsConfig - System logs configuration
+ * @returns {Object} Validation result
  */
-export const listLogStreamSessions = async (req, res) => {
+const validateLogFileAccess = async (logPath, logsConfig) => {
   try {
-    const sessions = await LogStreamSession.findAll({
-      where: { status: 'active' },
-      order: [['created_at', 'DESC']],
-    });
+    const stats = await fs.stat(logPath);
 
-    const activeSummary = Array.from(activeSessions.values()).map(session => ({
-      session_id: session.sessionId,
-      logname: session.logname,
-      connected_at: session.connectedAt,
-      lines_sent: session.linesSent,
-      client_ip: session.clientIP || null,
-    }));
-
-    res.json({
-      sessions,
-      active_sessions: activeSummary,
-      total_active: activeSessions.size,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    log.database.error('Error listing log stream sessions', {
-      error: error.message,
-    });
-    res.status(500).json({
-      error: 'Failed to list log stream sessions',
-      details: error.message,
-    });
-  }
-};
-
-/**
- * @swagger
- * /system/logs/stream/{sessionId}/stop:
- *   delete:
- *     summary: Stop log stream session
- *     description: Stops an active log streaming session
- *     tags: [Log Streaming]
- *     parameters:
- *       - in: path
- *         name: sessionId
- *         required: true
- *         schema:
- *           type: string
- *         description: Stream session ID
- *     responses:
- *       200:
- *         description: Stream session stopped
- *       404:
- *         description: Session not found
- *       500:
- *         description: Failed to stop session
- */
-export const stopLogStream = async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-
-    // Get session from database
-    const session = await LogStreamSession.findOne({
-      where: { session_id: sessionId },
-    });
-
-    if (!session) {
-      return res.status(404).json({
-        error: `Log stream session ${sessionId} not found`,
-      });
+    // Check file size limit (more generous for streaming)
+    const maxSizeBytes = logsConfig.security.max_file_size_mb * 2 * 1024 * 1024; // 2x limit for streaming
+    if (stats.size > maxSizeBytes) {
+      return {
+        allowed: false,
+        reason: `File too large for streaming: ${formatFileSize(stats.size)} exceeds limit`,
+      };
     }
 
-    // Stop active session if running
-    if (activeSessions.has(sessionId)) {
-      const activeSession = activeSessions.get(sessionId);
-      if (activeSession.tailProcess) {
-        activeSession.tailProcess.kill();
+    // Check forbidden patterns
+    const filename = path.basename(logPath);
+    for (const pattern of logsConfig.security.forbidden_patterns) {
+      const regex = new RegExp(pattern.replace('*', '.*'));
+      if (regex.test(filename) || regex.test(logPath)) {
+        return {
+          allowed: false,
+          reason: `File matches forbidden pattern: ${pattern}`,
+        };
       }
-      if (activeSession.ws && activeSession.ws.readyState === WebSocket.OPEN) {
-        activeSession.ws.close();
-      }
-      activeSessions.delete(sessionId);
     }
 
-    // Update database record
-    await session.update({
-      status: 'stopped',
-      stopped_at: new Date(),
-    });
-
-    log.websocket.info('Log stream session stopped', {
-      session_id: sessionId,
-    });
-
-    res.json({
-      success: true,
-      session_id: sessionId,
-      message: 'Log stream session stopped successfully',
-      timestamp: new Date().toISOString(),
-    });
+    return {
+      allowed: true,
+      fileSize: stats.size,
+      modified: stats.mtime,
+    };
   } catch (error) {
-    log.websocket.error('Error stopping log stream', {
-      error: error.message,
-      session_id: req.params.sessionId,
-    });
-    res.status(500).json({
-      error: 'Failed to stop log stream',
-      details: error.message,
-    });
+    return {
+      allowed: false,
+      reason: `Cannot access file: ${error.message}`,
+    };
   }
 };
 
 /**
- * Handle WebSocket upgrade for log streaming
- * @param {Object} request - HTTP request object
- * @param {Object} socket - Network socket
- * @param {Buffer} head - First packet of upgraded stream
- * @param {Object} wss - WebSocket server instance
+ * Helper function to detect if a file is binary
+ * @param {string} filePath - Full path to file
+ * @returns {Promise<boolean>} True if file appears to be binary
  */
-export const handleLogStreamUpgrade = async (request, socket, head, wss) => {
+const isBinaryFile = async filePath => {
   try {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    const pathParts = url.pathname.split('/');
+    // Read first 8KB of file to check for binary content
+    const fileHandle = await fs.open(filePath, 'r');
+    const buffer = Buffer.alloc(8192);
+    const { bytesRead } = await fileHandle.read(buffer, 0, 8192, 0);
+    await fileHandle.close();
 
-    if (pathParts.length !== 4 || pathParts[1] !== 'logs' || pathParts[2] !== 'stream') {
-      socket.destroy();
-      return;
+    if (bytesRead === 0) {
+      return false;
+    } // Empty file, treat as text
+
+    const sample = buffer.slice(0, bytesRead);
+
+    // Count null bytes - binary files typically have many null bytes
+    const nullBytes = sample.filter(byte => byte === 0).length;
+    const nullPercentage = nullBytes / bytesRead;
+
+    // Consider binary if >1% null bytes or high percentage of control characters
+    if (nullPercentage > 0.01) {
+      return true;
     }
 
-    const sessionId = pathParts[3];
+    // Check for excessive control characters (excluding common ones like \n, \r, \t)
+    const controlBytes = sample.filter(
+      byte =>
+        (byte >= 1 && byte <= 8) || // Control chars except \t
+        (byte >= 11 && byte <= 12) || // Control chars except \n
+        (byte >= 14 && byte <= 31) || // Control chars except \r
+        byte === 127 // DEL
+    ).length;
 
-    // Verify session exists in database
-    const sessionRecord = await LogStreamSession.findOne({
-      where: { session_id: sessionId },
-    });
+    const controlPercentage = controlBytes / bytesRead;
 
-    if (!sessionRecord) {
-      log.websocket.warn('Log stream session not found for WebSocket upgrade', {
-        session_id: sessionId,
-      });
-      socket.destroy();
-      return;
-    }
-
-    // Handle WebSocket upgrade
-    wss.handleUpgrade(request, socket, head, ws => {
-      log.websocket.debug('WebSocket upgrade request for log stream', {
-        session_id: sessionId,
-      });
-      handleLogStreamConnection(ws, sessionRecord);
-    });
+    // Consider binary if >5% control characters
+    return controlPercentage > 0.05;
   } catch (error) {
-    log.websocket.error('Error handling log stream upgrade', {
+    // If we can't read the file, assume it's binary to be safe
+    log.filesystem.warn('Cannot determine file type', {
+      file_path: filePath,
       error: error.message,
     });
-    socket.destroy();
+    return true;
   }
+};
+
+/**
+ * Helper function to find log file in allowed paths
+ * @param {string} logname - Log file name
+ * @param {string[]} allowedPaths - Allowed directory paths
+ * @returns {string|null} Full path to log file or null if not found
+ */
+const findLogFile = async (logname, allowedPaths) => {
+  const checks = await Promise.all(
+    allowedPaths.map(async dirPath => {
+      try {
+        const fullPath = path.join(dirPath, logname);
+        await fs.access(fullPath, fs.constants.R_OK);
+        return fullPath;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return checks.find(p => p !== null) || null;
 };
 
 /**
@@ -499,7 +316,7 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
     });
 
     // Handle incoming messages (for control commands)
-    ws.on('message', async data => {
+    ws.on('message', data => {
       try {
         const message = JSON.parse(data.toString());
 
@@ -554,6 +371,319 @@ const handleLogStreamConnection = async (ws, sessionRecord) => {
 };
 
 /**
+ * @swagger
+ * /system/logs/{logname}/stream/start:
+ *   post:
+ *     summary: Start log stream session
+ *     description: Creates a new log streaming session for WebSocket connection
+ *     tags: [Log Streaming]
+ *     parameters:
+ *       - in: path
+ *         name: logname
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Log file name to stream
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               follow_lines:
+ *                 type: integer
+ *                 default: 50
+ *                 description: Initial number of lines to show
+ *               grep_pattern:
+ *                 type: string
+ *                 description: Filter pattern for log lines
+ *     responses:
+ *       200:
+ *         description: Log stream session created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 session_id:
+ *                   type: string
+ *                 websocket_url:
+ *                   type: string
+ *                 logname:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *       404:
+ *         description: Log file not found
+ *       400:
+ *         description: Invalid parameters or security violation
+ *       500:
+ *         description: Failed to create stream session
+ */
+export const startLogStream = async (req, res) => {
+  try {
+    const { logname } = req.params;
+    const { follow_lines = 50, grep_pattern } = req.body || {};
+    const logsConfig = config.getSystemLogs();
+
+    if (!logsConfig?.enabled) {
+      return res.status(503).json({
+        error: 'System logs are disabled in configuration',
+      });
+    }
+
+    // Find the log file in allowed paths
+    const logPath = await findLogFile(logname, logsConfig.allowed_paths);
+    if (!logPath) {
+      return res.status(404).json({
+        error: `Log file '${logname}' not found in allowed directories`,
+      });
+    }
+
+    // Security validation
+    const securityCheck = await validateLogFileAccess(logPath, logsConfig);
+    if (!securityCheck.allowed) {
+      return res.status(400).json({
+        error: securityCheck.reason,
+      });
+    }
+
+    // Check if file is binary - refuse to stream binary files
+    const isBinary = await isBinaryFile(logPath);
+    if (isBinary) {
+      return res.status(400).json({
+        error: `Cannot stream log file '${logname}' - file contains binary data`,
+        details: 'Binary files are not supported for streaming',
+        logname,
+        suggestion: 'Use system tools like hexdump or strings for binary file analysis',
+      });
+    }
+
+    // Check concurrent session limit
+    if (activeSessions.size >= (logsConfig.max_concurrent_streams || 10)) {
+      return res.status(429).json({
+        error: 'Maximum concurrent log streams reached',
+      });
+    }
+
+    const sessionId = uuidv4();
+    const cookie = `logstream_${Date.now()}_${sessionId}`;
+
+    // Create session record
+    await LogStreamSession.create({
+      session_id: sessionId,
+      cookie,
+      logname,
+      log_path: logPath,
+      follow_lines,
+      grep_pattern: grep_pattern || null,
+      status: 'created',
+      created_at: new Date(),
+    });
+
+    const websocketUrl = `/logs/stream/${sessionId}`;
+
+    log.websocket.info('Log stream session created', {
+      session_id: sessionId,
+      logname,
+      log_path: logPath,
+      follow_lines,
+      grep_pattern,
+    });
+
+    return res.json({
+      session_id: sessionId,
+      websocket_url: websocketUrl,
+      logname,
+      log_path: logPath,
+      follow_lines,
+      grep_pattern: grep_pattern || null,
+      status: 'created',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.websocket.error('Error starting log stream', {
+      error: error.message,
+      logname: req.params.logname,
+    });
+    return res.status(500).json({
+      error: 'Failed to start log stream',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /system/logs/stream/sessions:
+ *   get:
+ *     summary: List active log stream sessions
+ *     description: Returns list of currently active log streaming sessions
+ *     tags: [Log Streaming]
+ *     responses:
+ *       200:
+ *         description: Active log stream sessions
+ *       500:
+ *         description: Failed to list sessions
+ */
+export const listLogStreamSessions = async (req, res) => {
+  try {
+    const sessions = await LogStreamSession.findAll({
+      where: { status: 'active' },
+      order: [['created_at', 'DESC']],
+    });
+
+    const activeSummary = Array.from(activeSessions.values()).map(session => ({
+      session_id: session.sessionId,
+      logname: session.logname,
+      connected_at: session.connectedAt,
+      lines_sent: session.linesSent,
+      client_ip: session.clientIP || null,
+    }));
+
+    return res.json({
+      sessions,
+      active_sessions: activeSummary,
+      total_active: activeSessions.size,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.database.error('Error listing log stream sessions', {
+      error: error.message,
+    });
+    return res.status(500).json({
+      error: 'Failed to list log stream sessions',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /system/logs/stream/{sessionId}/stop:
+ *   delete:
+ *     summary: Stop log stream session
+ *     description: Stops an active log streaming session
+ *     tags: [Log Streaming]
+ *     parameters:
+ *       - in: path
+ *         name: sessionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Stream session ID
+ *     responses:
+ *       200:
+ *         description: Stream session stopped
+ *       404:
+ *         description: Session not found
+ *       500:
+ *         description: Failed to stop session
+ */
+export const stopLogStream = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    // Get session from database
+    const session = await LogStreamSession.findOne({
+      where: { session_id: sessionId },
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        error: `Log stream session ${sessionId} not found`,
+      });
+    }
+
+    // Stop active session if running
+    if (activeSessions.has(sessionId)) {
+      const activeSession = activeSessions.get(sessionId);
+      if (activeSession.tailProcess) {
+        activeSession.tailProcess.kill();
+      }
+      if (activeSession.ws && activeSession.ws.readyState === WebSocket.OPEN) {
+        activeSession.ws.close();
+      }
+      activeSessions.delete(sessionId);
+    }
+
+    // Update database record
+    await session.update({
+      status: 'stopped',
+      stopped_at: new Date(),
+    });
+
+    log.websocket.info('Log stream session stopped', {
+      session_id: sessionId,
+    });
+
+    return res.json({
+      success: true,
+      session_id: sessionId,
+      message: 'Log stream session stopped successfully',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    log.websocket.error('Error stopping log stream', {
+      error: error.message,
+      session_id: req.params.sessionId,
+    });
+    return res.status(500).json({
+      error: 'Failed to stop log stream',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Handle WebSocket upgrade for log streaming
+ * @param {Object} request - HTTP request object
+ * @param {Object} socket - Network socket
+ * @param {Buffer} head - First packet of upgraded stream
+ * @param {Object} wss - WebSocket server instance
+ */
+export const handleLogStreamUpgrade = async (request, socket, head, wss) => {
+  try {
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    const pathParts = url.pathname.split('/');
+
+    if (pathParts.length !== 4 || pathParts[1] !== 'logs' || pathParts[2] !== 'stream') {
+      socket.destroy();
+      return;
+    }
+
+    const [, , , sessionId] = pathParts;
+
+    // Verify session exists in database
+    const sessionRecord = await LogStreamSession.findOne({
+      where: { session_id: sessionId },
+    });
+
+    if (!sessionRecord) {
+      log.websocket.warn('Log stream session not found for WebSocket upgrade', {
+        session_id: sessionId,
+      });
+      socket.destroy();
+      return;
+    }
+
+    // Handle WebSocket upgrade
+    wss.handleUpgrade(request, socket, head, ws => {
+      log.websocket.debug('WebSocket upgrade request for log stream', {
+        session_id: sessionId,
+      });
+      handleLogStreamConnection(ws, sessionRecord);
+    });
+  } catch (error) {
+    log.websocket.error('Error handling log stream upgrade', {
+      error: error.message,
+    });
+    socket.destroy();
+  }
+};
+
+/**
  * Get log stream session info
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -575,7 +705,7 @@ export const getLogStreamInfo = async (req, res) => {
     const activeSession = activeSessions.get(sessionId);
     const isActive = !!activeSession;
 
-    res.json({
+    return res.json({
       session_id: sessionId,
       logname: session.logname,
       log_path: session.log_path,
@@ -595,140 +725,12 @@ export const getLogStreamInfo = async (req, res) => {
       error: error.message,
       session_id: req.params.sessionId,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get log stream info',
       details: error.message,
     });
   }
 };
-
-/**
- * Helper function to find log file in allowed paths
- * @param {string} logname - Log file name
- * @param {string[]} allowedPaths - Allowed directory paths
- * @returns {string|null} Full path to log file or null if not found
- */
-async function findLogFile(logname, allowedPaths) {
-  for (const dirPath of allowedPaths) {
-    try {
-      const fullPath = path.join(dirPath, logname);
-      await fs.access(fullPath, fs.constants.R_OK);
-      return fullPath;
-    } catch (error) {
-      // File not found in this directory, continue searching
-    }
-  }
-  return null;
-}
-
-/**
- * Helper function to validate log file access
- * @param {string} logPath - Full path to log file
- * @param {Object} logsConfig - System logs configuration
- * @returns {Object} Validation result
- */
-async function validateLogFileAccess(logPath, logsConfig) {
-  try {
-    const stats = await fs.stat(logPath);
-
-    // Check file size limit (more generous for streaming)
-    const maxSizeBytes = logsConfig.security.max_file_size_mb * 2 * 1024 * 1024; // 2x limit for streaming
-    if (stats.size > maxSizeBytes) {
-      return {
-        allowed: false,
-        reason: `File too large for streaming: ${formatFileSize(stats.size)} exceeds limit`,
-      };
-    }
-
-    // Check forbidden patterns
-    const filename = path.basename(logPath);
-    for (const pattern of logsConfig.security.forbidden_patterns) {
-      const regex = new RegExp(pattern.replace('*', '.*'));
-      if (regex.test(filename) || regex.test(logPath)) {
-        return {
-          allowed: false,
-          reason: `File matches forbidden pattern: ${pattern}`,
-        };
-      }
-    }
-
-    return {
-      allowed: true,
-      fileSize: stats.size,
-      modified: stats.mtime,
-    };
-  } catch (error) {
-    return {
-      allowed: false,
-      reason: `Cannot access file: ${error.message}`,
-    };
-  }
-}
-
-/**
- * Helper function to detect if a file is binary
- * @param {string} filePath - Full path to file
- * @returns {Promise<boolean>} True if file appears to be binary
- */
-async function isBinaryFile(filePath) {
-  try {
-    // Read first 8KB of file to check for binary content
-    const fileHandle = await fs.open(filePath, 'r');
-    const buffer = Buffer.alloc(8192);
-    const { bytesRead } = await fileHandle.read(buffer, 0, 8192, 0);
-    await fileHandle.close();
-
-    if (bytesRead === 0) {
-      return false;
-    } // Empty file, treat as text
-
-    const sample = buffer.slice(0, bytesRead);
-
-    // Count null bytes - binary files typically have many null bytes
-    const nullBytes = sample.filter(byte => byte === 0).length;
-    const nullPercentage = nullBytes / bytesRead;
-
-    // Consider binary if >1% null bytes or high percentage of control characters
-    if (nullPercentage > 0.01) {
-      return true;
-    }
-
-    // Check for excessive control characters (excluding common ones like \n, \r, \t)
-    const controlBytes = sample.filter(
-      byte =>
-        (byte >= 1 && byte <= 8) || // Control chars except \t
-        (byte >= 11 && byte <= 12) || // Control chars except \n
-        (byte >= 14 && byte <= 31) || // Control chars except \r
-        byte === 127 // DEL
-    ).length;
-
-    const controlPercentage = controlBytes / bytesRead;
-
-    // Consider binary if >5% control characters
-    return controlPercentage > 0.05;
-  } catch (error) {
-    // If we can't read the file, assume it's binary to be safe
-    log.filesystem.warn('Cannot determine file type', {
-      file_path: filePath,
-      error: error.message,
-    });
-    return true;
-  }
-}
-
-/**
- * Helper function to format file size
- * @param {number} bytes - File size in bytes
- * @returns {string} Formatted file size
- */
-function formatFileSize(bytes) {
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  if (bytes === 0) {
-    return '0 B';
-  }
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / 1024 ** i).toFixed(2)} ${sizes[i]}`;
-}
 
 /**
  * Cleanup orphaned sessions

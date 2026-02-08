@@ -8,7 +8,6 @@
 import { spawn } from 'child_process';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import yj from 'yieldable-json';
-import os from 'os';
 import { log } from '../lib/Logger.js';
 
 /**
@@ -17,7 +16,7 @@ import { log } from '../lib/Logger.js';
  * @param {number} timeout - Timeout in milliseconds
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (command, timeout = 30000) =>
+const executeCommand = (command, timeout = 30000) =>
   new Promise(resolve => {
     const child = spawn('sh', ['-c', command], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -300,7 +299,7 @@ export const listBootEnvironments = async (req, res) => {
     // Find active BE
     const activeBE = bootEnvironments.find(be => be.is_active_now);
 
-    res.json({
+    return res.json({
       boot_environments: bootEnvironments,
       total: bootEnvironments.length,
       active_be: activeBE ? activeBE.name : null,
@@ -312,11 +311,11 @@ export const listBootEnvironments = async (req, res) => {
     log.api.error('Error listing boot environments', {
       error: error.message,
       stack: error.stack,
-      detailed,
-      snapshots,
-      name,
+      detailed: req.query.detailed,
+      snapshots: req.query.snapshots,
+      name: req.query.name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to list boot environments',
       details: error.message,
     });
@@ -443,7 +442,7 @@ export const createBootEnvironment = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Boot environment creation task created for '${name}'`,
       task_id: task.id,
@@ -454,11 +453,11 @@ export const createBootEnvironment = async (req, res) => {
     log.api.error('Error creating boot environment task', {
       error: error.message,
       stack: error.stack,
-      name,
-      activate,
-      created_by,
+      name: req.body?.name,
+      activate: req.body?.activate,
+      created_by: req.body?.created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create boot environment task',
       details: error.message,
     });
@@ -550,7 +549,7 @@ export const deleteBootEnvironment = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Boot environment deletion task created for '${name}'`,
       task_id: task.id,
@@ -562,12 +561,12 @@ export const deleteBootEnvironment = async (req, res) => {
     log.api.error('Error creating boot environment deletion task', {
       error: error.message,
       stack: error.stack,
-      name,
-      force,
-      snapshots,
-      created_by,
+      name: req.params.name,
+      force: req.query.force,
+      snapshots: req.query.snapshots,
+      created_by: req.query.created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create boot environment deletion task',
       details: error.message,
     });
@@ -661,7 +660,7 @@ export const activateBootEnvironment = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Boot environment activation task created for '${name}'${temporary ? ' (temporary)' : ''}`,
       task_id: task.id,
@@ -672,11 +671,11 @@ export const activateBootEnvironment = async (req, res) => {
     log.api.error('Error creating boot environment activation task', {
       error: error.message,
       stack: error.stack,
-      name,
-      temporary,
-      created_by,
+      name: req.params.name,
+      temporary: req.body?.temporary,
+      created_by: req.body?.created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create boot environment activation task',
       details: error.message,
     });
@@ -769,7 +768,7 @@ export const mountBootEnvironment = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Boot environment mount task created for '${name}' at '${mountpoint}'`,
       task_id: task.id,
@@ -780,12 +779,12 @@ export const mountBootEnvironment = async (req, res) => {
     log.api.error('Error creating boot environment mount task', {
       error: error.message,
       stack: error.stack,
-      name,
-      mountpoint,
-      shared_mode,
-      created_by,
+      name: req.params.name,
+      mountpoint: req.body?.mountpoint,
+      shared_mode: req.body?.shared_mode,
+      created_by: req.body?.created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create boot environment mount task',
       details: error.message,
     });
@@ -866,7 +865,7 @@ export const unmountBootEnvironment = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Boot environment unmount task created for '${name}'`,
       task_id: task.id,
@@ -877,11 +876,11 @@ export const unmountBootEnvironment = async (req, res) => {
     log.api.error('Error creating boot environment unmount task', {
       error: error.message,
       stack: error.stack,
-      name,
-      force,
-      created_by,
+      name: req.params.name,
+      force: req.body?.force,
+      created_by: req.body?.created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create boot environment unmount task',
       details: error.message,
     });

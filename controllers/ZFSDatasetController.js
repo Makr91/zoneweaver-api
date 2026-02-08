@@ -5,18 +5,21 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
+import util from 'util';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import yj from 'yieldable-json';
 import { log } from '../lib/Logger.js';
 
+const execPromise = util.promisify(exec);
+
 const executeCommand = async command => {
   try {
-    const output = execSync(command, {
+    const { stdout } = await execPromise(command, {
       encoding: 'utf8',
       timeout: 30000,
     });
-    return { success: true, output: output.trim() };
+    return { success: true, output: stdout.trim() };
   } catch (error) {
     return {
       success: false,
@@ -27,9 +30,9 @@ const executeCommand = async command => {
 };
 
 export const listDatasets = async (req, res) => {
-  try {
-    const { pool, type, recursive = false } = req.query;
+  const { pool, type, recursive = false } = req.query;
 
+  try {
     let command = 'pfexec zfs list -H -p -o name,type,used,avail,refer,mountpoint';
 
     if (recursive === 'true' || recursive === true) {
@@ -68,7 +71,7 @@ export const listDatasets = async (req, res) => {
         };
       });
 
-    res.json({
+    return res.json({
       datasets,
       total: datasets.length,
     });
@@ -77,7 +80,7 @@ export const listDatasets = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to list datasets',
       details: error.message,
     });
@@ -85,9 +88,9 @@ export const listDatasets = async (req, res) => {
 };
 
 export const getDatasetDetails = async (req, res) => {
-  try {
-    const { name } = req.params;
+  const { name } = req.params;
 
+  try {
     if (!name) {
       return res.status(400).json({ error: 'Dataset name is required' });
     }
@@ -110,7 +113,7 @@ export const getDatasetDetails = async (req, res) => {
       }
     });
 
-    res.json({
+    return res.json({
       name,
       properties,
     });
@@ -120,7 +123,7 @@ export const getDatasetDetails = async (req, res) => {
       stack: error.stack,
       dataset: name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get dataset details',
       details: error.message,
     });
@@ -128,9 +131,9 @@ export const getDatasetDetails = async (req, res) => {
 };
 
 export const createDataset = async (req, res) => {
-  try {
-    const { name, type = 'filesystem', properties = {}, created_by = 'api' } = req.body;
+  const { name, type = 'filesystem', properties = {}, created_by = 'api' } = req.body;
 
+  try {
     if (!name) {
       return res.status(400).json({ error: 'Dataset name is required' });
     }
@@ -156,18 +159,18 @@ export const createDataset = async (req, res) => {
             type,
             properties,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Dataset creation task created for ${name}`,
       task_id: task.id,
@@ -180,7 +183,7 @@ export const createDataset = async (req, res) => {
       stack: error.stack,
       name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create dataset task',
       details: error.message,
     });
@@ -188,10 +191,10 @@ export const createDataset = async (req, res) => {
 };
 
 export const destroyDataset = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const { recursive = false, force = false, created_by = 'api' } = req.body;
+  const { name } = req.params;
+  const { recursive = false, force = false, created_by = 'api' } = req.body;
 
+  try {
     if (!name) {
       return res.status(400).json({ error: 'Dataset name is required' });
     }
@@ -217,18 +220,18 @@ export const destroyDataset = async (req, res) => {
             recursive: recursive === 'true' || recursive === true,
             force: force === 'true' || force === true,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Dataset destruction task created for ${name}`,
       task_id: task.id,
@@ -242,7 +245,7 @@ export const destroyDataset = async (req, res) => {
       stack: error.stack,
       name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create dataset destruction task',
       details: error.message,
     });
@@ -250,10 +253,10 @@ export const destroyDataset = async (req, res) => {
 };
 
 export const setDatasetProperties = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const { properties, created_by = 'api' } = req.body;
+  const { name } = req.params;
+  const { properties, created_by = 'api' } = req.body;
 
+  try {
     if (!name) {
       return res.status(400).json({ error: 'Dataset name is required' });
     }
@@ -282,18 +285,18 @@ export const setDatasetProperties = async (req, res) => {
             name,
             properties,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Property update task created for ${name}`,
       task_id: task.id,
@@ -306,7 +309,7 @@ export const setDatasetProperties = async (req, res) => {
       stack: error.stack,
       name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create property update task',
       details: error.message,
     });
@@ -314,10 +317,10 @@ export const setDatasetProperties = async (req, res) => {
 };
 
 export const cloneDataset = async (req, res) => {
-  try {
-    const { snapshot } = req.params;
-    const { target, properties = {}, created_by = 'api' } = req.body;
+  const { snapshot } = req.params;
+  const { target, properties = {}, created_by = 'api' } = req.body;
 
+  try {
     if (!snapshot) {
       return res.status(400).json({ error: 'Snapshot name is required' });
     }
@@ -351,18 +354,18 @@ export const cloneDataset = async (req, res) => {
             target,
             properties,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Clone task created from ${snapshot} to ${target}`,
       task_id: task.id,
@@ -376,7 +379,7 @@ export const cloneDataset = async (req, res) => {
       snapshot,
       target,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create clone task',
       details: error.message,
     });
@@ -384,10 +387,10 @@ export const cloneDataset = async (req, res) => {
 };
 
 export const promoteDataset = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const { created_by = 'api' } = req.body;
+  const { name } = req.params;
+  const { created_by = 'api' } = req.body;
 
+  try {
     if (!name) {
       return res.status(400).json({ error: 'Dataset name is required' });
     }
@@ -411,18 +414,18 @@ export const promoteDataset = async (req, res) => {
           {
             name,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Promote task created for ${name}`,
       task_id: task.id,
@@ -434,7 +437,7 @@ export const promoteDataset = async (req, res) => {
       stack: error.stack,
       name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create promote task',
       details: error.message,
     });
@@ -442,10 +445,10 @@ export const promoteDataset = async (req, res) => {
 };
 
 export const renameDataset = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const { new_name, recursive = false, force = false, created_by = 'api' } = req.body;
+  const { name } = req.params;
+  const { new_name, recursive = false, force = false, created_by = 'api' } = req.body;
 
+  try {
     if (!name) {
       return res.status(400).json({ error: 'Dataset name is required' });
     }
@@ -476,18 +479,18 @@ export const renameDataset = async (req, res) => {
             recursive: recursive === 'true' || recursive === true,
             force: force === 'true' || force === true,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Rename task created from ${name} to ${new_name}`,
       task_id: task.id,
@@ -501,7 +504,7 @@ export const renameDataset = async (req, res) => {
       name,
       new_name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create rename task',
       details: error.message,
     });
@@ -509,10 +512,10 @@ export const renameDataset = async (req, res) => {
 };
 
 export const createSnapshot = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const { snapshot_name, recursive = false, properties = {}, created_by = 'api' } = req.body;
+  const { name } = req.params;
+  const { snapshot_name, recursive = false, properties = {}, created_by = 'api' } = req.body;
 
+  try {
     if (!name) {
       return res.status(400).json({ error: 'Dataset name is required' });
     }
@@ -544,18 +547,18 @@ export const createSnapshot = async (req, res) => {
             recursive: recursive === 'true' || recursive === true,
             properties,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Snapshot creation task created for ${fullSnapshotName}`,
       task_id: task.id,
@@ -568,7 +571,7 @@ export const createSnapshot = async (req, res) => {
       name,
       snapshot_name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create snapshot task',
       details: error.message,
     });
@@ -576,10 +579,10 @@ export const createSnapshot = async (req, res) => {
 };
 
 export const destroySnapshot = async (req, res) => {
-  try {
-    const { snapshot } = req.params;
-    const { recursive = false, defer = false, created_by = 'api' } = req.body;
+  const { snapshot } = req.params;
+  const { recursive = false, defer = false, created_by = 'api' } = req.body;
 
+  try {
     if (!snapshot) {
       return res.status(400).json({ error: 'Snapshot name is required' });
     }
@@ -609,18 +612,18 @@ export const destroySnapshot = async (req, res) => {
             recursive: recursive === 'true' || recursive === true,
             defer: defer === 'true' || defer === true,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Snapshot destruction task created for ${snapshot}`,
       task_id: task.id,
@@ -632,7 +635,7 @@ export const destroySnapshot = async (req, res) => {
       stack: error.stack,
       snapshot,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create snapshot destruction task',
       details: error.message,
     });
@@ -640,10 +643,10 @@ export const destroySnapshot = async (req, res) => {
 };
 
 export const rollbackSnapshot = async (req, res) => {
-  try {
-    const { snapshot } = req.params;
-    const { recursive = false, force = false, created_by = 'api' } = req.body;
+  const { snapshot } = req.params;
+  const { recursive = false, force = false, created_by = 'api' } = req.body;
 
+  try {
     if (!snapshot) {
       return res.status(400).json({ error: 'Snapshot name is required' });
     }
@@ -673,18 +676,18 @@ export const rollbackSnapshot = async (req, res) => {
             recursive: recursive === 'true' || recursive === true,
             force: force === 'true' || force === true,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Rollback task created for ${snapshot}`,
       task_id: task.id,
@@ -696,7 +699,7 @@ export const rollbackSnapshot = async (req, res) => {
       stack: error.stack,
       snapshot,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create rollback task',
       details: error.message,
     });
@@ -704,10 +707,10 @@ export const rollbackSnapshot = async (req, res) => {
 };
 
 export const holdSnapshot = async (req, res) => {
-  try {
-    const { snapshot } = req.params;
-    const { tag, recursive = false, created_by = 'api' } = req.body;
+  const { snapshot } = req.params;
+  const { tag, recursive = false, created_by = 'api' } = req.body;
 
+  try {
     if (!snapshot) {
       return res.status(400).json({ error: 'Snapshot name is required' });
     }
@@ -741,18 +744,18 @@ export const holdSnapshot = async (req, res) => {
             tag,
             recursive: recursive === 'true' || recursive === true,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Hold task created for ${snapshot} with tag ${tag}`,
       task_id: task.id,
@@ -766,7 +769,7 @@ export const holdSnapshot = async (req, res) => {
       snapshot,
       tag,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create hold task',
       details: error.message,
     });
@@ -774,10 +777,10 @@ export const holdSnapshot = async (req, res) => {
 };
 
 export const releaseSnapshot = async (req, res) => {
-  try {
-    const { snapshot, tag } = req.params;
-    const { recursive = false, created_by = 'api' } = req.body;
+  const { snapshot, tag } = req.params;
+  const { recursive = false, created_by = 'api' } = req.body;
 
+  try {
     if (!snapshot) {
       return res.status(400).json({ error: 'Snapshot name is required' });
     }
@@ -811,18 +814,18 @@ export const releaseSnapshot = async (req, res) => {
             tag,
             recursive: recursive === 'true' || recursive === true,
           },
-          (err, result) => {
+          (err, jsonResult) => {
             if (err) {
               reject(err);
             } else {
-              resolve(result);
+              resolve(jsonResult);
             }
           }
         );
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Release task created for ${snapshot} tag ${tag}`,
       task_id: task.id,
@@ -836,7 +839,7 @@ export const releaseSnapshot = async (req, res) => {
       snapshot,
       tag,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create release task',
       details: error.message,
     });
@@ -844,10 +847,10 @@ export const releaseSnapshot = async (req, res) => {
 };
 
 export const listHolds = async (req, res) => {
-  try {
-    const { snapshot } = req.params;
-    const { recursive = false } = req.query;
+  const { snapshot } = req.params;
+  const { recursive = false } = req.query;
 
+  try {
     if (!snapshot) {
       return res.status(400).json({ error: 'Snapshot name is required' });
     }
@@ -881,7 +884,7 @@ export const listHolds = async (req, res) => {
         return { name, tag, timestamp };
       });
 
-    res.json({
+    return res.json({
       snapshot,
       holds,
       total: holds.length,
@@ -892,7 +895,7 @@ export const listHolds = async (req, res) => {
       stack: error.stack,
       snapshot,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to list snapshot holds',
       details: error.message,
     });

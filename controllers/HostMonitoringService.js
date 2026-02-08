@@ -13,18 +13,6 @@ import SystemMetricsCollector from './SystemMetricsCollector.js';
 import { cleanupOldTasks } from './TaskQueue.js';
 import CleanupService from './CleanupService.js';
 import HostInfo from '../models/HostInfoModel.js';
-import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
-import NetworkUsage from '../models/NetworkUsageModel.js';
-import IPAddresses from '../models/IPAddressModel.js';
-import Routes from '../models/RoutingTableModel.js';
-import ZFSPools from '../models/ZFSPoolModel.js';
-import ZFSDatasets from '../models/ZFSDatasetModel.js';
-import Disks from '../models/DiskModel.js';
-import VncSessions from '../models/VncSessionModel.js';
-import Entities from '../models/EntityModel.js';
-import Hosts from '../models/HostModel.js';
-import Tasks from '../models/TaskModel.js';
-import Zones from '../models/ZoneModel.js';
 import db from '../config/Database.js';
 import DatabaseMigrations from '../config/DatabaseMigrations.js';
 import { getRebootStatus, checkAndClearAfterReboot } from '../lib/RebootManager.js';
@@ -485,8 +473,10 @@ class HostMonitoringService {
    */
   async restart() {
     this.stop();
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-    return await this.start();
+    await new Promise(resolve => {
+      setTimeout(resolve, 1000);
+    }); // Wait 1 second
+    return this.start();
   }
 
   /**
@@ -686,7 +676,7 @@ const hostMonitoringService = new HostMonitoringService();
  * Start host monitoring service
  * @description Exported function to start the service
  */
-export const startHostMonitoring = async () => await hostMonitoringService.start();
+export const startHostMonitoring = () => hostMonitoringService.start();
 
 /**
  * Stop host monitoring service

@@ -8,7 +8,6 @@
 import { spawn } from 'child_process';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import yj from 'yieldable-json';
-import os from 'os';
 import { log } from '../lib/Logger.js';
 
 /**
@@ -17,7 +16,7 @@ import { log } from '../lib/Logger.js';
  * @param {number} timeout - Timeout in milliseconds
  * @returns {Promise<{success: boolean, output?: string, error?: string}>}
  */
-const executeCommand = async (command, timeout = 30000) =>
+const executeCommand = (command, timeout = 30000) =>
   new Promise(resolve => {
     const child = spawn('sh', ['-c', command], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -100,15 +99,18 @@ const parsePublisherOutput = output => {
     if (line) {
       // Format: PUBLISHER TYPE STATUS P LOCATION
       // Use regex to properly handle whitespace and capture groups
-      const match = line.match(/^(\S+)\s+(\S+(?:\s+\S+)*?)\s+(online|offline)\s+([FT-])\s+(.+)$/i);
+      const match = line.match(
+        /^(?<name>\S+)\s+(?<type>\S+(?:\s+\S+)*?)\s+(?<status>online|offline)\s+(?<proxy>[FT-])\s+(?<location>.+)$/i
+      );
 
       if (match) {
+        const { name, type, status, proxy, location } = match.groups;
         publishers.push({
-          name: match[1],
-          type: match[2],
-          status: match[3],
-          proxy: match[4],
-          location: match[5],
+          name,
+          type,
+          status,
+          proxy,
+          location,
         });
       } else {
         // Fallback to original parsing if regex doesn't match
@@ -220,9 +222,9 @@ const parsePublisherTsvOutput = output => {
  *         description: Failed to list repositories
  */
 export const listRepositories = async (req, res) => {
-  try {
-    const { format = 'default', enabled_only = false, publisher } = req.query;
+  const { format = 'default', enabled_only = false, publisher } = req.query;
 
+  try {
     let command = 'pfexec pkg publisher';
 
     if (enabled_only === 'true' || enabled_only === true) {
@@ -253,7 +255,7 @@ export const listRepositories = async (req, res) => {
       publishers = parsePublisherOutput(result.output);
     }
 
-    res.json({
+    return res.json({
       publishers,
       total: publishers.length,
       format,
@@ -268,7 +270,7 @@ export const listRepositories = async (req, res) => {
       enabled_only,
       publisher,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to list repositories',
       details: error.message,
     });
@@ -363,23 +365,23 @@ export const listRepositories = async (req, res) => {
  *         description: Failed to create repository addition task
  */
 export const addRepository = async (req, res) => {
-  try {
-    const {
-      name,
-      origin,
-      mirrors = [],
-      ssl_cert,
-      ssl_key,
-      enabled = true,
-      sticky = true,
-      search_first = false,
-      search_before,
-      search_after,
-      properties = {},
-      proxy,
-      created_by = 'api',
-    } = req.body;
+  const {
+    name,
+    origin,
+    mirrors = [],
+    ssl_cert,
+    ssl_key,
+    enabled = true,
+    sticky = true,
+    search_first = false,
+    search_before,
+    search_after,
+    properties = {},
+    proxy,
+    created_by = 'api',
+  } = req.body;
 
+  try {
     if (!name) {
       return res.status(400).json({
         error: 'Publisher name is required',
@@ -433,7 +435,7 @@ export const addRepository = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Repository addition task created for publisher '${name}'`,
       task_id: task.id,
@@ -448,7 +450,7 @@ export const addRepository = async (req, res) => {
       origin,
       created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create repository addition task',
       details: error.message,
     });
@@ -493,10 +495,10 @@ export const addRepository = async (req, res) => {
  *         description: Failed to create removal task
  */
 export const removeRepository = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const { created_by = 'api' } = req.query;
+  const { name } = req.params;
+  const { created_by = 'api' } = req.query;
 
+  try {
     if (!name) {
       return res.status(400).json({
         error: 'Publisher name is required',
@@ -526,7 +528,7 @@ export const removeRepository = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Repository removal task created for publisher '${name}'`,
       task_id: task.id,
@@ -539,7 +541,7 @@ export const removeRepository = async (req, res) => {
       name,
       created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create repository removal task',
       details: error.message,
     });
@@ -642,28 +644,28 @@ export const removeRepository = async (req, res) => {
  *         description: Failed to create modification task
  */
 export const modifyRepository = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const {
-      origins_to_add = [],
-      origins_to_remove = [],
-      mirrors_to_add = [],
-      mirrors_to_remove = [],
-      ssl_cert,
-      ssl_key,
-      enabled,
-      sticky,
-      search_first,
-      search_before,
-      search_after,
-      properties_to_set = {},
-      properties_to_unset = [],
-      proxy,
-      reset_uuid = false,
-      refresh = false,
-      created_by = 'api',
-    } = req.body;
+  const { name } = req.params;
+  const {
+    origins_to_add = [],
+    origins_to_remove = [],
+    mirrors_to_add = [],
+    mirrors_to_remove = [],
+    ssl_cert,
+    ssl_key,
+    enabled,
+    sticky,
+    search_first,
+    search_before,
+    search_after,
+    properties_to_set = {},
+    properties_to_unset = [],
+    proxy,
+    reset_uuid = false,
+    refresh = false,
+    created_by = 'api',
+  } = req.body;
 
+  try {
     if (!name) {
       return res.status(400).json({
         error: 'Publisher name is required',
@@ -709,7 +711,7 @@ export const modifyRepository = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Repository modification task created for publisher '${name}'`,
       task_id: task.id,
@@ -722,7 +724,7 @@ export const modifyRepository = async (req, res) => {
       name,
       created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create repository modification task',
       details: error.message,
     });
@@ -765,10 +767,10 @@ export const modifyRepository = async (req, res) => {
  *         description: Failed to create enable task
  */
 export const enableRepository = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const { created_by = 'api' } = req.body || {};
+  const { name } = req.params;
+  const { created_by = 'api' } = req.body || {};
 
+  try {
     if (!name) {
       return res.status(400).json({
         error: 'Publisher name is required',
@@ -798,7 +800,7 @@ export const enableRepository = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Repository enable task created for publisher '${name}'`,
       task_id: task.id,
@@ -811,7 +813,7 @@ export const enableRepository = async (req, res) => {
       name,
       created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create repository enable task',
       details: error.message,
     });
@@ -854,10 +856,10 @@ export const enableRepository = async (req, res) => {
  *         description: Failed to create disable task
  */
 export const disableRepository = async (req, res) => {
-  try {
-    const { name } = req.params;
-    const { created_by = 'api' } = req.body || {};
+  const { name } = req.params;
+  const { created_by = 'api' } = req.body || {};
 
+  try {
     if (!name) {
       return res.status(400).json({
         error: 'Publisher name is required',
@@ -887,7 +889,7 @@ export const disableRepository = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Repository disable task created for publisher '${name}'`,
       task_id: task.id,
@@ -900,7 +902,7 @@ export const disableRepository = async (req, res) => {
       name,
       created_by,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create repository disable task',
       details: error.message,
     });

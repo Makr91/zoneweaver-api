@@ -156,7 +156,7 @@ export const getFallbackSampledData = async (interfaces, since, samplesPerInterf
 
       if (totalCount <= samplesPerInterface) {
         // Return all records if we have fewer than requested samples
-        return await NetworkUsage.findAll({
+        return NetworkUsage.findAll({
           where: {
             link: interfaceName,
             scan_timestamp: { [Op.gte]: new Date(since) },

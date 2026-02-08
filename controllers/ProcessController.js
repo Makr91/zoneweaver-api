@@ -125,13 +125,13 @@ export const listProcesses = async (req, res) => {
     };
 
     const processes = await getProcesses(options);
-    res.json(processes);
+    return res.json(processes);
   } catch (error) {
     log.api.error('Error listing processes', {
       error: error.message,
       query_params: req.query,
     });
-    res.status(500).json({ error: 'Failed to retrieve processes' });
+    return res.status(500).json({ error: 'Failed to retrieve processes' });
   }
 };
 
@@ -188,17 +188,16 @@ export const getProcessDetailsController = async (req, res) => {
     }
 
     const processInfo = await getProcessDetails(pid);
-    res.json(processInfo);
+    return res.json(processInfo);
   } catch (error) {
     log.api.error('Error getting process details', {
       error: error.message,
       pid: req.params.pid,
     });
     if (error.message.includes('not found')) {
-      res.status(404).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: 'Failed to retrieve process details' });
+      return res.status(404).json({ error: error.message });
     }
+    return res.status(500).json({ error: 'Failed to retrieve process details' });
   }
 };
 
@@ -248,22 +247,21 @@ export const sendSignalToProcess = async (req, res) => {
     const result = await signalProcess(pid, signal);
 
     if (result.success) {
-      res.json({
+      return res.json({
         success: true,
         message: result.message,
         pid,
         signal,
       });
-    } else {
-      res.status(500).json({ error: result.error });
     }
+    return res.status(500).json({ error: result.error });
   } catch (error) {
     log.api.error('Error sending signal to process', {
       error: error.message,
       pid: req.params.pid,
       signal: req.body.signal,
     });
-    res.status(500).json({ error: 'Failed to send signal to process' });
+    return res.status(500).json({ error: 'Failed to send signal to process' });
   }
 };
 
@@ -311,22 +309,21 @@ export const killProcessController = async (req, res) => {
     const result = await killProcess(pid, force);
 
     if (result.success) {
-      res.json({
+      return res.json({
         success: true,
         message: result.message,
         pid,
         method: force ? 'SIGKILL' : 'SIGTERM',
       });
-    } else {
-      res.status(500).json({ error: result.error });
     }
+    return res.status(500).json({ error: result.error });
   } catch (error) {
     log.api.error('Error killing process', {
       error: error.message,
       pid: req.params.pid,
       force: req.body.force,
     });
-    res.status(500).json({ error: 'Failed to kill process' });
+    return res.status(500).json({ error: 'Failed to kill process' });
   }
 };
 
@@ -377,17 +374,16 @@ export const getProcessFilesController = async (req, res) => {
     }
 
     const files = await getProcessFiles(pid);
-    res.json(files);
+    return res.json(files);
   } catch (error) {
     log.api.error('Error getting process files', {
       error: error.message,
       pid: req.params.pid,
     });
     if (error.message.includes('not found')) {
-      res.status(404).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: 'Failed to retrieve process files' });
+      return res.status(404).json({ error: error.message });
     }
+    return res.status(500).json({ error: 'Failed to retrieve process files' });
   }
 };
 
@@ -426,17 +422,16 @@ export const getProcessStackController = async (req, res) => {
     }
 
     const stackTrace = await getProcessStack(pid);
-    res.type('text/plain').send(stackTrace);
+    return res.type('text/plain').send(stackTrace);
   } catch (error) {
     log.api.error('Error getting process stack', {
       error: error.message,
       pid: req.params.pid,
     });
     if (error.message.includes('not found')) {
-      res.status(404).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: 'Failed to retrieve stack trace' });
+      return res.status(404).json({ error: error.message });
     }
+    return res.status(500).json({ error: 'Failed to retrieve stack trace' });
   }
 };
 
@@ -477,17 +472,16 @@ export const getProcessLimitsController = async (req, res) => {
     }
 
     const limits = await getProcessLimits(pid);
-    res.json(limits);
+    return res.json(limits);
   } catch (error) {
     log.api.error('Error getting process limits', {
       error: error.message,
       pid: req.params.pid,
     });
     if (error.message.includes('not found')) {
-      res.status(404).json({ error: error.message });
-    } else {
-      res.status(500).json({ error: 'Failed to retrieve process limits' });
+      return res.status(404).json({ error: error.message });
     }
+    return res.status(500).json({ error: 'Failed to retrieve process limits' });
   }
 };
 
@@ -554,7 +548,7 @@ export const findProcessesController = async (req, res) => {
     }
 
     const pids = await findProcesses(pattern, options);
-    res.json({
+    return res.json({
       pattern,
       pids,
       count: pids.length,
@@ -565,7 +559,7 @@ export const findProcessesController = async (req, res) => {
       error: error.message,
       pattern: req.query.pattern,
     });
-    res.status(500).json({ error: 'Failed to find processes' });
+    return res.status(500).json({ error: 'Failed to find processes' });
   }
 };
 
@@ -645,7 +639,7 @@ export const batchKillProcesses = async (req, res) => {
 
     const result = await killProcessesByPattern(pattern, options);
 
-    res.json({
+    return res.json({
       ...result,
       pattern,
       signal,
@@ -657,7 +651,7 @@ export const batchKillProcesses = async (req, res) => {
       pattern: req.body.pattern,
       signal: req.body.signal,
     });
-    res.status(500).json({ error: 'Failed to kill processes' });
+    return res.status(500).json({ error: 'Failed to kill processes' });
   }
 };
 
@@ -733,13 +727,13 @@ export const getProcessStatsController = async (req, res) => {
     }
 
     const stats = await getProcessStats(options);
-    res.json(stats);
+    return res.json(stats);
   } catch (error) {
     log.api.error('Error getting process statistics', {
       error: error.message,
       query_params: req.query,
     });
-    res.status(500).json({ error: 'Failed to retrieve process statistics' });
+    return res.status(500).json({ error: 'Failed to retrieve process statistics' });
   }
 };
 
@@ -812,7 +806,7 @@ export const startProcessTrace = async (req, res) => {
       metadata: JSON.stringify({ pid, duration }),
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: `Process trace task created for PID ${pid}`,
       task_id: task.id,
@@ -826,6 +820,6 @@ export const startProcessTrace = async (req, res) => {
       duration: req.body.duration,
       user: req.entity.name,
     });
-    res.status(500).json({ error: 'Failed to create tracing task' });
+    return res.status(500).json({ error: 'Failed to create tracing task' });
   }
 };

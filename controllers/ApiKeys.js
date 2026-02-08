@@ -90,7 +90,7 @@ export const bootstrapFirstApiKey = async (req, res) => {
       last_used: new Date(),
     });
 
-    res.json({
+    return res.json({
       api_key: apiKey,
       message: 'Bootstrap API key generated successfully',
       note:
@@ -103,7 +103,7 @@ export const bootstrapFirstApiKey = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ msg: 'Bootstrap failed' });
+    return res.status(500).json({ msg: 'Bootstrap failed' });
   }
 };
 
@@ -188,7 +188,7 @@ export const generateApiKey = async (req, res) => {
       last_used: new Date(),
     });
 
-    res.json({
+    return res.json({
       api_key: apiKey,
       entity_id: entity.id,
       name: entity.name,
@@ -199,9 +199,9 @@ export const generateApiKey = async (req, res) => {
     log.auth.error('Failed to generate API key', {
       error: error.message,
       stack: error.stack,
-      name,
+      name: req.body.name,
     });
-    res.status(500).json({ msg: 'Failed to generate API key' });
+    return res.status(500).json({ msg: 'Failed to generate API key' });
   }
 };
 
@@ -256,7 +256,7 @@ export const listApiKeys = async (req, res) => {
       order: [['created_at', 'DESC']],
     });
 
-    res.json({
+    return res.json({
       entities,
       total: entities.length,
     });
@@ -265,7 +265,7 @@ export const listApiKeys = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ msg: 'Failed to list API keys' });
+    return res.status(500).json({ msg: 'Failed to list API keys' });
   }
 };
 
@@ -305,7 +305,7 @@ export const deleteApiKey = async (req, res) => {
 
     await entity.destroy();
 
-    res.json({
+    return res.json({
       message: 'API key deleted successfully',
       entity_id: entityId,
       name: entity.name,
@@ -314,9 +314,9 @@ export const deleteApiKey = async (req, res) => {
     log.auth.error('Failed to delete API key', {
       error: error.message,
       stack: error.stack,
-      entity_id: entityId,
+      entity_id: req.params.id,
     });
-    res.status(500).json({ msg: 'Failed to delete API key' });
+    return res.status(500).json({ msg: 'Failed to delete API key' });
   }
 };
 
@@ -356,7 +356,7 @@ export const revokeApiKey = async (req, res) => {
 
     await entity.update({ is_active: false });
 
-    res.json({
+    return res.json({
       message: 'API key revoked successfully',
       entity_id: entityId,
       name: entity.name,
@@ -365,9 +365,9 @@ export const revokeApiKey = async (req, res) => {
     log.auth.error('Failed to revoke API key', {
       error: error.message,
       stack: error.stack,
-      entity_id: entityId,
+      entity_id: req.params.id,
     });
-    res.status(500).json({ msg: 'Failed to revoke API key' });
+    return res.status(500).json({ msg: 'Failed to revoke API key' });
   }
 };
 
@@ -423,13 +423,13 @@ export const getApiKeyInfo = async (req, res) => {
       return res.status(404).json({ msg: 'Entity not found' });
     }
 
-    res.json(entity);
+    return res.json(entity);
   } catch (error) {
     log.auth.error('Failed to get API key info', {
       error: error.message,
       stack: error.stack,
       entity_id: req.entity?.id,
     });
-    res.status(500).json({ msg: 'Failed to get API key info' });
+    return res.status(500).json({ msg: 'Failed to get API key info' });
   }
 };

@@ -8,7 +8,6 @@
 import { execSync } from 'child_process';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
-import { Op } from 'sequelize';
 import yj from 'yieldable-json';
 import os from 'os';
 import { log } from '../lib/Logger.js';
@@ -16,9 +15,9 @@ import { log } from '../lib/Logger.js';
 /**
  * Execute command safely with proper error handling
  * @param {string} command - Command to execute
- * @returns {Promise<{success: boolean, output?: string, error?: string}>}
+ * @returns {{success: boolean, output?: string, error?: string}}
  */
-const executeCommand = async command => {
+const executeCommand = command => {
   try {
     const output = execSync(command, {
       encoding: 'utf8',
@@ -96,7 +95,7 @@ const executeCommand = async command => {
  */
 export const getAggregates = async (req, res) => {
   try {
-    const { state, policy, limit = 100 } = req.query;
+    const { state, limit = 100 } = req.query;
 
     // Always get data from database (monitoring data) - only get the latest record per aggregate
     const hostname = os.hostname();
@@ -130,7 +129,7 @@ export const getAggregates = async (req, res) => {
       ],
     });
 
-    res.json({
+    return res.json({
       aggregates: rows,
       source: 'database',
       returned: rows.length,
@@ -140,7 +139,7 @@ export const getAggregates = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get aggregates',
       details: error.message,
     });
@@ -217,14 +216,14 @@ export const getAggregateDetails = async (req, res) => {
     }
 
     log.api.debug('Aggregate data retrieved from database', { aggregate });
-    res.json(aggregateData);
+    return res.json(aggregateData);
   } catch (error) {
     log.api.error('Error getting aggregate details', {
-      aggregate,
+      aggregate: req.params.aggregate,
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get aggregate details',
       details: error.message,
     });
@@ -362,14 +361,14 @@ export const createAggregate = async (req, res) => {
     }
 
     // Validate unicast address format if provided
-    if (unicast_address && !/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(unicast_address)) {
+    if (unicast_address && !/^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(unicast_address)) {
       return res.status(400).json({
         error: 'unicast_address must be in format XX:XX:XX:XX:XX:XX',
       });
     }
 
     // Check if aggregate already exists
-    const existsResult = await executeCommand(`pfexec dladm show-aggr ${name}`);
+    const existsResult = executeCommand(`pfexec dladm show-aggr ${name}`);
     if (existsResult.success) {
       return res.status(400).json({
         error: `Aggregate ${name} already exists`,
@@ -378,7 +377,7 @@ export const createAggregate = async (req, res) => {
 
     // Validate that all links exist and are physical interfaces
     for (const link of links) {
-      const linkResult = await executeCommand(`pfexec dladm show-phys ${link}`);
+      const linkResult = executeCommand(`pfexec dladm show-phys ${link}`);
       if (!linkResult.success) {
         return res.status(400).json({
           error: `Physical link ${link} not found or not available`,
@@ -415,7 +414,7 @@ export const createAggregate = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Aggregate creation task created for ${name}`,
       task_id: task.id,
@@ -428,7 +427,7 @@ export const createAggregate = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create aggregate task',
       details: error.message,
     });
@@ -502,7 +501,7 @@ export const deleteAggregate = async (req, res) => {
 
     // Check if aggregate exists
     log.api.debug('Checking if aggregate exists', { aggregate });
-    const existsResult = await executeCommand(`pfexec dladm show-aggr ${aggregate}`);
+    const existsResult = executeCommand(`pfexec dladm show-aggr ${aggregate}`);
     log.api.debug('Aggregate existence check result', {
       aggregate,
       exists: existsResult.success,
@@ -551,22 +550,20 @@ export const deleteAggregate = async (req, res) => {
       temporary: temporary === 'true' || temporary === true,
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Aggregate deletion task created for ${aggregate}`,
       task_id: task.id,
       aggregate_name: aggregate,
       temporary: temporary === 'true' || temporary === true,
     });
-
-    log.api.debug('Aggregate deletion response sent successfully', { aggregate });
   } catch (error) {
     log.api.error('Error deleting aggregate', {
       aggregate: req.params.aggregate,
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create aggregate deletion task',
       details: error.message,
     });
@@ -647,7 +644,7 @@ export const modifyAggregateLinks = async (req, res) => {
     }
 
     // Check if aggregate exists
-    const existsResult = await executeCommand(`pfexec dladm show-aggr ${aggregate}`);
+    const existsResult = executeCommand(`pfexec dladm show-aggr ${aggregate}`);
     if (!existsResult.success) {
       return res.status(404).json({
         error: `Aggregate ${aggregate} not found`,
@@ -658,7 +655,7 @@ export const modifyAggregateLinks = async (req, res) => {
     // If adding links, validate that they exist and are physical interfaces
     if (operation === 'add') {
       for (const link of links) {
-        const linkResult = await executeCommand(`pfexec dladm show-phys ${link}`);
+        const linkResult = executeCommand(`pfexec dladm show-phys ${link}`);
         if (!linkResult.success) {
           return res.status(400).json({
             error: `Physical link ${link} not found or not available`,
@@ -693,7 +690,7 @@ export const modifyAggregateLinks = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `Aggregate link ${operation} task created for ${aggregate}`,
       task_id: task.id,
@@ -708,7 +705,7 @@ export const modifyAggregateLinks = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create aggregate link modification task',
       details: error.message,
     });
@@ -770,13 +767,13 @@ export const modifyAggregateLinks = async (req, res) => {
  *       500:
  *         description: Failed to get aggregate statistics
  */
-export const getAggregateStats = async (req, res) => {
+export const getAggregateStats = (req, res) => {
   try {
     const { aggregate } = req.params;
     const { interval = 1 } = req.query;
 
     // Get live statistics from dladm
-    const result = await executeCommand(
+    const result = executeCommand(
       `pfexec dladm show-aggr ${aggregate} -s -p -o link,ipackets,rbytes,ierrors,opackets,obytes,oerrors`
     );
 
@@ -799,7 +796,7 @@ export const getAggregateStats = async (req, res) => {
       oerrors: parseInt(oerrors) || 0,
     };
 
-    res.json({
+    return res.json({
       aggregate,
       statistics,
       timestamp: new Date().toISOString(),
@@ -811,7 +808,7 @@ export const getAggregateStats = async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get aggregate statistics',
       details: error.message,
     });

@@ -15,7 +15,7 @@ import { log } from '../lib/Logger.js';
  * @param {Object} device - PCI device object
  * @returns {boolean} True if device is PPT-capable
  */
-function isPPTCapable(device) {
+const isPPTCapable = device => {
   // Exclude devices already assigned to zones
   if (
     device.assigned_to_zones &&
@@ -51,7 +51,7 @@ function isPPTCapable(device) {
   // - Matrox display controllers
   // - Other specialty PCI cards
   return true;
-}
+};
 
 /**
  * @swagger
@@ -124,17 +124,11 @@ function isPPTCapable(device) {
  *                         type: string
  */
 export const listDevices = async (req, res) => {
-  try {
-    const {
-      category,
-      ppt_enabled,
-      ppt_capable,
-      driver_attached,
-      available,
-      limit = 100,
-    } = req.query;
+  const { category, ppt_enabled, ppt_capable, driver_attached, available, limit = 100 } = req.query;
 
-    const hostname = os.hostname();
+  const hostname = os.hostname();
+
+  try {
     const whereClause = { host: hostname };
 
     // Apply filters
@@ -187,8 +181,8 @@ export const listDevices = async (req, res) => {
 
     allDevices.forEach(device => {
       // Count by category
-      const category = device.device_category || 'other';
-      summary.by_category[category] = (summary.by_category[category] || 0) + 1;
+      const deviceCategory = device.device_category || 'other';
+      summary.by_category[deviceCategory] = (summary.by_category[deviceCategory] || 0) + 1;
 
       // Count PPT-capable devices (using new logic)
       if (isPPTCapable(device)) {
@@ -215,7 +209,7 @@ export const listDevices = async (req, res) => {
 
     summary.zones_using_passthrough = Array.from(zonesSet);
 
-    res.json({
+    return res.json({
       devices,
       summary,
     });
@@ -226,7 +220,7 @@ export const listDevices = async (req, res) => {
       hostname,
       filters: { category, ppt_enabled, ppt_capable, driver_attached, available },
     });
-    res.status(500).json({ error: 'Failed to retrieve devices' });
+    return res.status(500).json({ error: 'Failed to retrieve devices' });
   }
 };
 
@@ -257,10 +251,10 @@ export const listDevices = async (req, res) => {
  *         description: Available devices retrieved successfully
  */
 export const listAvailableDevices = async (req, res) => {
-  try {
-    const { category, ppt_only = false } = req.query;
-    const hostname = os.hostname();
+  const { category, ppt_only = false } = req.query;
+  const hostname = os.hostname();
 
+  try {
     const whereClause = {
       host: hostname,
       assigned_to_zones: { [Op.or]: [null, []] },
@@ -283,7 +277,7 @@ export const listAvailableDevices = async (req, res) => {
       ],
     });
 
-    res.json({
+    return res.json({
       available_devices: devices,
       total: devices.length,
     });
@@ -295,7 +289,7 @@ export const listAvailableDevices = async (req, res) => {
       category,
       ppt_only,
     });
-    res.status(500).json({ error: 'Failed to retrieve available devices' });
+    return res.status(500).json({ error: 'Failed to retrieve available devices' });
   }
 };
 
@@ -326,10 +320,10 @@ export const listAvailableDevices = async (req, res) => {
  *         description: Device not found
  */
 export const getDeviceDetails = async (req, res) => {
-  try {
-    const { deviceId } = req.params;
-    const hostname = os.hostname();
+  const { deviceId } = req.params;
+  const hostname = os.hostname();
 
+  try {
     // Try to find by ID first, then by PCI address
     const device = await PCIDevices.findOne({
       where: {
@@ -342,7 +336,7 @@ export const getDeviceDetails = async (req, res) => {
       return res.status(404).json({ error: 'Device not found' });
     }
 
-    res.json(device);
+    return res.json(device);
   } catch (error) {
     log.api.error('Error getting device details', {
       error: error.message,
@@ -350,7 +344,7 @@ export const getDeviceDetails = async (req, res) => {
       device_id: deviceId,
       hostname,
     });
-    res.status(500).json({ error: 'Failed to retrieve device details' });
+    return res.status(500).json({ error: 'Failed to retrieve device details' });
   }
 };
 
@@ -375,9 +369,9 @@ export const getDeviceDetails = async (req, res) => {
  *                   type: object
  */
 export const getDeviceCategories = async (req, res) => {
-  try {
-    const hostname = os.hostname();
+  const hostname = os.hostname();
 
+  try {
     const devices = await PCIDevices.findAll({
       where: { host: hostname },
       attributes: [
@@ -421,7 +415,7 @@ export const getDeviceCategories = async (req, res) => {
       }
     });
 
-    res.json({
+    return res.json({
       categories,
       total_devices: devices.length,
     });
@@ -431,7 +425,7 @@ export const getDeviceCategories = async (req, res) => {
       stack: error.stack,
       hostname,
     });
-    res.status(500).json({ error: 'Failed to retrieve device categories' });
+    return res.status(500).json({ error: 'Failed to retrieve device categories' });
   }
 };
 
@@ -460,9 +454,9 @@ export const getDeviceCategories = async (req, res) => {
  *                   type: object
  */
 export const getPPTStatus = async (req, res) => {
-  try {
-    const hostname = os.hostname();
+  const hostname = os.hostname();
 
+  try {
     const pptDevices = await PCIDevices.findAll({
       where: {
         host: hostname,
@@ -496,7 +490,7 @@ export const getPPTStatus = async (req, res) => {
       }
     });
 
-    res.json({
+    return res.json({
       ppt_devices: pptDevices,
       summary,
     });
@@ -506,7 +500,7 @@ export const getPPTStatus = async (req, res) => {
       stack: error.stack,
       hostname,
     });
-    res.status(500).json({ error: 'Failed to retrieve PPT status' });
+    return res.status(500).json({ error: 'Failed to retrieve PPT status' });
   }
 };
 
@@ -535,6 +529,8 @@ export const getPPTStatus = async (req, res) => {
  *                   type: integer
  */
 export const triggerDeviceDiscovery = async (req, res) => {
+  const hostname = os.hostname();
+
   try {
     // Import here to avoid circular dependencies
     const { getHostMonitoringService } = await import('./HostMonitoringService.js');
@@ -552,7 +548,6 @@ export const triggerDeviceDiscovery = async (req, res) => {
     }
 
     // Count devices found in latest scan
-    const hostname = os.hostname();
     const devicesFound = await PCIDevices.count({
       where: {
         host: hostname,
@@ -562,7 +557,7 @@ export const triggerDeviceDiscovery = async (req, res) => {
       },
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Device discovery completed successfully',
       devices_found: devicesFound,
@@ -573,7 +568,7 @@ export const triggerDeviceDiscovery = async (req, res) => {
       stack: error.stack,
       hostname,
     });
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to trigger device discovery',
       details: error.message,

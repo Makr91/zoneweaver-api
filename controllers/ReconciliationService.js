@@ -7,7 +7,6 @@
  */
 
 import config from '../config/ConfigLoader.js';
-import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import Zones from '../models/ZoneModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
 import { execSync } from 'child_process';
@@ -65,17 +64,12 @@ class ReconciliationService {
       const systemZones = execSync('zoneadm list -c').toString().split('\n').filter(Boolean);
       const dbZones = await Zones.findAll({ where: { host: os.hostname() } });
 
-      let orphaned = 0;
-      const orphanedZones = [];
+      const zonesToDelete = dbZones.filter(dbZone => !systemZones.includes(dbZone.name));
+      const orphaned = zonesToDelete.length;
+      const orphanedZones = zonesToDelete.map(z => z.name);
 
       // Find orphaned zones
-      for (const dbZone of dbZones) {
-        if (!systemZones.includes(dbZone.name)) {
-          orphaned++;
-          orphanedZones.push(dbZone.name);
-          await dbZone.destroy();
-        }
-      }
+      await Promise.all(zonesToDelete.map(dbZone => dbZone.destroy()));
 
       if (orphaned > 0) {
         log.monitoring.warn('Orphaned zones removed from database', {
@@ -118,16 +112,13 @@ class ReconciliationService {
         where: { host: os.hostname(), class: resourceClass },
       });
 
-      let orphaned = 0;
-      const orphanedResources = [];
+      const resourcesToDelete = dbResources.filter(
+        dbResource => !systemResources.includes(dbResource.link)
+      );
+      const orphaned = resourcesToDelete.length;
+      const orphanedResources = resourcesToDelete.map(r => r.link);
 
-      for (const dbResource of dbResources) {
-        if (!systemResources.includes(dbResource.link)) {
-          orphaned++;
-          orphanedResources.push(dbResource.link);
-          await dbResource.destroy();
-        }
-      }
+      await Promise.all(resourcesToDelete.map(dbResource => dbResource.destroy()));
 
       if (orphaned > 0) {
         log.monitoring.warn(`Orphaned ${resourceClass} resources removed`, {

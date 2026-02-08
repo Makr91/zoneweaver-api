@@ -5,13 +5,15 @@
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
 
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
+import util from 'util';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import NetworkInterfaces from '../models/NetworkInterfaceModel.js';
-import { Op } from 'sequelize';
 import yj from 'yieldable-json';
 import os from 'os';
 import { log } from '../lib/Logger.js';
+
+const execPromise = util.promisify(exec);
 
 /**
  * Execute command safely with proper error handling
@@ -20,11 +22,11 @@ import { log } from '../lib/Logger.js';
  */
 const executeCommand = async command => {
   try {
-    const output = execSync(command, {
+    const { stdout } = await execPromise(command, {
       encoding: 'utf8',
       timeout: 30000, // 30 second timeout
     });
-    return { success: true, output: output.trim() };
+    return { success: true, output: stdout.trim() };
   } catch (error) {
     return {
       success: false,
@@ -87,9 +89,9 @@ const executeCommand = async command => {
  *         description: Failed to get VLANs
  */
 export const getVlans = async (req, res) => {
-  try {
-    const { vid, over, limit = 100, live = false } = req.query;
+  const { vid, over, limit = 100, live = false } = req.query;
 
+  try {
     if (live === 'true' || live === true) {
       // Get live data directly from dladm
       const command = 'pfexec dladm show-vlan -p -o link,vid,over,flags';
@@ -160,7 +162,7 @@ export const getVlans = async (req, res) => {
       ],
     });
 
-    res.json({
+    return res.json({
       vlans: rows,
       total: count,
       source: 'database',
@@ -173,7 +175,7 @@ export const getVlans = async (req, res) => {
       vid,
       over,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get VLANs',
       details: error.message,
     });
@@ -215,10 +217,10 @@ export const getVlans = async (req, res) => {
  *         description: Failed to get VLAN details
  */
 export const getVlanDetails = async (req, res) => {
-  try {
-    const { vlan } = req.params;
-    const { live = false } = req.query;
+  const { vlan } = req.params;
+  const { live = false } = req.query;
 
+  try {
     if (live === 'true' || live === true) {
       // Get VLAN details
       const vlanResult = await executeCommand(
@@ -248,7 +250,7 @@ export const getVlanDetails = async (req, res) => {
         `pfexec dladm show-link ${vlan} -p -o link,class,mtu,state`
       );
       if (linkResult.success) {
-        const [, linkClass, mtu, state] = linkResult.output.split(':');
+        const [, _linkClass, mtu, state] = linkResult.output.split(':');
         vlanDetails.mtu = parseInt(mtu) || null;
         vlanDetails.state = state;
       }
@@ -273,7 +275,7 @@ export const getVlanDetails = async (req, res) => {
       });
     }
 
-    res.json(vlanData);
+    return res.json(vlanData);
   } catch (error) {
     log.api.error('Error getting VLAN details', {
       error: error.message,
@@ -281,7 +283,7 @@ export const getVlanDetails = async (req, res) => {
       vlan,
       live,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get VLAN details',
       details: error.message,
     });
@@ -357,9 +359,9 @@ export const getVlanDetails = async (req, res) => {
  *         description: Failed to create VLAN task
  */
 export const createVlan = async (req, res) => {
-  try {
-    const { vid, link, name, force = false, temporary = false, created_by = 'api' } = req.body;
+  const { vid, link, name, force = false, temporary = false, created_by = 'api' } = req.body;
 
+  try {
     // Validate required fields
     if (!vid || !link) {
       return res.status(400).json({
@@ -386,9 +388,9 @@ export const createVlan = async (req, res) => {
     let vlanName = name;
     if (!vlanName) {
       // Auto-generate name based on dladm convention: <name><1000 * vid + PPA>
-      const linkMatch = link.match(/^([a-zA-Z]+)(\d+)$/);
+      const linkMatch = link.match(/^(?<baseName>[a-zA-Z]+)(?<ppa>\d+)$/);
       if (linkMatch) {
-        const [, baseName, ppa] = linkMatch;
+        const { baseName, ppa } = linkMatch.groups;
         const calculatedSuffix = 1000 * vid + parseInt(ppa);
         vlanName = `${baseName}${calculatedSuffix}`;
 
@@ -445,7 +447,7 @@ export const createVlan = async (req, res) => {
       }),
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `VLAN creation task created for ${vlanName} (VID ${vid}) over ${link}`,
       task_id: task.id,
@@ -462,7 +464,7 @@ export const createVlan = async (req, res) => {
       link,
       name,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create VLAN task',
       details: error.message,
     });
@@ -519,10 +521,10 @@ export const createVlan = async (req, res) => {
  *         description: Failed to create VLAN deletion task
  */
 export const deleteVlan = async (req, res) => {
-  try {
-    const { vlan } = req.params;
-    const { temporary = false, created_by = 'api' } = req.query;
+  const { vlan } = req.params;
+  const { temporary = false, created_by = 'api' } = req.query;
 
+  try {
     // Check if VLAN exists
     const existsResult = await executeCommand(`pfexec dladm show-vlan ${vlan}`);
 
@@ -564,7 +566,7 @@ export const deleteVlan = async (req, res) => {
       created_by,
     });
 
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       message: `VLAN deletion task created for ${vlan}`,
       task_id: task.id,
@@ -577,7 +579,7 @@ export const deleteVlan = async (req, res) => {
       stack: error.stack,
       vlan: req.params.vlan,
     });
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to create VLAN deletion task',
       details: error.message,
     });
