@@ -492,30 +492,12 @@ export const executeTemplateDeleteTask = async metadataJson => {
 };
 
 /**
- * Helper to create a box artifact from a zone (Phase III)
- * @param {string} zoneName - Name of the zone to export
- * @param {string} snapshotName - Snapshot to use
- * @param {string} tempDir - Temporary directory for artifact creation
- * @param {Object} task - Task object for progress updates
- * @returns {Promise<{boxPath: string, checksum: string}>}
+ * Helper to identify boot dataset from zone config
+ * @param {Object} zoneConfig - Zone configuration object
+ * @param {string} zoneName - Zone name
+ * @returns {Promise<string>} Boot dataset path
  */
-const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
-  await updateTaskProgress(task, 10, { status: 'getting_zone_config' });
-
-  // 1. Get zone configuration to identify dataset
-  const configResult = await executeCommand(`pfexec zadm show ${zoneName}`);
-  if (!configResult.success) {
-    throw new Error(`Failed to get zone config: ${configResult.error}`);
-  }
-
-  let zoneConfig;
-  try {
-    zoneConfig = JSON.parse(configResult.output);
-  } catch (e) {
-    throw new Error(`Failed to parse zone config: ${e.message}`);
-  }
-
-  // Identify the boot dataset based on brand
+const getZoneBootDataset = async (zoneConfig, zoneName) => {
   let dataset = null;
   if (zoneConfig.brand === 'bhyve') {
     // For bhyve, use the bootdisk object from zadm output
@@ -541,36 +523,16 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
       throw new Error(`Failed to resolve dataset for zonepath ${zonepath}`);
     }
   }
+  return dataset;
+};
 
-  if (!dataset) throw new Error(`Could not determine dataset for zone ${zoneName}`);
-
-  await updateTaskProgress(task, 20, { status: 'creating_snapshot' });
-
-  // 2. Create snapshot if not provided
-  let snap = snapshotName;
-  if (!snap) {
-    snap = `export_${Date.now()}`;
-    const snapResult = await executeCommand(`pfexec zfs snapshot ${dataset}@${snap}`);
-    if (!snapResult.success) {
-      throw new Error(`Failed to create snapshot: ${snapResult.error}`);
-    }
-  }
-
-  await updateTaskProgress(task, 30, { status: 'exporting_stream' });
-
-  // 3. Send stream to file
-  const zssPath = path.join(tempDir, 'box.zss');
-  const sendCmd = `pfexec zfs send -c ${dataset}@${snap} > "${zssPath}"`;
-  // Increase timeout for large streams (1 hour)
-  const sendResult = await executeCommand(sendCmd, 3600 * 1000);
-  if (!sendResult.success) {
-    throw new Error(`Failed to export ZFS stream: ${sendResult.error}`);
-  }
-
-  await updateTaskProgress(task, 60, { status: 'creating_metadata' });
-
-  // 4. Create metadata files (matching package.rb logic)
-
+/**
+ * Helper to generate metadata files for box artifact
+ * @param {string} tempDir - Temporary directory
+ * @param {Object} zoneConfig - Zone configuration
+ * @param {string} zoneName - Zone name
+ */
+const generateBoxMetadata = async (tempDir, zoneConfig, zoneName) => {
   // metadata.json
   const metadata = {
     provider: 'zone',
@@ -601,6 +563,157 @@ Vagrant.configure("2") do |config|
 end
 `;
   await fs.promises.writeFile(path.join(tempDir, 'Vagrantfile'), vagrantfileContent);
+};
+
+/**
+ * Helper to ensure registry structure exists (Box, Version, Provider)
+ * @param {Object} client - Axios client
+ * @param {string} organization - Organization name
+ * @param {string} box_name - Box name
+ * @param {string} version - Version
+ * @param {string} description - Description
+ * @param {string} zone_name - Zone name (for description fallback)
+ */
+const ensureRegistryStructure = async (
+  client,
+  organization,
+  box_name,
+  version,
+  description,
+  zone_name
+) => {
+  const ignoreConflict = e => {
+    if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
+  };
+
+  await client
+    .post(`/api/organization/${organization}/box`, {
+      name: box_name,
+      description: description || `Exported from ${zone_name || 'file'}`,
+      isPublic: false,
+    })
+    .catch(ignoreConflict);
+
+  await client
+    .post(`/api/organization/${organization}/box/${box_name}/version`, {
+      versionNumber: version,
+      description: description || 'Automated export',
+    })
+    .catch(ignoreConflict);
+
+  await client
+    .post(`/api/organization/${organization}/box/${box_name}/version/${version}/provider`, {
+      name: 'zone',
+    })
+    .catch(ignoreConflict);
+};
+
+/**
+ * Helper to upload artifact to registry
+ * @param {Object} client - Axios client
+ * @param {string} organization - Organization name
+ * @param {string} box_name - Box name
+ * @param {string} version - Version
+ * @param {string} checksum - File checksum
+ * @param {string} uploadFilePath - Path to file to upload
+ */
+const uploadRegistryArtifact = async (
+  client,
+  organization,
+  box_name,
+  version,
+  checksum,
+  uploadFilePath
+) => {
+  const ignoreConflict = e => {
+    if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
+  };
+
+  await client
+    .post(
+      `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture`,
+      {
+        name: 'amd64',
+        checksum,
+        checksumType: 'SHA256',
+      }
+    )
+    .catch(ignoreConflict);
+
+  const fileStream = fs.createReadStream(uploadFilePath);
+  const stats = fs.statSync(uploadFilePath);
+
+  await client.post(
+    `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture/amd64/file/upload`,
+    fileStream,
+    {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': stats.size,
+        'x-file-name': 'vagrant.box',
+        'x-checksum': checksum,
+        'x-checksum-type': 'SHA256',
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    }
+  );
+};
+
+/**
+ * Helper to create a box artifact from a zone (Phase III)
+ * @param {string} zoneName - Name of the zone to export
+ * @param {string} snapshotName - Snapshot to use
+ * @param {string} tempDir - Temporary directory for artifact creation
+ * @param {Object} task - Task object for progress updates
+ * @returns {Promise<{boxPath: string, checksum: string}>}
+ */
+const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
+  await updateTaskProgress(task, 10, { status: 'getting_zone_config' });
+
+  // 1. Get zone configuration to identify dataset
+  const configResult = await executeCommand(`pfexec zadm show ${zoneName}`);
+  if (!configResult.success) {
+    throw new Error(`Failed to get zone config: ${configResult.error}`);
+  }
+
+  let zoneConfig;
+  try {
+    zoneConfig = JSON.parse(configResult.output);
+  } catch (e) {
+    throw new Error(`Failed to parse zone config: ${e.message}`);
+  }
+
+  const dataset = await getZoneBootDataset(zoneConfig, zoneName);
+  if (!dataset) throw new Error(`Could not determine dataset for zone ${zoneName}`);
+
+  await updateTaskProgress(task, 20, { status: 'creating_snapshot' });
+
+  // 2. Create snapshot if not provided
+  let snap = snapshotName;
+  if (!snap) {
+    snap = `export_${Date.now()}`;
+    const snapResult = await executeCommand(`pfexec zfs snapshot ${dataset}@${snap}`);
+    if (!snapResult.success) {
+      throw new Error(`Failed to create snapshot: ${snapResult.error}`);
+    }
+  }
+
+  await updateTaskProgress(task, 30, { status: 'exporting_stream' });
+
+  // 3. Send stream to file
+  const zssPath = path.join(tempDir, 'box.zss');
+  const sendCmd = `pfexec zfs send -c ${dataset}@${snap} > "${zssPath}"`;
+  // Increase timeout for large streams (1 hour)
+  const sendResult = await executeCommand(sendCmd, 3600 * 1000);
+  if (!sendResult.success) {
+    throw new Error(`Failed to export ZFS stream: ${sendResult.error}`);
+  }
+
+  await updateTaskProgress(task, 60, { status: 'creating_metadata' });
+
+  // 4. Create metadata files
+  await generateBoxMetadata(tempDir, zoneConfig, zoneName);
 
   await updateTaskProgress(task, 70, { status: 'packaging_box' });
 
@@ -794,73 +907,24 @@ export const executeTemplatePublishTask = async metadataJson => {
 
     await updateTaskProgress(task, 85, { status: 'uploading_to_registry' });
 
-    // 2. Create Registry Objects (Idempotent-ish)
-    // Create Box
-    try {
-      await client.post(`/api/organization/${organization}/box`, {
-        name: box_name,
-        description: description || `Exported from ${zone_name || 'file'}`,
-        isPublic: false,
-      });
-    } catch (e) {
-      // Ignore if exists (409)
-      if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
-    }
-
-    // Create Version
-    try {
-      await client.post(`/api/organization/${organization}/box/${box_name}/version`, {
-        versionNumber: version,
-        description: description || 'Automated export',
-      });
-    } catch (e) {
-      if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
-    }
-
-    // Create Provider
-    try {
-      await client.post(
-        `/api/organization/${organization}/box/${box_name}/version/${version}/provider`,
-        {
-          name: 'zone',
-        }
-      );
-    } catch (e) {
-      if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
-    }
-
-    // Create Architecture
-    try {
-      await client.post(
-        `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture`,
-        {
-          name: 'amd64',
-          checksum: uploadChecksum,
-          checksumType: 'SHA256',
-        }
-      );
-    } catch (e) {
-      if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
-    }
+    // 2. Create Registry Objects
+    await ensureRegistryStructure(
+      client,
+      organization,
+      box_name,
+      version,
+      description,
+      zone_name
+    );
 
     // 3. Upload File
-    const fileStream = fs.createReadStream(uploadFilePath);
-    const stats = fs.statSync(uploadFilePath);
-
-    await client.post(
-      `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture/amd64/file/upload`,
-      fileStream,
-      {
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': stats.size,
-          'x-file-name': 'vagrant.box',
-          'x-checksum': uploadChecksum,
-          'x-checksum-type': 'SHA256',
-        },
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      }
+    await uploadRegistryArtifact(
+      client,
+      organization,
+      box_name,
+      version,
+      uploadChecksum,
+      uploadFilePath
     );
 
     await updateTaskProgress(task, 95, { status: 'releasing_version' });

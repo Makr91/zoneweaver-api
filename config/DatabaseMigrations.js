@@ -93,8 +93,16 @@ class DatabaseMigrations {
     try {
       // Migration for templates table timestamps
       if (await this.tableExists('templates')) {
-        await this.addColumnIfNotExists('templates', 'created_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
-        await this.addColumnIfNotExists('templates', 'updated_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
+        await this.addColumnIfNotExists(
+          'templates',
+          'created_at',
+          'DATETIME DEFAULT CURRENT_TIMESTAMP'
+        );
+        await this.addColumnIfNotExists(
+          'templates',
+          'updated_at',
+          'DATETIME DEFAULT CURRENT_TIMESTAMP'
+        );
       }
 
       log.database.info('All database migrations completed successfully');
