@@ -27,7 +27,7 @@ const { DataTypes } = Sequelize;
  *         operation:
  *           type: string
  *           description: Type of operation to perform
- *           enum: [start, stop, restart, delete, console_start, console_stop, discover, service_enable, service_disable, service_restart, service_refresh, template_download, template_delete, template_upload]
+ *           enum: [start, stop, restart, delete, console_start, console_stop, discover, service_enable, service_disable, service_restart, service_refresh, template_download, template_delete, template_upload, template_export]
  *           example: "start"
  *         status:
  *           type: string

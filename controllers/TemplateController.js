@@ -438,6 +438,157 @@ export const deleteLocalTemplate = async (req, res) => {
  * @swagger
  * /templates/publish:
  *   post:
+ *     summary: Publish template to registry
+ *     description: Uploads a zone (via export) or existing .box file to a registry (async task)
+ *     tags: [Template Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - source_name
+ *               - organization
+ *               - box_name
+ *               - version
+ *             properties:
+ *               zone_name:
+ *                 type: string
+ *                 description: Name of the zone to export and publish (Required if box_path not set)
+ *               box_path:
+ *                 type: string
+ *                 description: Path to existing .box file to publish (Required if zone_name not set)
+ *               source_name:
+ *                 type: string
+ *                 description: Target registry source name
+ *               organization:
+ *                 type: string
+ *                 description: Target organization
+ *               box_name:
+ *                 type: string
+ *                 description: Target box name
+ *               version:
+ *                 type: string
+ *                 description: Version number
+ *               description:
+ *                 type: string
+ *                 description: Box/Version description
+ *               snapshot_name:
+ *                 type: string
+ *                 description: Optional existing snapshot to use
+ *               auth_token:
+ *                 type: string
+ *                 description: Optional user-scoped registry token
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Publish task created
+ */
+export const publishTemplate = async (req, res) => {
+  const {
+    zone_name,
+    box_path,
+    source_name,
+    organization,
+    box_name,
+    version,
+    description,
+    snapshot_name,
+    auth_token,
+    created_by = 'api',
+  } = req.body;
+
+  try {
+    if ((!zone_name && !box_path) || !source_name || !organization || !box_name || !version) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'template_upload',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          { zone_name, box_path, source_name, organization, box_name, version, description, snapshot_name, auth_token },
+          (err, jsonResult) => (err ? reject(err) : resolve(jsonResult))
+        );
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Publish task created for ${zone_name || box_path}`,
+      task_id: task.id,
+    });
+  } catch (error) {
+    log.api.error('Error creating template publish task', { error: error.message });
+    return res.status(500).json({ error: 'Failed to create publish task' });
+  }
+};
+
+/**
+ * @swagger
+ * /templates/export:
+ *   post:
+ *     summary: Export zone to local template
+ *     description: Exports a zone to a local .box file without uploading (async task)
+ *     tags: [Template Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - zone_name
+ *             properties:
+ *               zone_name:
+ *                 type: string
+ *               filename:
+ *                 type: string
+ *                 description: Optional custom filename
+ *     responses:
+ *       202:
+ *         description: Export task created
+ */
+export const exportTemplate = async (req, res) => {
+  const { zone_name, filename, snapshot_name, created_by = 'api' } = req.body;
+
+  try {
+    if (!zone_name) return res.status(400).json({ error: 'zone_name is required' });
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'template_export',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: JSON.stringify({ zone_name, filename, snapshot_name }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Export task created for zone ${zone_name}`,
+      task_id: task.id,
+    });
+  } catch (error) {
+    log.api.error('Error creating template export task', { error: error.message });
+    return res.status(500).json({ error: 'Failed to create export task' });
+  }
+};
+
+/**
+ * @swagger
+ * /templates/publish:
+ *   post:
  *     summary: Publish zone as template
  *     description: Exports a zone to a .box file and uploads it to a registry (async task)
  *     tags: [Template Management]

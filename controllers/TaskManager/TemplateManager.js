@@ -10,7 +10,6 @@ import { log } from '../../lib/Logger.js';
 import config from '../../config/ConfigLoader.js';
 import Template from '../../models/TemplateModel.js';
 import Tasks from '../../models/TaskModel.js';
-import Zones from '../../models/ZoneModel.js';
 import { Op } from 'sequelize';
 
 /**
@@ -562,7 +561,8 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
   // 3. Send stream to file
   const zssPath = path.join(tempDir, 'box.zss');
   const sendCmd = `pfexec zfs send -c ${dataset}@${snap} > "${zssPath}"`;
-  const sendResult = await executeCommand(sendCmd);
+  // Increase timeout for large streams (1 hour)
+  const sendResult = await executeCommand(sendCmd, 3600 * 1000);
   if (!sendResult.success) {
     throw new Error(`Failed to export ZFS stream: ${sendResult.error}`);
   }
@@ -570,7 +570,7 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
   await updateTaskProgress(task, 60, { status: 'creating_metadata' });
 
   // 4. Create metadata files (matching package.rb logic)
-  
+
   // metadata.json
   const metadata = {
     provider: 'zone',
@@ -588,12 +588,9 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
   const info = {
     boxname: zoneName,
     Author: 'Zoneweaver',
-    'Vagrant-Zones': 'This box was built with Zoneweaver API'
+    'Vagrant-Zones': 'This box was built with Zoneweaver API',
   };
-  await fs.promises.writeFile(
-    path.join(tempDir, 'info.json'),
-    JSON.stringify(info, null, 2)
-  );
+  await fs.promises.writeFile(path.join(tempDir, 'info.json'), JSON.stringify(info, null, 2));
 
   // Vagrantfile
   const vagrantfileContent = `
@@ -610,9 +607,10 @@ end
   // 5. Create .box tarball
   const boxPath = path.join(tempDir, 'vagrant.box');
   // Use pfexec tar to ensure we can read the root-owned zss file
-  // Use 'E' flag for extended headers to support large files (>8GB) on Solaris
+  // Use standard tar flags (GNU tar on OmniOS usually doesn't need -E for large files)
   const tarCmd = `pfexec tar -cvzf "${boxPath}" -C "${tempDir}" metadata.json info.json Vagrantfile box.zss`;
-  const tarResult = await executeCommand(tarCmd);
+  // Increase timeout for large archives (1 hour)
+  const tarResult = await executeCommand(tarCmd, 3600 * 1000);
   if (!tarResult.success) {
     throw new Error(`Failed to package box: ${tarResult.error}`);
   }
@@ -633,8 +631,90 @@ end
 };
 
 /**
- * Execute template publish task (Phase III)
- * Exports a zone to a .box file and uploads it to the registry
+ * Execute template export task (Phase III - Part 1)
+ * Exports a zone to a local .box file
+ * @param {string} metadataJson - Task metadata as JSON string
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeTemplateExportTask = async metadataJson => {
+  log.task.debug('Template export task starting');
+  let tempDir = null;
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(metadataJson, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { zone_name, snapshot_name, filename } = metadata;
+
+    const task = await findRunningTask('template_export', zone_name);
+
+    // Create temp directory
+    tempDir = path.join(os.tmpdir(), `template_export_${crypto.randomUUID()}`);
+    await fs.promises.mkdir(tempDir, { recursive: true });
+
+    // 1. Create Box Artifact
+    const { boxPath, checksum } = await createBoxArtifact(
+      zone_name,
+      snapshot_name,
+      tempDir,
+      task
+    );
+
+    await updateTaskProgress(task, 90, { status: 'moving_to_storage' });
+
+    // 2. Move to destination
+    // Default to /var/tmp for now, or use a configured exports directory if available
+    const destPath = '/var/tmp';
+    const finalFilename = filename || `${zone_name}-${Date.now()}.box`;
+    const finalPath = path.join(destPath, finalFilename);
+
+    // Use pfexec to move if needed (cross-device or permission issues)
+    const moveResult = await executeCommand(`pfexec mv "${boxPath}" "${finalPath}"`, 3600 * 1000);
+    if (!moveResult.success) {
+      // Fallback to copy if move fails (e.g. cross-device)
+      const copyResult = await executeCommand(`pfexec cp "${boxPath}" "${finalPath}"`, 3600 * 1000);
+      if (!copyResult.success) {
+        throw new Error(
+          `Failed to move artifact to storage: ${moveResult.error} / ${copyResult.error}`
+        );
+      }
+    }
+
+    // Ensure permissions are correct (readable by api user)
+    await executeCommand(`pfexec chmod 644 "${finalPath}"`);
+
+    await updateTaskProgress(task, 100, { status: 'completed' });
+
+    return {
+      success: true,
+      message: `Successfully exported zone ${zone_name} to ${finalFilename}`,
+      file_path: finalPath,
+      checksum,
+    };
+  } catch (error) {
+    log.task.error('Template export task exception', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return { success: false, error: `Template export failed: ${error.message}` };
+  } finally {
+    // Cleanup
+    if (tempDir) {
+      await executeCommand(`pfexec rm -rf "${tempDir}"`);
+    }
+  }
+};
+
+/**
+ * Execute template publish task (Phase III - Part 2 or Combined)
+ * Uploads a .box file (from zone export or existing file) to the registry
  * @param {string} metadataJson - Task metadata as JSON string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
@@ -655,6 +735,7 @@ export const executeTemplatePublishTask = async metadataJson => {
 
     const {
       zone_name,
+      box_path, // New: Option to upload existing file
       source_name,
       organization,
       box_name,
@@ -664,7 +745,7 @@ export const executeTemplatePublishTask = async metadataJson => {
       snapshot_name,
     } = metadata;
 
-    const task = await findRunningTask('template_upload', zone_name);
+    const task = await findRunningTask('template_upload', zone_name || box_name);
 
     // Find source configuration
     const sourceConfig = findSourceConfig(source_name);
@@ -674,17 +755,42 @@ export const executeTemplatePublishTask = async metadataJson => {
 
     const client = createRegistryClient(sourceConfig, auth_token);
 
-    // Create temp directory
-    tempDir = path.join(os.tmpdir(), `template_publish_${crypto.randomUUID()}`);
-    await fs.promises.mkdir(tempDir, { recursive: true });
+    let uploadFilePath;
+    let uploadChecksum;
 
-    // 1. Create Box Artifact (Export & Package)
-    const { boxPath, checksum } = await createBoxArtifact(
-      zone_name,
-      snapshot_name,
-      tempDir,
-      task
-    );
+    if (box_path) {
+      // Path 1: Upload existing file
+      log.task.info('Publishing existing box file', { box_path });
+      uploadFilePath = box_path;
+
+      if (!fs.existsSync(uploadFilePath)) {
+        return { success: false, error: `Box file not found: ${uploadFilePath}` };
+      }
+
+      await updateTaskProgress(task, 10, { status: 'calculating_checksum' });
+
+      // Calculate checksum for existing file
+      const hash = crypto.createHash('sha256');
+      const readStream = fs.createReadStream(uploadFilePath);
+      await new Promise((resolve, reject) => {
+        readStream.on('data', chunk => hash.update(chunk));
+        readStream.on('end', resolve);
+        readStream.on('error', reject);
+      });
+      uploadChecksum = hash.digest('hex');
+    } else if (zone_name) {
+      // Path 2: Export from zone then upload (Combined)
+      // Create temp directory
+      tempDir = path.join(os.tmpdir(), `template_publish_${crypto.randomUUID()}`);
+      await fs.promises.mkdir(tempDir, { recursive: true });
+
+      // Create Box Artifact
+      const artifact = await createBoxArtifact(zone_name, snapshot_name, tempDir, task);
+      uploadFilePath = artifact.boxPath;
+      uploadChecksum = artifact.checksum;
+    } else {
+      return { success: false, error: 'Either zone_name or box_path must be provided' };
+    }
 
     await updateTaskProgress(task, 85, { status: 'uploading_to_registry' });
 
@@ -693,7 +799,7 @@ export const executeTemplatePublishTask = async metadataJson => {
     try {
       await client.post(`/api/organization/${organization}/box`, {
         name: box_name,
-        description: description || `Exported from zone ${zone_name}`,
+        description: description || `Exported from ${zone_name || 'file'}`,
         isPublic: false,
       });
     } catch (e) {
@@ -729,7 +835,7 @@ export const executeTemplatePublishTask = async metadataJson => {
         `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture`,
         {
           name: 'amd64',
-          checksum,
+          checksum: uploadChecksum,
           checksumType: 'SHA256',
         }
       );
@@ -738,8 +844,8 @@ export const executeTemplatePublishTask = async metadataJson => {
     }
 
     // 3. Upload File
-    const fileStream = fs.createReadStream(boxPath);
-    const stats = fs.statSync(boxPath);
+    const fileStream = fs.createReadStream(uploadFilePath);
+    const stats = fs.statSync(uploadFilePath);
 
     await client.post(
       `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture/amd64/file/upload`,
@@ -749,7 +855,7 @@ export const executeTemplatePublishTask = async metadataJson => {
           'Content-Type': 'application/octet-stream',
           'Content-Length': stats.size,
           'x-file-name': 'vagrant.box',
-          'x-checksum': checksum,
+          'x-checksum': uploadChecksum,
           'x-checksum-type': 'SHA256',
         },
         maxContentLength: Infinity,
@@ -769,7 +875,7 @@ export const executeTemplatePublishTask = async metadataJson => {
 
     return {
       success: true,
-      message: `Successfully exported zone ${zone_name} to ${organization}/${box_name} v${version}`,
+      message: `Successfully published ${zone_name || 'file'} to ${organization}/${box_name} v${version}`,
     };
   } catch (error) {
     log.task.error('Template publish task exception', {
@@ -778,7 +884,7 @@ export const executeTemplatePublishTask = async metadataJson => {
     });
     return { success: false, error: `Template publish failed: ${error.message}` };
   } finally {
-    // Cleanup
+    // Cleanup only if we created a temp directory (i.e., exported from zone)
     if (tempDir) {
       await executeCommand(`pfexec rm -rf "${tempDir}"`);
     }

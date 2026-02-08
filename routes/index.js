@@ -222,6 +222,7 @@ import {
   downloadTemplate,
   deleteLocalTemplate,
   publishTemplate,
+  exportTemplate,
 } from '../controllers/TemplateController.js';
 import {
   getFaults,
@@ -622,6 +623,7 @@ router.get('/templates/local/:templateId', verifyApiKey, getLocalTemplate);
 router.post('/templates/pull', verifyApiKey, downloadTemplate);
 router.delete('/templates/local/:templateId', verifyApiKey, deleteLocalTemplate);
 router.post('/templates/publish', verifyApiKey, publishTemplate);
+router.post('/templates/export', verifyApiKey, exportTemplate);
 
 // Fault Management Routes
 router.get('/system/fault-management/faults', verifyApiKey, getFaults); // List system faults
