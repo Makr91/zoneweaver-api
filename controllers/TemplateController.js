@@ -20,6 +20,8 @@ const createRegistryClient = sourceConfig => {
   const headers = {};
   if (sourceConfig.api_key) {
     headers.Authorization = `Bearer ${sourceConfig.api_key}`;
+    // BoxVault API expects x-access-token for API endpoints
+    headers['x-access-token'] = sourceConfig.api_key;
   }
 
   return axios.create({
