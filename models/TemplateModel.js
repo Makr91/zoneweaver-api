@@ -180,6 +180,16 @@ const Template = db.define(
       allowNull: true,
       comment: 'JSON metadata from the box',
     },
+    created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Record creation timestamp',
+    },
+    updated_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Record last update timestamp',
+    },
   },
   {
     freezeTableName: true,

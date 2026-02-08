@@ -221,7 +221,7 @@ artifact_storage:
     failed_downloads_cleanup: true
 template_sources:
   enabled: true
-  local_storage_path: "/data/templates"
+  local_storage_path: "rpool/templates"
   sources:
     - name: "Default Registry"
       type: vagrant

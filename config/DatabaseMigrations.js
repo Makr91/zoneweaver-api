@@ -8,6 +8,9 @@
 import db from './Database.js';
 import { log } from '../lib/Logger.js';
 
+// Import models to ensure they are registered before sync
+import '../models/TemplateModel.js';
+
 /**
  * Database Migration Helper Class
  * @description Provides utilities for safely migrating database schemas
@@ -86,8 +89,14 @@ class DatabaseMigrations {
    * @description Executes all necessary database migrations
    * @returns {boolean} True if all migrations successful
    */
-  runMigrations() {
+  async runMigrations() {
     try {
+      // Migration for templates table timestamps
+      if (await this.tableExists('templates')) {
+        await this.addColumnIfNotExists('templates', 'created_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
+        await this.addColumnIfNotExists('templates', 'updated_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
+      }
+
       log.database.info('All database migrations completed successfully');
       return true;
     } catch (error) {

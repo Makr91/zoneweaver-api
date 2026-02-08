@@ -232,7 +232,7 @@ const extractAndImport = async (tempBoxPath, datasetPath, task) => {
     return { boxMetadata, tempExtractDir };
   } catch (error) {
     // Clean up temp dir on error
-    await executeCommand(`rm -rf "${tempExtractDir}"`);
+    await executeCommand(`pfexec rm -rf "${tempExtractDir}"`);
     throw error;
   }
 };
@@ -393,7 +393,7 @@ export const executeTemplateDownloadTask = async metadataJson => {
         await fs.promises.unlink(tempBoxPath);
       }
       if (tempExtractDir && fs.existsSync(tempExtractDir)) {
-        await executeCommand(`rm -rf "${tempExtractDir}"`);
+        await executeCommand(`pfexec rm -rf "${tempExtractDir}"`);
       }
     } catch (cleanupError) {
       log.task.warn('Failed to clean up temp files', { error: cleanupError.message });
