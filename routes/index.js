@@ -17,6 +17,8 @@ import {
   stopZone,
   restartZone,
   deleteZone,
+  createZone,
+  modifyZone,
 } from '../controllers/ZoneManagement.js';
 import { listTasks, getTaskDetails, cancelTask, getTaskStats } from '../controllers/TaskQueue.js';
 import {
@@ -387,6 +389,10 @@ router.post('/zones/orchestration/enable', verifyApiKey, enableOrchestration); /
 router.post('/zones/orchestration/disable', verifyApiKey, disableOrchestration); // Disable zone orchestration control
 router.get('/zones/priorities', verifyApiKey, getZonePriorities); // List all zones with priorities
 router.post('/zones/orchestration/test', verifyApiKey, testOrchestration); // Test orchestration (dry run)
+
+// Zone Creation & Modification Routes (must come before parameterized routes)
+router.post('/zones', verifyApiKey, createZone); // Create a new zone
+router.put('/zones/:zoneName', verifyApiKey, modifyZone); // Modify zone configuration
 
 // Zone Management Routes (parameterized routes come after specific routes)
 router.get('/zones', verifyApiKey, listZones); // List all zones

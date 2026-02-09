@@ -136,6 +136,8 @@ import {
   executeTemplatePublishTask,
   executeTemplateExportTask,
 } from './TaskManager/TemplateManager.js';
+import { executeZoneCreateTask } from './TaskManager/ZoneCreationManager.js';
+import { executeZoneModifyTask } from './TaskManager/ZoneModificationManager.js';
 import { isVncEnabledAtBoot } from './VncConsoleController/utils/VncCleanupService.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
@@ -266,6 +268,10 @@ const OPERATION_CATEGORIES = {
   template_upload: 'template',
   template_delete: 'template',
   template_export: 'template',
+
+  // Zone lifecycle operations
+  zone_create: 'zone_lifecycle',
+  zone_modify: 'zone_lifecycle',
 };
 
 /**
@@ -742,6 +748,14 @@ const executeTask = async task => {
   const { operation, zone_name } = task;
 
   try {
+    // Zone creation/modification operations (pass full task for progress tracking)
+    if (operation === 'zone_create') {
+      return await executeZoneCreateTask(task);
+    }
+    if (operation === 'zone_modify') {
+      return await executeZoneModifyTask(task);
+    }
+
     // Zone operations
     if (['start', 'stop', 'restart', 'delete', 'discover'].includes(operation)) {
       return await executeZoneTask(operation, zone_name);

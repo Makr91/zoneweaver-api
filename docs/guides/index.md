@@ -17,6 +17,7 @@ Step-by-step guides for setting up and using the ZoneweaverAPI.
 - [Production Installation](production-installation/) - Install ZoneweaverAPI using OmniOS packages
 - [Development Installation](development-installation/) - Set up development environment
 - [Authentication](authentication/) - API key setup and usage
+- [Zone Management](zone-management/) - Create, modify, and manage bhyve zones
 
 ---
 
