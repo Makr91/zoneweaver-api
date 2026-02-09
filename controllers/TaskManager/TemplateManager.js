@@ -665,6 +665,8 @@ const ensureRegistryStructure = async (
 /**
  * Helper to upload artifact to registry
  * @param {Object} client - Axios client
+ * @param {Object} sourceConfig - Source configuration
+ * @param {string} token - Auth token
  * @param {string} organization - Organization name
  * @param {string} box_name - Box name
  * @param {string} version - Version
@@ -673,6 +675,8 @@ const ensureRegistryStructure = async (
  */
 const uploadRegistryArtifact = async (
   client,
+  sourceConfig,
+  token,
   organization,
   box_name,
   version,
@@ -785,14 +789,7 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
   await updateTaskProgress(task, 90, { status: 'calculating_checksum' });
 
   // 6. Calculate checksum
-  const hash = crypto.createHash('sha256');
-  const readStream = fs.createReadStream(boxPath);
-  await new Promise((resolve, reject) => {
-    readStream.on('data', chunk => hash.update(chunk));
-    readStream.on('end', resolve);
-    readStream.on('error', reject);
-  });
-  const checksum = hash.digest('hex');
+  const checksum = await calculateChecksumNonBlocking(boxPath, 'sha256');
 
   return { boxPath, checksum };
 };
@@ -938,14 +935,7 @@ export const executeTemplatePublishTask = async metadataJson => {
       await updateTaskProgress(task, 10, { status: 'calculating_checksum' });
 
       // Calculate checksum for existing file
-      const hash = crypto.createHash('sha256');
-      const readStream = fs.createReadStream(uploadFilePath);
-      await new Promise((resolve, reject) => {
-        readStream.on('data', chunk => hash.update(chunk));
-        readStream.on('end', resolve);
-        readStream.on('error', reject);
-      });
-      uploadChecksum = hash.digest('hex');
+      uploadChecksum = await calculateChecksumNonBlocking(uploadFilePath, 'sha256');
     } else if (zone_name) {
       // Path 2: Export from zone then upload (Combined)
       // Create temp directory
@@ -975,6 +965,8 @@ export const executeTemplatePublishTask = async metadataJson => {
     // 3. Upload File
     await uploadRegistryArtifact(
       client,
+      sourceConfig,
+      token,
       organization,
       box_name,
       version,
