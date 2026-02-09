@@ -700,37 +700,19 @@ const uploadRegistryArtifact = async (
   // Get upload config
   const templateConfig = config.getTemplateSources();
   const uploadTimeout = (templateConfig.upload?.timeout_seconds || 7200) * 1000;
+  const chunkSizeMB = templateConfig.upload?.chunk_size_mb || 100;
+  const chunkSize = chunkSizeMB * 1024 * 1024;
 
   const stats = fs.statSync(uploadFilePath);
   const fileSize = stats.size;
-  let uploadedBytes = 0;
-  let lastProgressUpdate = 0;
+  const totalChunks = Math.ceil(fileSize / chunkSize);
 
-  // Create a PassThrough stream to monitor upload progress
-  const { PassThrough } = await import('stream');
-  const monitor = new PassThrough();
-  const fileStream = fs.createReadStream(uploadFilePath);
-
-  monitor.on('data', chunk => {
-    uploadedBytes += chunk.length;
-    const now = Date.now();
-    if (now - lastProgressUpdate > 10000) {
-      // Update every 10 seconds
-      lastProgressUpdate = now;
-      const pct = 85 + (uploadedBytes / fileSize) * 10; // 85-95% range
-      setImmediate(() => {
-        updateTaskProgress(task, Math.round(pct), {
-          status: 'uploading',
-          uploaded_mb: Math.round(uploadedBytes / 1024 / 1024),
-          total_mb: Math.round(fileSize / 1024 / 1024),
-        });
-      });
-    }
+  log.task.info('Starting chunked upload', {
+    file_size_mb: Math.round(fileSize / 1024 / 1024),
+    chunk_size_mb: chunkSizeMB,
+    total_chunks: totalChunks,
   });
 
-  fileStream.pipe(monitor);
-
-  // Create dedicated upload client with long timeout and keepalive
   // Determine auth headers based on token type
   const authHeaders = {};
   if (token) {
@@ -743,35 +725,142 @@ const uploadRegistryArtifact = async (
     }
   }
 
-  const uploadClient = axios.create({
-    baseURL: sourceConfig.url,
-    headers: {
-      'User-Agent': 'Vagrant/2.2.19 Zoneweaver/1.0.0',
-      ...authHeaders,
-    },
-    httpsAgent: new https.Agent({
-      rejectUnauthorized: sourceConfig.verify_ssl !== false,
-      keepAlive: true,
-      keepAliveMsecs: 30000, // Send keepalive packets every 30s
-    }),
-    timeout: uploadTimeout,
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity,
-  });
+  // Parse registry URL
+  const url = new URL(sourceConfig.url);
+  const uploadPath = `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture/amd64/file/upload`;
 
-  await uploadClient.post(
-    `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture/amd64/file/upload`,
-    monitor,
-    {
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': stats.size,
-        'x-file-name': 'vagrant.box',
-        'x-checksum': checksum,
-        'x-checksum-type': 'SHA256',
-      },
+  /**
+   * Upload a single chunk with retry logic
+   * @param {number} chunkIndex - Zero-based chunk index
+   * @param {Buffer} chunkData - Chunk data to upload
+   * @param {number} retryCount - Current retry attempt
+   * @returns {Promise<void>}
+   */
+  const uploadChunk = async (chunkIndex, chunkData, retryCount = 0) => {
+    try {
+      await new Promise((resolve, reject) => {
+        const options = {
+          hostname: url.hostname,
+          port: url.port || (url.protocol === 'https:' ? 443 : 80),
+          path: uploadPath,
+          method: 'POST',
+          headers: {
+            'User-Agent': 'Vagrant/2.2.19 Zoneweaver/1.0.0',
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': chunkData.length,
+            'x-file-name': 'vagrant.box',
+            'x-checksum': checksum,
+            'x-checksum-type': 'SHA256',
+            'X-Chunk-Index': chunkIndex.toString(),
+            'X-Total-Chunks': totalChunks.toString(),
+            ...authHeaders,
+          },
+          timeout: uploadTimeout,
+          rejectUnauthorized: sourceConfig.verify_ssl !== false,
+        };
+
+        const req = https.request(options, res => {
+          let responseBody = '';
+
+          res.on('data', chunk => {
+            responseBody += chunk.toString();
+          });
+
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              log.task.debug('Chunk upload successful', {
+                chunk_index: chunkIndex,
+                status_code: res.statusCode,
+              });
+              resolve();
+            } else if ([400, 409].includes(res.statusCode)) {
+              // Duplicate box/version - treat as success
+              log.task.debug('Chunk upload conflict (ignored)', {
+                chunk_index: chunkIndex,
+                status_code: res.statusCode,
+              });
+              resolve();
+            } else {
+              reject(
+                new Error(
+                  `Chunk ${chunkIndex} upload failed: HTTP ${res.statusCode} - ${responseBody}`
+                )
+              );
+            }
+          });
+        });
+
+        req.on('error', err => {
+          reject(err);
+        });
+
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error(`Chunk ${chunkIndex} upload timeout after ${uploadTimeout}ms`));
+        });
+
+        // Write chunk data
+        req.write(chunkData);
+        req.end();
+      });
+    } catch (err) {
+      // Retry logic
+      if (retryCount < 3) {
+        const backoffMs = 2 ** retryCount * 1000; // 1s, 2s, 4s
+        log.task.warn('Chunk upload failed, retrying', {
+          chunk_index: chunkIndex,
+          retry_attempt: retryCount + 1,
+          backoff_ms: backoffMs,
+          error: err.message,
+        });
+
+        await new Promise(resolve => {
+          setTimeout(resolve, backoffMs);
+        });
+        await uploadChunk(chunkIndex, chunkData, retryCount + 1);
+        return;
+      }
+
+      throw new Error(`Chunk ${chunkIndex} upload failed after 3 retries: ${err.message}`);
     }
-  );
+  };
+
+  // Upload chunks sequentially (intentional await in loop for sequential uploads)
+  const fileHandle = fs.openSync(uploadFilePath, 'r');
+  try {
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+      const offset = chunkIndex * chunkSize;
+      const length = Math.min(chunkSize, fileSize - offset);
+      const buffer = Buffer.alloc(length);
+
+      // Read chunk from file
+      fs.readSync(fileHandle, buffer, 0, length, offset);
+
+      // Upload chunk (sequential by design for reliable uploads)
+      // eslint-disable-next-line no-await-in-loop
+      await uploadChunk(chunkIndex, buffer);
+
+      // Update progress
+      const uploadedBytes = (chunkIndex + 1) * chunkSize;
+      const progressPct = 85 + (Math.min(uploadedBytes, fileSize) / fileSize) * 10; // 85-95%
+
+      setImmediate(() => {
+        updateTaskProgress(task, Math.round(progressPct), {
+          status: 'uploading',
+          chunk: `${chunkIndex + 1}/${totalChunks}`,
+          uploaded_mb: Math.round(Math.min(uploadedBytes, fileSize) / 1024 / 1024),
+          total_mb: Math.round(fileSize / 1024 / 1024),
+        });
+      });
+    }
+  } finally {
+    fs.closeSync(fileHandle);
+  }
+
+  log.task.info('Chunked upload completed', {
+    total_chunks: totalChunks,
+    file_size_mb: Math.round(fileSize / 1024 / 1024),
+  });
 };
 
 /**

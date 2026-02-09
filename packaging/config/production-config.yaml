@@ -237,3 +237,4 @@ template_sources:
     max_download_size_gb: 100
   upload:
     timeout_seconds: 7200  # 2 hours default (increase for slow connections)
+    chunk_size_mb: 100  # Chunk size for uploads (default 100MB)
