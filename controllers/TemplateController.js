@@ -24,7 +24,11 @@ const getRegistryToken = async (sourceConfig, userToken = null) => {
   }
 
   // 2. If config has a JWT-like api_key, use it directly
-  if (sourceConfig.api_key && sourceConfig.api_key.includes('.') && sourceConfig.api_key.split('.').length === 3) {
+  if (
+    sourceConfig.api_key &&
+    sourceConfig.api_key.includes('.') &&
+    sourceConfig.api_key.split('.').length === 3
+  ) {
     return sourceConfig.api_key;
   }
 
@@ -576,7 +580,17 @@ export const publishTemplate = async (req, res) => {
       status: 'pending',
       metadata: await new Promise((resolve, reject) => {
         yj.stringifyAsync(
-          { zone_name, box_path, source_name, organization, box_name, version, description, snapshot_name, auth_token },
+          {
+            zone_name,
+            box_path,
+            source_name,
+            organization,
+            box_name,
+            version,
+            description,
+            snapshot_name,
+            auth_token,
+          },
           (err, jsonResult) => (err ? reject(err) : resolve(jsonResult))
         );
       }),
@@ -624,7 +638,9 @@ export const exportTemplate = async (req, res) => {
   const { zone_name, filename, snapshot_name, created_by = 'api' } = req.body;
 
   try {
-    if (!zone_name) return res.status(400).json({ error: 'zone_name is required' });
+    if (!zone_name) {
+      return res.status(400).json({ error: 'zone_name is required' });
+    }
 
     const task = await Tasks.create({
       zone_name: 'system',

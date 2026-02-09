@@ -7,6 +7,7 @@ import path from 'path';
 import os from 'os';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
+import { calculateChecksum } from '../../lib/ChecksumHelper.js';
 import config from '../../config/ConfigLoader.js';
 import Template from '../../models/TemplateModel.js';
 import Tasks from '../../models/TaskModel.js';
@@ -30,7 +31,11 @@ const getRegistryToken = async (sourceConfig, userToken = null) => {
   }
 
   // 2. If config has a JWT-like api_key, use it directly
-  if (sourceConfig.api_key && sourceConfig.api_key.includes('.') && sourceConfig.api_key.split('.').length === 3) {
+  if (
+    sourceConfig.api_key &&
+    sourceConfig.api_key.includes('.') &&
+    sourceConfig.api_key.split('.').length === 3
+  ) {
     return sourceConfig.api_key;
   }
 
@@ -319,15 +324,8 @@ export const executeTemplateDownloadTask = async metadataJson => {
       });
     });
 
-    const {
-      source_name,
-      organization,
-      box_name,
-      version,
-      provider,
-      architecture,
-      auth_token,
-    } = metadata;
+    const { source_name, organization, box_name, version, provider, architecture, auth_token } =
+      metadata;
 
     log.task.info('Template download task parameters', {
       source_name,
@@ -388,15 +386,8 @@ export const executeTemplateDownloadTask = async metadataJson => {
 
     await updateTaskProgress(task, 50, { status: 'calculating_checksum' });
 
-    // Calculate checksum
-    const hash = crypto.createHash('sha256');
-    const readStream = fs.createReadStream(tempBoxPath);
-    await new Promise((resolve, reject) => {
-      readStream.on('data', chunk => hash.update(chunk));
-      readStream.on('end', resolve);
-      readStream.on('error', reject);
-    });
-    const checksum = hash.digest('hex');
+    // Calculate checksum (non-blocking to keep API responsive)
+    const checksum = await calculateChecksum(tempBoxPath, 'sha256');
 
     // Build the ZFS dataset path
     const storagePath = templateConfig.local_storage_path || '/data/templates';
@@ -567,8 +558,10 @@ const getZoneBootDataset = async zoneConfig => {
     }
   } else {
     // For native zones (ipkg/lipkg), use the zonepath dataset
-    const zonepath = zoneConfig.zonepath;
-    if (!zonepath) throw new Error('Zone has no zonepath');
+    const { zonepath } = zoneConfig;
+    if (!zonepath) {
+      throw new Error('Zone has no zonepath');
+    }
 
     const zfsResult = await executeCommand(`pfexec zfs list -H -o name "${zonepath}"`);
     if (zfsResult.success) {
@@ -637,7 +630,10 @@ const ensureRegistryStructure = async (
   zone_name
 ) => {
   const ignoreConflict = e => {
-    if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
+    // 200/201 = success, 400 = duplicate box, 409 = duplicate version/provider/arch
+    if (![200, 201, 400, 409].includes(e.response?.status)) {
+      throw e;
+    }
   };
 
   await client
@@ -667,26 +663,29 @@ const ensureRegistryStructure = async (
  * @param {Object} client - Axios client
  * @param {Object} sourceConfig - Source configuration
  * @param {string} token - Auth token
- * @param {string} organization - Organization name
- * @param {string} box_name - Box name
- * @param {string} version - Version
+ * @param {Object} registryParams - Registry parameters { organization, box_name, version }
  * @param {string} checksum - File checksum
  * @param {string} uploadFilePath - Path to file to upload
+ * @param {Object} task - Task object for progress updates
  */
 const uploadRegistryArtifact = async (
   client,
   sourceConfig,
   token,
-  organization,
-  box_name,
-  version,
+  registryParams,
   checksum,
-  uploadFilePath
+  uploadFilePath,
+  task
 ) => {
+  const { organization, box_name, version } = registryParams;
   const ignoreConflict = e => {
-    if (e.response?.status !== 409 && e.response?.status !== 200) throw e;
+    // 200/201 = success, 400 = duplicate box, 409 = duplicate version/provider/arch
+    if (![200, 201, 400, 409].includes(e.response?.status)) {
+      throw e;
+    }
   };
 
+  // Create architecture
   await client
     .post(
       `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture`,
@@ -698,12 +697,71 @@ const uploadRegistryArtifact = async (
     )
     .catch(ignoreConflict);
 
-  const fileStream = fs.createReadStream(uploadFilePath);
-  const stats = fs.statSync(uploadFilePath);
+  // Get upload config
+  const templateConfig = config.getTemplateSources();
+  const uploadTimeout = (templateConfig.upload?.timeout_seconds || 7200) * 1000;
 
-  await client.post(
+  const stats = fs.statSync(uploadFilePath);
+  const fileSize = stats.size;
+  let uploadedBytes = 0;
+  let lastProgressUpdate = 0;
+
+  // Create a PassThrough stream to monitor upload progress
+  const { PassThrough } = await import('stream');
+  const monitor = new PassThrough();
+  const fileStream = fs.createReadStream(uploadFilePath);
+
+  monitor.on('data', chunk => {
+    uploadedBytes += chunk.length;
+    const now = Date.now();
+    if (now - lastProgressUpdate > 10000) {
+      // Update every 10 seconds
+      lastProgressUpdate = now;
+      const pct = 85 + (uploadedBytes / fileSize) * 10; // 85-95% range
+      setImmediate(() => {
+        updateTaskProgress(task, Math.round(pct), {
+          status: 'uploading',
+          uploaded_mb: Math.round(uploadedBytes / 1024 / 1024),
+          total_mb: Math.round(fileSize / 1024 / 1024),
+        });
+      });
+    }
+  });
+
+  fileStream.pipe(monitor);
+
+  // Create dedicated upload client with long timeout and keepalive
+  // Determine auth headers based on token type
+  const authHeaders = {};
+  if (token) {
+    const isJWT = token.includes('.') && token.split('.').length === 3;
+    if (isJWT) {
+      authHeaders['x-access-token'] = token;
+      authHeaders.Authorization = `Bearer ${token}`;
+    } else {
+      authHeaders.Authorization = `Bearer ${token}`;
+    }
+  }
+
+  const uploadClient = axios.create({
+    baseURL: sourceConfig.url,
+    headers: {
+      'User-Agent': 'Vagrant/2.2.19 Zoneweaver/1.0.0',
+      ...authHeaders,
+    },
+    httpsAgent: new https.Agent({
+      rejectUnauthorized: sourceConfig.verify_ssl !== false,
+      keepAlive: true,
+      keepAliveMsecs: 30000, // Send keepalive packets every 30s
+    }),
+    timeout: uploadTimeout,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+  });
+
+  await uploadClient.post(
     `/api/organization/${organization}/box/${box_name}/version/${version}/provider/zone/architecture/amd64/file/upload`,
-    fileStream,
+    monitor,
     {
       headers: {
         'Content-Type': 'application/octet-stream',
@@ -712,8 +770,6 @@ const uploadRegistryArtifact = async (
         'x-checksum': checksum,
         'x-checksum-type': 'SHA256',
       },
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
     }
   );
 };
@@ -743,7 +799,9 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
   }
 
   const dataset = await getZoneBootDataset(zoneConfig);
-  if (!dataset) throw new Error(`Could not determine dataset for zone ${zoneName}`);
+  if (!dataset) {
+    throw new Error(`Could not determine dataset for zone ${zoneName}`);
+  }
 
   await updateTaskProgress(task, 20, { status: 'creating_snapshot' });
 
@@ -788,8 +846,8 @@ const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
 
   await updateTaskProgress(task, 90, { status: 'calculating_checksum' });
 
-  // 6. Calculate checksum
-  const checksum = await calculateChecksumNonBlocking(boxPath, 'sha256');
+  // 6. Calculate checksum (non-blocking to keep API responsive)
+  const checksum = await calculateChecksum(boxPath, 'sha256');
 
   return { boxPath, checksum };
 };
@@ -824,12 +882,7 @@ export const executeTemplateExportTask = async metadataJson => {
     await fs.promises.mkdir(tempDir, { recursive: true });
 
     // 1. Create Box Artifact
-    const { boxPath, checksum } = await createBoxArtifact(
-      zone_name,
-      snapshot_name,
-      tempDir,
-      task
-    );
+    const { boxPath, checksum } = await createBoxArtifact(zone_name, snapshot_name, tempDir, task);
 
     await updateTaskProgress(task, 90, { status: 'moving_to_storage' });
 
@@ -934,8 +987,8 @@ export const executeTemplatePublishTask = async metadataJson => {
 
       await updateTaskProgress(task, 10, { status: 'calculating_checksum' });
 
-      // Calculate checksum for existing file
-      uploadChecksum = await calculateChecksumNonBlocking(uploadFilePath, 'sha256');
+      // Calculate checksum for existing file (non-blocking to keep API responsive)
+      uploadChecksum = await calculateChecksum(uploadFilePath, 'sha256');
     } else if (zone_name) {
       // Path 2: Export from zone then upload (Combined)
       // Create temp directory
@@ -953,25 +1006,17 @@ export const executeTemplatePublishTask = async metadataJson => {
     await updateTaskProgress(task, 85, { status: 'uploading_to_registry' });
 
     // 2. Create Registry Objects
-    await ensureRegistryStructure(
-      client,
-      organization,
-      box_name,
-      version,
-      description,
-      zone_name
-    );
+    await ensureRegistryStructure(client, organization, box_name, version, description, zone_name);
 
     // 3. Upload File
     await uploadRegistryArtifact(
       client,
       sourceConfig,
       token,
-      organization,
-      box_name,
-      version,
+      { organization, box_name, version },
       uploadChecksum,
-      uploadFilePath
+      uploadFilePath,
+      task
     );
 
     await updateTaskProgress(task, 95, { status: 'releasing_version' });
