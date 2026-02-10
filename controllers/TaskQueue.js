@@ -138,6 +138,23 @@ import {
 } from './TaskManager/TemplateManager.js';
 import { executeZoneCreateTask } from './TaskManager/ZoneCreationManager.js';
 import { executeZoneModifyTask } from './TaskManager/ZoneModificationManager.js';
+import {
+  executeCreateNatRuleTask,
+  executeDeleteNatRuleTask,
+  executeConfigureForwardingTask,
+} from './TaskManager/NatManager.js';
+import {
+  executeDhcpUpdateConfigTask,
+  executeDhcpAddHostTask,
+  executeDhcpRemoveHostTask,
+  executeDhcpServiceControlTask,
+} from './TaskManager/DhcpManager.js';
+import { executeZoneSetupTask } from './TaskManager/ZoneSetupManager.js';
+import {
+  executeZoneWaitSSHTask,
+  executeZoneSyncTask,
+  executeZoneProvisionTask,
+} from './TaskManager/ZoneProvisionManager.js';
 import { isVncEnabledAtBoot } from './VncConsoleController/utils/VncCleanupService.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import { Op } from 'sequelize';
@@ -197,6 +214,17 @@ const OPERATION_CATEGORIES = {
   create_bridge: 'network_datalink',
   delete_bridge: 'network_datalink',
   modify_bridge_links: 'network_datalink',
+
+  // Network NAT/forwarding operations
+  create_nat_rule: 'network_nat',
+  delete_nat_rule: 'network_nat',
+  configure_forwarding: 'network_nat',
+
+  // Network DHCP operations
+  dhcp_update_config: 'network_dhcp',
+  dhcp_add_host: 'network_dhcp',
+  dhcp_remove_host: 'network_dhcp',
+  dhcp_service_control: 'network_dhcp',
 
   // Network IP operations
   create_ip_address: 'network_ip',
@@ -272,6 +300,10 @@ const OPERATION_CATEGORIES = {
   // Zone lifecycle operations
   zone_create: 'zone_lifecycle',
   zone_modify: 'zone_lifecycle',
+  zone_setup: 'zone_lifecycle',
+  zone_wait_ssh: 'zone_lifecycle',
+  zone_sync: 'zone_lifecycle',
+  zone_provision: 'zone_lifecycle',
 };
 
 /**
@@ -299,9 +331,10 @@ const MAX_CONCURRENT_TASKS = config.getZones().max_concurrent_tasks || 5;
  * Execute zone-related tasks
  * @param {string} operation - Operation type
  * @param {string} zoneName - Zone name
+ * @param {string} [metadata] - Optional JSON metadata string
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const executeZoneTask = (operation, zoneName) => {
+const executeZoneTask = (operation, zoneName, metadata) => {
   switch (operation) {
     case 'start':
       return executeStartTask(zoneName);
@@ -310,7 +343,7 @@ const executeZoneTask = (operation, zoneName) => {
     case 'restart':
       return executeRestartTask(zoneName);
     case 'delete':
-      return executeDeleteTask(zoneName);
+      return executeDeleteTask(zoneName, metadata);
     case 'discover':
       return executeDiscoverTask();
     default:
@@ -404,6 +437,20 @@ const executeNetworkTask = (operation, metadata) => {
       return executeDeleteBridgeTask(metadata);
     case 'modify_bridge_links':
       return executeModifyBridgeLinksTask(metadata);
+    case 'create_nat_rule':
+      return executeCreateNatRuleTask(metadata);
+    case 'delete_nat_rule':
+      return executeDeleteNatRuleTask(metadata);
+    case 'configure_forwarding':
+      return executeConfigureForwardingTask(metadata);
+    case 'dhcp_update_config':
+      return executeDhcpUpdateConfigTask(metadata);
+    case 'dhcp_add_host':
+      return executeDhcpAddHostTask(metadata);
+    case 'dhcp_remove_host':
+      return executeDhcpRemoveHostTask(metadata);
+    case 'dhcp_service_control':
+      return executeDhcpServiceControlTask(metadata);
     default:
       return { success: false, error: `Unknown network operation: ${operation}` };
   }
@@ -755,10 +802,22 @@ const executeTask = async task => {
     if (operation === 'zone_modify') {
       return await executeZoneModifyTask(task);
     }
+    if (operation === 'zone_setup') {
+      return await executeZoneSetupTask(task);
+    }
+    if (operation === 'zone_wait_ssh') {
+      return await executeZoneWaitSSHTask(task);
+    }
+    if (operation === 'zone_sync') {
+      return await executeZoneSyncTask(task);
+    }
+    if (operation === 'zone_provision') {
+      return await executeZoneProvisionTask(task);
+    }
 
     // Zone operations
     if (['start', 'stop', 'restart', 'delete', 'discover'].includes(operation)) {
-      return await executeZoneTask(operation, zone_name);
+      return await executeZoneTask(operation, zone_name, task.metadata);
     }
 
     // Service operations
@@ -799,6 +858,13 @@ const executeTask = async task => {
         'create_bridge',
         'delete_bridge',
         'modify_bridge_links',
+        'create_nat_rule',
+        'delete_nat_rule',
+        'configure_forwarding',
+        'dhcp_update_config',
+        'dhcp_add_host',
+        'dhcp_remove_host',
+        'dhcp_service_control',
       ].includes(operation)
     ) {
       return await executeNetworkTask(operation, task.metadata);

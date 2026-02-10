@@ -254,6 +254,9 @@ const configureBootdisk = async (zoneName, bootdiskPath) => {
  * @param {boolean} force - Whether to force attach in-use datasets
  */
 const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force) => {
+  const zfsPromises = [];
+  const zonecfgCmds = [];
+
   for (let i = 0; i < disks.length; i++) {
     const disk = disks[i];
     let diskPath = null;
@@ -266,31 +269,45 @@ const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force) => {
       diskPath = `${pool}/${dset}/${zoneName}/${volName}`;
 
       const sparseFlag = disk.sparse !== false ? '-s' : '';
-      // eslint-disable-next-line no-await-in-loop
-      const createResult = await executeCommand(
-        `pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`
+      zfsPromises.push(
+        executeCommand(`pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`).then(res => {
+          if (!res.success) {
+            throw new Error(`Failed to create disk ${i}: ${res.error}`);
+          }
+          zfsCreated.push(diskPath);
+          return diskPath;
+        })
       );
-      if (!createResult.success) {
-        throw new Error(`Failed to create disk ${i}: ${createResult.error}`);
-      }
-      zfsCreated.push(diskPath);
     } else if (disk.existing_dataset) {
       diskPath = disk.existing_dataset;
 
-      // eslint-disable-next-line no-await-in-loop
-      const usageCheck = await checkZvolInUse(diskPath);
-      if (usageCheck.inUse && !force) {
-        throw new Error(`Disk ${diskPath} is already in use by zone ${usageCheck.usedBy}`);
-      }
+      zfsPromises.push(
+        checkZvolInUse(diskPath).then(usageCheck => {
+          if (usageCheck.inUse && !force) {
+            throw new Error(`Disk ${diskPath} is already in use by zone ${usageCheck.usedBy}`);
+          }
+          return diskPath;
+        })
+      );
     }
 
     if (diskPath) {
-      const diskCmd = `pfexec zonecfg -z ${zoneName} "${buildAttrCommand(`disk${i}`, diskPath)} add device; set match=/dev/zvol/rdsk/${diskPath}; end;"`;
-      // eslint-disable-next-line no-await-in-loop
-      const diskResult = await executeCommand(diskCmd);
-      if (!diskResult.success) {
-        throw new Error(`Disk ${i} configuration failed: ${diskResult.error}`);
-      }
+      zonecfgCmds.push(
+        `${buildAttrCommand(`disk${i}`, diskPath)} add device; set match=/dev/zvol/rdsk/${diskPath}; end;`
+      );
+    }
+  }
+
+  // Wait for ZFS operations
+  await Promise.all(zfsPromises);
+
+  // Apply zonecfg in batch
+  if (zonecfgCmds.length > 0) {
+    const diskResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${zonecfgCmds.join(' ')}"`
+    );
+    if (!diskResult.success) {
+      throw new Error(`Disk configuration failed: ${diskResult.error}`);
     }
   }
 };
@@ -301,15 +318,16 @@ const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force) => {
  * @param {Array} cdroms - Array of CDROM configurations
  */
 const configureCdroms = async (zoneName, cdroms) => {
-  for (let i = 0; i < cdroms.length; i++) {
-    const cdrom = cdroms[i];
+  const cmds = cdroms.map((cdrom, i) => {
     // Single CD: 'cdrom', multiple: 'cdrom0', 'cdrom1', etc.
     const attrName = cdroms.length === 1 ? 'cdrom' : `cdrom${i}`;
-    const cdromCmd = `pfexec zonecfg -z ${zoneName} "${buildAttrCommand(attrName, cdrom.path)} add fs; set dir=${cdrom.path}; set special=${cdrom.path}; set type=lofs; add options ro; add options nodevices; end;"`;
-    // eslint-disable-next-line no-await-in-loop
-    const cdromResult = await executeCommand(cdromCmd);
+    return `${buildAttrCommand(attrName, cdrom.path)} add fs; set dir=${cdrom.path}; set special=${cdrom.path}; set type=lofs; add options ro; add options nodevices; end;`;
+  });
+
+  if (cmds.length > 0) {
+    const cdromResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`);
     if (!cdromResult.success) {
-      throw new Error(`CDROM ${i} configuration failed: ${cdromResult.error}`);
+      throw new Error(`CDROM configuration failed: ${cdromResult.error}`);
     }
   }
 };
@@ -320,17 +338,17 @@ const configureCdroms = async (zoneName, cdroms) => {
  * @param {Array} nics - Array of NIC configurations
  */
 const configureNics = async (zoneName, nics) => {
-  for (const nic of nics) {
-    let nicCmd;
+  const cmds = nics.map(nic => {
     if (nic.global_nic) {
-      nicCmd = `pfexec zonecfg -z ${zoneName} "add net; set physical=${nic.physical}; set global-nic=${nic.global_nic}; end;"`;
-    } else {
-      nicCmd = `pfexec zonecfg -z ${zoneName} "add net; set physical=${nic.physical}; end;"`;
+      return `add net; set physical=${nic.physical}; set global-nic=${nic.global_nic}; end;`;
     }
-    // eslint-disable-next-line no-await-in-loop
-    const nicResult = await executeCommand(nicCmd);
+    return `add net; set physical=${nic.physical}; end;`;
+  });
+
+  if (cmds.length > 0) {
+    const nicResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`);
     if (!nicResult.success) {
-      throw new Error(`NIC configuration failed for ${nic.physical}: ${nicResult.error}`);
+      throw new Error(`NIC configuration failed: ${nicResult.error}`);
     }
   }
 };
@@ -395,11 +413,14 @@ const rollbackCreation = async (zoneName, zonecfgApplied, zfsCreated) => {
       log.task.info('Rolled back zone configuration', { zone_name: zoneName });
     }
 
-    for (const dataset of [...zfsCreated].reverse()) {
-      // eslint-disable-next-line no-await-in-loop
-      await executeCommand(`pfexec zfs destroy -r ${dataset}`);
-      log.task.info('Rolled back ZFS dataset', { dataset });
-    }
+    const destroyPromises = [...zfsCreated]
+      .reverse()
+      .map(dataset =>
+        executeCommand(`pfexec zfs destroy -r ${dataset}`).then(() =>
+          log.task.info('Rolled back ZFS dataset', { dataset })
+        )
+      );
+    await Promise.all(destroyPromises);
   } catch (rollbackError) {
     log.task.error('Rollback failed', { error: rollbackError.message });
   }

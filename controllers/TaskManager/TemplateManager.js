@@ -828,7 +828,11 @@ const uploadRegistryArtifact = async (
   // Upload chunks sequentially (intentional await in loop for sequential uploads)
   const fileHandle = fs.openSync(uploadFilePath, 'r');
   try {
-    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const uploadNextChunk = async chunkIndex => {
+      if (chunkIndex >= totalChunks) {
+        return;
+      }
+
       const offset = chunkIndex * chunkSize;
       const length = Math.min(chunkSize, fileSize - offset);
       const buffer = Buffer.alloc(length);
@@ -837,7 +841,6 @@ const uploadRegistryArtifact = async (
       fs.readSync(fileHandle, buffer, 0, length, offset);
 
       // Upload chunk (sequential by design for reliable uploads)
-      // eslint-disable-next-line no-await-in-loop
       await uploadChunk(chunkIndex, buffer);
 
       // Update progress
@@ -852,7 +855,11 @@ const uploadRegistryArtifact = async (
           total_mb: Math.round(fileSize / 1024 / 1024),
         });
       });
-    }
+
+      await uploadNextChunk(chunkIndex + 1);
+    };
+
+    await uploadNextChunk(0);
   } finally {
     fs.closeSync(fileHandle);
   }

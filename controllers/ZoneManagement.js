@@ -661,6 +661,12 @@ export const restartZone = async (req, res) => {
  *           type: boolean
  *           default: false
  *         description: Force deletion even if zone is running
+ *       - in: query
+ *         name: cleanup_datasets
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Also destroy ZFS datasets (boot volume, zone root dataset) after zone deletion. External datasets not in the zone hierarchy are skipped for safety.
  *     responses:
  *       200:
  *         description: Delete tasks queued successfully
@@ -1311,7 +1317,7 @@ export const modifyZone = async (req, res) => {
 export const deleteZone = async (req, res) => {
   try {
     const { zoneName } = req.params;
-    const { force = false } = req.query;
+    const { force = false, cleanup_datasets = false } = req.query;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -1334,6 +1340,12 @@ export const deleteZone = async (req, res) => {
       });
     }
 
+    // Build delete task metadata
+    const deleteMetadata =
+      cleanup_datasets === 'true' || cleanup_datasets === true
+        ? JSON.stringify({ cleanup_datasets: true })
+        : undefined;
+
     // If zone is running, create stop task first
     if (currentStatus === 'running') {
       const stopTask = await Tasks.create({
@@ -1352,6 +1364,7 @@ export const deleteZone = async (req, res) => {
         priority: TaskPriority.CRITICAL,
         created_by: req.entity.name,
         depends_on: stopTask.id,
+        metadata: deleteMetadata,
         status: 'pending',
       });
       tasks.push(deleteTask);
@@ -1362,6 +1375,7 @@ export const deleteZone = async (req, res) => {
         operation: 'delete',
         priority: TaskPriority.CRITICAL,
         created_by: req.entity.name,
+        metadata: deleteMetadata,
         status: 'pending',
       });
       tasks.push(deleteTask);

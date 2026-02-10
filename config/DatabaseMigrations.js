@@ -10,6 +10,8 @@ import { log } from '../lib/Logger.js';
 
 // Import models to ensure they are registered before sync
 import '../models/TemplateModel.js';
+import '../models/RecipeModel.js';
+import '../models/ProvisioningProfileModel.js';
 
 /**
  * Database Migration Helper Class

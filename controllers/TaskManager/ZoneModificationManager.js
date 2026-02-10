@@ -203,21 +203,19 @@ const applyAutobootChange = async (zoneName, autoboot) => {
  * @param {Array} nics - Array of NIC configurations
  */
 const addNics = async (zoneName, nics) => {
-  for (const nic of nics) {
-    let nicCmd;
+  const cmds = nics.map(nic => {
     if (nic.global_nic) {
-      nicCmd = `pfexec zonecfg -z ${zoneName} "add net; set physical=${nic.physical}; set global-nic=${nic.global_nic}; end;"`;
-    } else {
-      nicCmd = `pfexec zonecfg -z ${zoneName} "add net; set physical=${nic.physical}; end;"`;
+      return `add net; set physical=${nic.physical}; set global-nic=${nic.global_nic}; end;`;
     }
+    return `add net; set physical=${nic.physical}; end;`;
+  });
 
-    // eslint-disable-next-line no-await-in-loop
-    const nicResult = await executeCommand(nicCmd);
+  if (cmds.length > 0) {
+    const nicResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`);
     if (!nicResult.success) {
-      throw new Error(`Failed to add NIC ${nic.physical}: ${nicResult.error}`);
+      throw new Error(`Failed to add NICs: ${nicResult.error}`);
     }
-
-    log.task.info('Added NIC to zone', { zone_name: zoneName, physical: nic.physical });
+    log.task.info('Added NICs to zone', { zone_name: zoneName, count: nics.length });
   }
 };
 
@@ -227,16 +225,14 @@ const addNics = async (zoneName, nics) => {
  * @param {Array} nicNames - Array of NIC physical names to remove
  */
 const removeNics = async (zoneName, nicNames) => {
-  for (const nicName of nicNames) {
-    // eslint-disable-next-line no-await-in-loop
-    const removeResult = await executeCommand(
-      `pfexec zonecfg -z ${zoneName} "remove net physical=${nicName}"`
-    );
-    if (!removeResult.success) {
-      throw new Error(`Failed to remove NIC ${nicName}: ${removeResult.error}`);
-    }
+  const cmds = nicNames.map(nicName => `remove net physical=${nicName}`);
 
-    log.task.info('Removed NIC from zone', { zone_name: zoneName, physical: nicName });
+  if (cmds.length > 0) {
+    const removeResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`);
+    if (!removeResult.success) {
+      throw new Error(`Failed to remove NICs: ${removeResult.error}`);
+    }
+    log.task.info('Removed NICs from zone', { zone_name: zoneName, count: nicNames.length });
   }
 };
 
@@ -249,6 +245,8 @@ const removeNics = async (zoneName, nicNames) => {
  */
 const addDisks = async (zoneName, zoneConfig, disks, force) => {
   let nextNum = getNextDiskNumber(zoneConfig);
+  const zfsPromises = [];
+  const zonecfgCmds = [];
 
   for (const disk of disks) {
     let diskPath = null;
@@ -261,38 +259,50 @@ const addDisks = async (zoneName, zoneConfig, disks, force) => {
       diskPath = `${pool}/${dset}/${zoneName}/${volName}`;
 
       const sparseFlag = disk.sparse !== false ? '-s' : '';
-      // eslint-disable-next-line no-await-in-loop
-      const createResult = await executeCommand(
-        `pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`
+      zfsPromises.push(
+        executeCommand(`pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`).then(res => {
+          if (!res.success) {
+            throw new Error(`Failed to create disk volume: ${res.error}`);
+          }
+          return diskPath;
+        })
       );
-      if (!createResult.success) {
-        throw new Error(`Failed to create disk volume: ${createResult.error}`);
-      }
     } else if (disk.existing_dataset) {
       diskPath = disk.existing_dataset;
 
-      // eslint-disable-next-line no-await-in-loop
-      const usageCheck = await checkZvolInUse(diskPath, zoneName);
-      if (usageCheck.inUse && !force) {
-        throw new Error(`Disk ${diskPath} is already in use by zone ${usageCheck.usedBy}`);
-      }
+      zfsPromises.push(
+        checkZvolInUse(diskPath, zoneName).then(usageCheck => {
+          if (usageCheck.inUse && !force) {
+            throw new Error(`Disk ${diskPath} is already in use by zone ${usageCheck.usedBy}`);
+          }
+          return diskPath;
+        })
+      );
     }
 
     if (diskPath) {
-      const attrCmd = `add attr; set name=disk${nextNum}; set value=\\"${diskPath}\\"; set type=string; end; add device; set match=/dev/zvol/rdsk/${diskPath}; end;`;
-      // eslint-disable-next-line no-await-in-loop
-      const diskResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${attrCmd}"`);
-      if (!diskResult.success) {
-        throw new Error(`Failed to add disk${nextNum} to zone: ${diskResult.error}`);
-      }
-
-      log.task.info('Added disk to zone', {
-        zone_name: zoneName,
-        disk_name: `disk${nextNum}`,
-        path: diskPath,
-      });
+      zonecfgCmds.push(
+        `add attr; set name=disk${nextNum}; set value=\\"${diskPath}\\"; set type=string; end; add device; set match=/dev/zvol/rdsk/${diskPath}; end;`
+      );
       nextNum++;
     }
+  }
+
+  // Wait for ZFS operations
+  await Promise.all(zfsPromises);
+
+  // Apply zonecfg
+  if (zonecfgCmds.length > 0) {
+    const diskResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${zonecfgCmds.join(' ')}"`
+    );
+    if (!diskResult.success) {
+      throw new Error(`Failed to add disks to zone: ${diskResult.error}`);
+    }
+    log.task.info('Added disks to zone', {
+      zone_name: zoneName,
+      count: disks.length,
+    });
   }
 };
 
@@ -303,6 +313,8 @@ const addDisks = async (zoneName, zoneConfig, disks, force) => {
  * @param {Array} diskNames - Array of disk attribute names to remove (e.g., 'disk0')
  */
 const removeDisks = async (zoneName, zoneConfig, diskNames) => {
+  const cmds = [];
+
   for (const diskName of diskNames) {
     // Find the disk path from current config to remove the device block
     let diskPath = null;
@@ -314,30 +326,20 @@ const removeDisks = async (zoneName, zoneConfig, diskNames) => {
     }
 
     // Remove the attribute
-    // eslint-disable-next-line no-await-in-loop
-    const removeAttrResult = await executeCommand(
-      `pfexec zonecfg -z ${zoneName} "remove attr name=${diskName}"`
-    );
-    if (!removeAttrResult.success) {
-      throw new Error(`Failed to remove disk attribute ${diskName}: ${removeAttrResult.error}`);
-    }
+    cmds.push(`remove attr name=${diskName}`);
 
     // Remove the device block if we found the path
     if (diskPath) {
-      // eslint-disable-next-line no-await-in-loop
-      const removeDevResult = await executeCommand(
-        `pfexec zonecfg -z ${zoneName} "remove device match=/dev/zvol/rdsk/${diskPath}"`
-      );
-      if (!removeDevResult.success) {
-        log.task.warn('Failed to remove device block for disk', {
-          zone_name: zoneName,
-          disk_name: diskName,
-          error: removeDevResult.error,
-        });
-      }
+      cmds.push(`remove device match=/dev/zvol/rdsk/${diskPath}`);
     }
+  }
 
-    log.task.info('Removed disk from zone', { zone_name: zoneName, disk_name: diskName });
+  if (cmds.length > 0) {
+    const removeResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`);
+    if (!removeResult.success) {
+      throw new Error(`Failed to remove disks: ${removeResult.error}`);
+    }
+    log.task.info('Removed disks from zone', { zone_name: zoneName, count: diskNames.length });
   }
 };
 
@@ -349,23 +351,22 @@ const removeDisks = async (zoneName, zoneConfig, diskNames) => {
  */
 const addCdroms = async (zoneName, zoneConfig, cdroms) => {
   let nextNum = getNextCdromNumber(zoneConfig);
+  const cmds = [];
 
   for (const cdrom of cdroms) {
     const attrName = `cdrom${nextNum}`;
-    const cdromCmd = `add attr; set name=${attrName}; set value=\\"${cdrom.path}\\"; set type=string; end; add fs; set dir=${cdrom.path}; set special=${cdrom.path}; set type=lofs; add options ro; add options nodevices; end;`;
-
-    // eslint-disable-next-line no-await-in-loop
-    const cdromResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cdromCmd}"`);
-    if (!cdromResult.success) {
-      throw new Error(`Failed to add ${attrName} to zone: ${cdromResult.error}`);
-    }
-
-    log.task.info('Added CDROM to zone', {
-      zone_name: zoneName,
-      cdrom_name: attrName,
-      path: cdrom.path,
-    });
+    cmds.push(
+      `add attr; set name=${attrName}; set value=\\"${cdrom.path}\\"; set type=string; end; add fs; set dir=${cdrom.path}; set special=${cdrom.path}; set type=lofs; add options ro; add options nodevices; end;`
+    );
     nextNum++;
+  }
+
+  if (cmds.length > 0) {
+    const cdromResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`);
+    if (!cdromResult.success) {
+      throw new Error(`Failed to add CDROMs to zone: ${cdromResult.error}`);
+    }
+    log.task.info('Added CDROMs to zone', { zone_name: zoneName, count: cdroms.length });
   }
 };
 
@@ -376,6 +377,8 @@ const addCdroms = async (zoneName, zoneConfig, cdroms) => {
  * @param {Array} cdromNames - Array of cdrom attribute names to remove (e.g., 'cdrom0')
  */
 const removeCdroms = async (zoneName, zoneConfig, cdromNames) => {
+  const cmds = [];
+
   for (const cdromName of cdromNames) {
     // Find the cdrom path from current config to remove the fs block
     let cdromPath = null;
@@ -387,30 +390,20 @@ const removeCdroms = async (zoneName, zoneConfig, cdromNames) => {
     }
 
     // Remove the attribute
-    // eslint-disable-next-line no-await-in-loop
-    const removeAttrResult = await executeCommand(
-      `pfexec zonecfg -z ${zoneName} "remove attr name=${cdromName}"`
-    );
-    if (!removeAttrResult.success) {
-      throw new Error(`Failed to remove cdrom attribute ${cdromName}: ${removeAttrResult.error}`);
-    }
+    cmds.push(`remove attr name=${cdromName}`);
 
     // Remove the fs block if we found the path
     if (cdromPath) {
-      // eslint-disable-next-line no-await-in-loop
-      const removeFsResult = await executeCommand(
-        `pfexec zonecfg -z ${zoneName} "remove fs dir=${cdromPath}"`
-      );
-      if (!removeFsResult.success) {
-        log.task.warn('Failed to remove fs block for cdrom', {
-          zone_name: zoneName,
-          cdrom_name: cdromName,
-          error: removeFsResult.error,
-        });
-      }
+      cmds.push(`remove fs dir=${cdromPath}`);
     }
+  }
 
-    log.task.info('Removed CDROM from zone', { zone_name: zoneName, cdrom_name: cdromName });
+  if (cmds.length > 0) {
+    const removeResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`);
+    if (!removeResult.success) {
+      throw new Error(`Failed to remove CDROMs: ${removeResult.error}`);
+    }
+    log.task.info('Removed CDROMs from zone', { zone_name: zoneName, count: cdromNames.length });
   }
 };
 

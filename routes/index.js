@@ -76,6 +76,28 @@ import {
 import { getRoot } from '../controllers/RootController.js';
 import { getProvisioningStatus } from '../controllers/ProvisioningController.js';
 import {
+  getProvisioningNetworkStatus,
+  setupProvisioningNetwork,
+  teardownProvisioningNetwork,
+} from '../controllers/ProvisioningNetworkController.js';
+import {
+  listRecipes,
+  createRecipe,
+  getRecipe,
+  updateRecipe,
+  deleteRecipe,
+  testRecipe,
+} from '../controllers/RecipeController.js';
+import {
+  provisionZone,
+  getProvisioningStatus as getZoneProvisioningStatus,
+  listProvisioningProfiles,
+  createProvisioningProfile,
+  getProvisioningProfile,
+  updateProvisioningProfile,
+  deleteProvisioningProfile,
+} from '../controllers/ProvisioningOrchestrationController.js';
+import {
   startTerminalSession,
   stopTerminalSession,
   getTerminalSessionInfo,
@@ -134,6 +156,23 @@ import {
   deleteBridge,
   modifyBridgeLinks,
 } from '../controllers/BridgeController.js';
+import {
+  getNatRules,
+  createNatRule,
+  deleteNatRule,
+  getNatStatus,
+  getForwardingStatus,
+  configureForwarding,
+} from '../controllers/NatController.js';
+import {
+  getDhcpConfig,
+  updateDhcpConfig,
+  getDhcpHosts,
+  addDhcpHost,
+  removeDhcpHost,
+  getDhcpStatus,
+  controlDhcpService,
+} from '../controllers/DhcpController.js';
 import {
   listPackages,
   searchPackages,
@@ -359,6 +398,24 @@ const router = express.Router();
 
 // Provisioning Routes
 router.get('/provisioning/status', verifyApiKey, getProvisioningStatus);
+router.get('/provisioning/network/status', verifyApiKey, getProvisioningNetworkStatus); // Check provisioning network status
+router.post('/provisioning/network/setup', verifyApiKey, setupProvisioningNetwork); // Setup provisioning network
+router.delete('/provisioning/network/teardown', verifyApiKey, teardownProvisioningNetwork); // Teardown provisioning network
+
+// Provisioning Recipe Routes
+router.get('/provisioning/recipes', verifyApiKey, listRecipes); // List all recipes
+router.post('/provisioning/recipes', verifyApiKey, createRecipe); // Create recipe
+router.get('/provisioning/recipes/:id', verifyApiKey, getRecipe); // Get recipe details
+router.put('/provisioning/recipes/:id', verifyApiKey, updateRecipe); // Update recipe
+router.delete('/provisioning/recipes/:id', verifyApiKey, deleteRecipe); // Delete recipe
+router.post('/provisioning/recipes/:id/test', verifyApiKey, testRecipe); // Test recipe against zone
+
+// Provisioning Profile Routes
+router.get('/provisioning/profiles', verifyApiKey, listProvisioningProfiles); // List all profiles
+router.post('/provisioning/profiles', verifyApiKey, createProvisioningProfile); // Create profile
+router.get('/provisioning/profiles/:id', verifyApiKey, getProvisioningProfile); // Get profile details
+router.put('/provisioning/profiles/:id', verifyApiKey, updateProvisioningProfile); // Update profile
+router.delete('/provisioning/profiles/:id', verifyApiKey, deleteProvisioningProfile); // Delete profile
 
 // Root route to display registered Zoneweaver API instances
 router.get('/', getRoot);
@@ -402,6 +459,10 @@ router.post('/zones/:zoneName/start', verifyApiKey, startZone); // Start zone
 router.post('/zones/:zoneName/stop', verifyApiKey, stopZone); // Stop zone
 router.post('/zones/:zoneName/restart', verifyApiKey, restartZone); // Restart zone
 router.delete('/zones/:zoneName', verifyApiKey, deleteZone); // Delete zone
+
+// Zone Provisioning Routes
+router.post('/zones/:name/provision', verifyApiKey, provisionZone); // Start provisioning pipeline
+router.get('/zones/:name/provision/status', verifyApiKey, getZoneProvisioningStatus); // Get provisioning status
 
 // Task Management Routes
 router.get('/tasks', verifyApiKey, listTasks); // List tasks
@@ -534,6 +595,23 @@ router.get('/network/bridges/:bridge', verifyApiKey, getBridgeDetails); // Get b
 router.post('/network/bridges', verifyApiKey, createBridge); // Create bridge
 router.delete('/network/bridges/:bridge', verifyApiKey, deleteBridge); // Delete bridge
 router.put('/network/bridges/:bridge/links', verifyApiKey, modifyBridgeLinks); // Modify bridge links
+
+// NAT and IP Forwarding Routes
+router.get('/network/nat/rules', verifyApiKey, getNatRules); // List NAT rules
+router.post('/network/nat/rules', verifyApiKey, createNatRule); // Create NAT rule
+router.delete('/network/nat/rules/:ruleId', verifyApiKey, deleteNatRule); // Delete NAT rule
+router.get('/network/nat/status', verifyApiKey, getNatStatus); // Get ipfilter service status
+router.get('/network/forwarding', verifyApiKey, getForwardingStatus); // Get IP forwarding status
+router.put('/network/forwarding', verifyApiKey, configureForwarding); // Configure IP forwarding
+
+// DHCP Server Management Routes
+router.get('/network/dhcp/config', verifyApiKey, getDhcpConfig); // Get DHCP configuration
+router.put('/network/dhcp/config', verifyApiKey, updateDhcpConfig); // Update DHCP configuration
+router.get('/network/dhcp/hosts', verifyApiKey, getDhcpHosts); // List DHCP static hosts
+router.post('/network/dhcp/hosts', verifyApiKey, addDhcpHost); // Add DHCP host entry
+router.delete('/network/dhcp/hosts/:hostname', verifyApiKey, removeDhcpHost); // Remove DHCP host entry
+router.get('/network/dhcp/status', verifyApiKey, getDhcpStatus); // Get DHCP service status
+router.put('/network/dhcp/status', verifyApiKey, controlDhcpService); // Control DHCP service
 
 // Package Management Routes
 router.get('/system/packages', verifyApiKey, listPackages); // List installed packages

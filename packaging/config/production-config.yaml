@@ -69,6 +69,24 @@ zones:
       allow_emergency_override: true      # Allow bypassing orchestration entirely
 provisioning:
   install_tools: true
+  staging_path: "/var/lib/zoneweaver-api/provisioning"
+  ssh:
+    key_path: "/etc/zoneweaver-api/ssh/provision_key"
+    timeout_seconds: 300
+    poll_interval_seconds: 10
+  network:
+    enabled: true
+    etherstub_name: "estub_provision"
+    host_vnic_name: "provision_interconnect0"
+    subnet: "10.190.190.0/24"
+    host_ip: "10.190.190.1"
+    netmask: "255.255.255.0"
+    dhcp_range_start: "10.190.190.10"
+    dhcp_range_end: "10.190.190.254"
+  zlogin:
+    enabled: true
+    default_timeout_seconds: 300
+    max_concurrent_automations: 3
 cleanup:
   interval: 300
 vnc:

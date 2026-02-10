@@ -136,12 +136,102 @@ export const executeRestartTask = async zoneName => {
 };
 
 /**
+ * Extract ZFS dataset paths from a zone configuration for cleanup
+ * @param {string} zoneName - Name of zone
+ * @returns {Promise<{zonepath: string|null, datasets: string[]}>}
+ */
+const extractZoneDatasets = async zoneName => {
+  const datasets = [];
+  let zonepath = null;
+
+  const result = await executeCommand(`pfexec zadm show ${zoneName}`);
+  if (!result.success) {
+    return { zonepath, datasets };
+  }
+
+  try {
+    const config = await new Promise((resolve, reject) => {
+      yj.parseAsync(result.output, (err, parseResult) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(parseResult);
+        }
+      });
+    });
+
+    const zoneConfig = config[zoneName] || {};
+
+    // Extract zonepath (e.g., /rpool/zones/myzone/path)
+    if (zoneConfig.zonepath) {
+      ({ zonepath } = zoneConfig);
+      // Zone root dataset is the parent of the zonepath
+      // e.g., zonepath=/rpool/zones/myzone/path → root dataset = rpool/zones/myzone
+      const pathParts = zonepath.replace(/^\//, '').split('/');
+      if (pathParts.length >= 2) {
+        // Remove the last segment (usually "path") to get the zone root dataset
+        const rootDataset = pathParts.slice(0, -1).join('/');
+        datasets.push(rootDataset);
+      }
+    }
+
+    // Extract bootdisk and additional disk attributes
+    if (zoneConfig.attr) {
+      const attrs = Array.isArray(zoneConfig.attr) ? zoneConfig.attr : [zoneConfig.attr];
+      for (const attr of attrs) {
+        if (attr.name && /^(?:bootdisk|disk\d+)$/.test(attr.name) && attr.value) {
+          // Only include datasets that appear to be within the zone hierarchy
+          // Skip external datasets (those not starting with the zone root)
+          datasets.push(attr.value);
+        }
+      }
+    }
+  } catch (error) {
+    log.task.warn('Failed to parse zone config for dataset extraction', {
+      zone_name: zoneName,
+      error: error.message,
+    });
+  }
+
+  return { zonepath, datasets };
+};
+
+/**
  * Execute zone delete task
  * @param {string} zoneName - Name of zone to delete
+ * @param {string} [metadataJson] - Optional JSON metadata string with cleanup options
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export const executeDeleteTask = async zoneName => {
+export const executeDeleteTask = async (zoneName, metadataJson) => {
   try {
+    let cleanupDatasets = false;
+    if (metadataJson) {
+      try {
+        const metadata = await new Promise((resolve, reject) => {
+          yj.parseAsync(metadataJson, (err, parseResult) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(parseResult);
+            }
+          });
+        });
+        cleanupDatasets = metadata.cleanup_datasets === true;
+      } catch {
+        // Ignore metadata parse errors - proceed without cleanup
+      }
+    }
+
+    // Collect dataset info before deleting the zone config
+    let zoneDatasets = { zonepath: null, datasets: [] };
+    if (cleanupDatasets) {
+      zoneDatasets = await extractZoneDatasets(zoneName);
+      log.task.info('Collected ZFS datasets for cleanup', {
+        zone_name: zoneName,
+        datasets: zoneDatasets.datasets,
+      });
+    }
+
     // Terminate VNC session if active
     await terminateVncSession(zoneName);
 
@@ -168,6 +258,52 @@ export const executeDeleteTask = async zoneName => {
       };
     }
 
+    // Clean up ZFS datasets if requested
+    const datasetErrors = [];
+    if (cleanupDatasets && zoneDatasets.datasets.length > 0) {
+      // Find the zone root dataset (shortest path, typically the parent of all others)
+      const sortedDatasets = [...zoneDatasets.datasets].sort((a, b) => a.length - b.length);
+      const [rootDataset] = sortedDatasets;
+
+      // Destroy the root dataset recursively (covers boot volume, zonepath, provisioning datasets)
+      const destroyResult = await executeCommand(`pfexec zfs destroy -r ${rootDataset}`);
+      if (!destroyResult.success) {
+        datasetErrors.push(`Failed to destroy ${rootDataset}: ${destroyResult.error}`);
+
+        // If recursive destroy of root failed, try individual datasets in parallel
+        const individualDestroys = sortedDatasets
+          .reverse()
+          .filter(dataset => dataset !== rootDataset)
+          .map(dataset => executeCommand(`pfexec zfs destroy -r ${dataset}`));
+
+        const individualResults = await Promise.all(individualDestroys);
+        individualResults.forEach((result, idx) => {
+          if (!result.success) {
+            const dataset = sortedDatasets.reverse()[idx];
+            datasetErrors.push(`Failed to destroy ${dataset}: ${result.error}`);
+          }
+        });
+      }
+
+      // Destroy any external disks that are NOT under the root dataset
+      for (const dataset of zoneDatasets.datasets) {
+        if (!dataset.startsWith(rootDataset)) {
+          log.task.info('Skipping external dataset (not in zone hierarchy)', {
+            zone_name: zoneName,
+            dataset,
+            root_dataset: rootDataset,
+          });
+        }
+      }
+
+      if (datasetErrors.length > 0) {
+        log.task.warn('Some ZFS datasets could not be cleaned up', {
+          zone_name: zoneName,
+          errors: datasetErrors,
+        });
+      }
+    }
+
     // Clean up all database entries in parallel
     await Promise.all([
       // Remove zone from database
@@ -190,9 +326,19 @@ export const executeDeleteTask = async zoneName => {
       ),
     ]);
 
+    let message = `Zone ${zoneName} deleted successfully`;
+    if (cleanupDatasets) {
+      if (datasetErrors.length === 0) {
+        message += ' (ZFS datasets cleaned up)';
+      } else {
+        message += ` (${datasetErrors.length} ZFS dataset cleanup errors)`;
+      }
+    }
+
     return {
       success: true,
-      message: `Zone ${zoneName} deleted successfully`,
+      message,
+      dataset_errors: datasetErrors.length > 0 ? datasetErrors : undefined,
     };
   } catch (error) {
     return {
