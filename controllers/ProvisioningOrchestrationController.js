@@ -9,7 +9,7 @@ import Tasks from '../models/TaskModel.js';
 import ProvisioningProfiles from '../models/ProvisioningProfileModel.js';
 import Recipes from '../models/RecipeModel.js';
 import { log } from '../lib/Logger.js';
-import { validateZoneName } from '../lib/ZoneUtils.js';
+import { validateZoneName } from '../controllers/VncConsoleController/utils/VncValidation.js';
 
 /**
  * Validate provisioning request and zone state
