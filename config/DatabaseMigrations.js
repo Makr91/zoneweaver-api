@@ -108,6 +108,34 @@ class DatabaseMigrations {
         );
       }
 
+      // Migration for nat_rules table timestamps
+      if (await this.tableExists('nat_rules')) {
+        await this.addColumnIfNotExists(
+          'nat_rules',
+          'created_at',
+          'DATETIME DEFAULT CURRENT_TIMESTAMP'
+        );
+        await this.addColumnIfNotExists(
+          'nat_rules',
+          'updated_at',
+          'DATETIME DEFAULT CURRENT_TIMESTAMP'
+        );
+      }
+
+      // Migration for dhcp_hosts table timestamps
+      if (await this.tableExists('dhcp_hosts')) {
+        await this.addColumnIfNotExists(
+          'dhcp_hosts',
+          'created_at',
+          'DATETIME DEFAULT CURRENT_TIMESTAMP'
+        );
+        await this.addColumnIfNotExists(
+          'dhcp_hosts',
+          'updated_at',
+          'DATETIME DEFAULT CURRENT_TIMESTAMP'
+        );
+      }
+
       log.database.info('All database migrations completed successfully');
       return true;
     } catch (error) {

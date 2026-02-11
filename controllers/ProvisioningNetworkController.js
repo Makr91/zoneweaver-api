@@ -1,7 +1,7 @@
 /**
  * @fileoverview Provisioning Network Controller for Zoneweaver API
- * @description Manages the provisioning network backbone (etherstub + VNIC + IP + NAT + DHCP)
- *              for zone provisioning when the host is not on the same VLAN as guests
+ * @description Orchestrates the setup and teardown of the provisioning network backbone
+ *              by creating a sequence of tasks for Etherstub, VNIC, Network, NAT, and DHCP managers.
  * @author Mark Gilbert
  * @license: https://zoneweaver-api.startcloud.com/license/
  */
@@ -10,6 +10,8 @@ import { exec } from 'child_process';
 import util from 'util';
 import config from '../config/ConfigLoader.js';
 import { log } from '../lib/Logger.js';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
+import yj from 'yieldable-json';
 
 const execPromise = util.promisify(exec);
 
@@ -43,7 +45,7 @@ const getProvNetConfig = () => {
   const netConfig = provConfig.network || {};
   return {
     enabled: netConfig.enabled !== false,
-    etherstub_name: netConfig.etherstub_name || 'provstub0',
+    etherstub_name: netConfig.etherstub_name || 'provstub0', // Default to safe name
     host_vnic_name: netConfig.host_vnic_name || 'provision_interconnect0',
     subnet: netConfig.subnet || '10.190.190.0/24',
     host_ip: netConfig.host_ip || '10.190.190.1',
@@ -106,106 +108,6 @@ const detectActiveInterface = async () => {
   }
 
   return null;
-};
-
-/**
- * Setup etherstub
- * @param {Object} netConfig - Network configuration
- * @returns {Promise<{result?: Object, error?: Object}>}
- */
-const setupEtherstub = async netConfig => {
-  if (await componentExists('etherstub', netConfig.etherstub_name)) {
-    return { result: { component: 'etherstub', status: 'already_exists' } };
-  }
-  const result = await executeCommand(`pfexec dladm create-etherstub ${netConfig.etherstub_name}`);
-  if (result.success) {
-    return { result: { component: 'etherstub', status: 'created' } };
-  }
-  return { error: { component: 'etherstub', error: result.error } };
-};
-
-/**
- * Setup host VNIC
- * @param {Object} netConfig - Network configuration
- * @returns {Promise<{result?: Object, error?: Object}>}
- */
-const setupVnic = async netConfig => {
-  if (await componentExists('vnic', netConfig.host_vnic_name)) {
-    return { result: { component: 'vnic', status: 'already_exists' } };
-  }
-  const result = await executeCommand(
-    `pfexec dladm create-vnic -l ${netConfig.etherstub_name} ${netConfig.host_vnic_name}`
-  );
-  if (result.success) {
-    return { result: { component: 'vnic', status: 'created' } };
-  }
-  return { error: { component: 'vnic', error: result.error } };
-};
-
-/**
- * Setup IP address
- * @param {Object} netConfig - Network configuration
- * @returns {Promise<{result?: Object, error?: Object}>}
- */
-const setupIp = async netConfig => {
-  if (await componentExists('ip', `${netConfig.host_vnic_name}/v4static`)) {
-    return { result: { component: 'ip_address', status: 'already_exists' } };
-  }
-  // Ensure IP interface exists
-  await executeCommand(`pfexec ipadm create-if ${netConfig.host_vnic_name} 2>/dev/null`);
-  const prefixLen = netConfig.subnet.split('/')[1] || '24';
-  const result = await executeCommand(
-    `pfexec ipadm create-addr -T static -a ${netConfig.host_ip}/${prefixLen} ${netConfig.host_vnic_name}/v4static`
-  );
-  if (result.success) {
-    return { result: { component: 'ip_address', status: 'created' } };
-  }
-  return { error: { component: 'ip_address', error: result.error } };
-};
-
-/**
- * Setup NAT and Forwarding
- * @param {Object} netConfig - Network configuration
- * @returns {Promise<{result?: Object, error?: Object}>}
- */
-const setupNatAndForwarding = async netConfig => {
-  const bridge = await detectActiveInterface();
-  if (!bridge) {
-    return {
-      error: { component: 'nat', error: 'Could not detect active external interface for NAT' },
-    };
-  }
-
-  const subnetBase = netConfig.subnet;
-  const natRule = `map ${bridge} ${subnetBase} -> 0/32 portmap tcp/udp auto`;
-  let natStatus = 'created';
-
-  const natCheck = await executeCommand('cat /etc/ipf/ipnat.conf 2>/dev/null');
-  if (natCheck.success && natCheck.output.includes(natRule)) {
-    natStatus = 'already_exists';
-  } else {
-    await executeCommand('pfexec mkdir -p /etc/ipf');
-    const natResult = await executeCommand(
-      `pfexec bash -c 'echo "${natRule}" >> /etc/ipf/ipnat.conf'`
-    );
-    if (!natResult.success) {
-      return { error: { component: 'nat', error: natResult.error } };
-    }
-    // Refresh ipfilter
-    await executeCommand('pfexec svcadm refresh network/ipfilter 2>/dev/null');
-    await executeCommand('pfexec svcadm enable network/ipfilter 2>/dev/null');
-  }
-
-  // Enable IP forwarding
-  await executeCommand('pfexec routeadm -u -e ipv4-forwarding');
-  await executeCommand(`pfexec ipadm set-ifprop -p forwarding=on -m ipv4 ${bridge} 2>/dev/null`);
-  await executeCommand(
-    `pfexec ipadm set-ifprop -p forwarding=on -m ipv4 ${netConfig.host_vnic_name} 2>/dev/null`
-  );
-
-  return {
-    result: { component: 'nat_forwarding', status: natStatus, bridge, rule: natRule },
-  };
 };
 
 /**
@@ -292,87 +194,107 @@ export const getProvisioningNetworkStatus = async (req, res) => {
  * @swagger
  * /provisioning/network/setup:
  *   post:
- *     summary: Setup provisioning network
+ *     summary: Setup provisioning network (Async)
  *     description: |
- *       Idempotent setup of the provisioning network backbone.
- *       Creates etherstub, host VNIC, assigns IP, configures NAT, enables IP forwarding, and configures DHCP.
- *       Each component is checked before creation — safe to call multiple times.
+ *       Queues a sequence of tasks to setup the provisioning network backbone.
+ *       Tasks include: creating etherstub, VNIC, IP address, NAT rule, enabling forwarding, and configuring DHCP.
  *     tags: [Provisioning Network]
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
- *       200:
- *         description: Provisioning network setup completed
+ *       202:
+ *         description: Provisioning network setup tasks queued
  *       500:
  *         description: Provisioning network setup failed
  */
 export const setupProvisioningNetwork = async (req, res) => {
   try {
     const netConfig = getProvNetConfig();
-    const results = [];
-    const errors = [];
+    const createdBy = req.entity.name;
+    const taskIds = [];
+    let lastTaskId = null;
 
-    const handleStep = stepResult => {
-      if (stepResult.result) {
-        results.push(stepResult.result);
-      }
-      if (stepResult.error) {
-        errors.push(stepResult.error);
-      }
+    // Helper to create chained tasks
+    const queueTask = async (operation, metadata) => {
+      const task = await Tasks.create({
+        zone_name: 'system',
+        operation,
+        priority: TaskPriority.NORMAL,
+        created_by: createdBy,
+        status: 'pending',
+        depends_on: lastTaskId,
+        metadata: await new Promise(resolve => {
+          yj.stringifyAsync(metadata, (err, result) => resolve(result));
+        }),
+      });
+      lastTaskId = task.id;
+      taskIds.push(task.id);
+      return task;
     };
 
-    // 1. Create etherstub
-    handleStep(await setupEtherstub(netConfig));
+    // 1. Create Etherstub
+    if (!(await componentExists('etherstub', netConfig.etherstub_name))) {
+      await queueTask('create_etherstub', { name: netConfig.etherstub_name });
+    }
 
-    // 2. Create host VNIC on etherstub
-    handleStep(await setupVnic(netConfig));
+    // 2. Create Host VNIC
+    if (!(await componentExists('vnic', netConfig.host_vnic_name))) {
+      await queueTask('create_vnic', {
+        name: netConfig.host_vnic_name,
+        link: netConfig.etherstub_name,
+      });
+    }
 
-    // 3. Assign IP address
-    handleStep(await setupIp(netConfig));
+    // 3. Create IP Address
+    const addrobj = `${netConfig.host_vnic_name}/v4static`;
+    if (!(await componentExists('ip', addrobj))) {
+      const prefixLen = netConfig.subnet.split('/')[1] || '24';
+      await queueTask('create_ip_address', {
+        interface: netConfig.host_vnic_name,
+        type: 'static',
+        addrobj,
+        address: `${netConfig.host_ip}/${prefixLen}`,
+      });
+    }
 
-    // 4 & 5. NAT and Forwarding
-    handleStep(await setupNatAndForwarding(netConfig));
+    // 4. Configure NAT Rule
+    const bridge = await detectActiveInterface();
+    if (bridge) {
+      await queueTask('create_nat_rule', {
+        bridge,
+        subnet: netConfig.subnet,
+        target: '0/32',
+        protocol: 'tcp/udp',
+        type: 'portmap',
+      });
+
+      // 5. Enable IP Forwarding
+      await queueTask('configure_forwarding', {
+        enabled: true,
+        interfaces: [bridge, netConfig.host_vnic_name],
+      });
+    } else {
+      log.api.warn('Could not detect active interface for NAT, skipping NAT/Forwarding tasks');
+    }
 
     // 6. Configure DHCP
     const [subnetBase] = netConfig.subnet.split('/');
-    const dhcpConfig = [
-      `# Provisioning network DHCP - managed by zoneweaver-api`,
-      `subnet ${subnetBase} netmask ${netConfig.netmask} {`,
-      `  option routers ${netConfig.host_ip};`,
-      `  range ${netConfig.dhcp_range_start} ${netConfig.dhcp_range_end};`,
-      `}`,
-    ].join('\n');
+    await queueTask('dhcp_update_config', {
+      subnet: subnetBase,
+      netmask: netConfig.netmask,
+      router: netConfig.host_ip,
+      range_start: netConfig.dhcp_range_start,
+      range_end: netConfig.dhcp_range_end,
+      listen_interface: netConfig.host_vnic_name,
+    });
 
-    // Check if DHCP is already configured for this subnet
-    const dhcpCheck = await executeCommand('cat /etc/dhcpd.conf 2>/dev/null');
-    if (dhcpCheck.success && dhcpCheck.output.includes(subnetBase)) {
-      results.push({ component: 'dhcp', status: 'already_configured' });
-    } else {
-      const dhcpResult = await executeCommand(
-        `pfexec bash -c 'cat > /etc/dhcpd.conf << '"'"'DHCPEOF'"'"'\n${dhcpConfig}\nDHCPEOF'`
-      );
-      if (dhcpResult.success) {
-        // Set listen interface and enable DHCP
-        await executeCommand(
-          `pfexec svccfg -s dhcp/server:ipv4 setprop config/listen_ifnames = astring: ${netConfig.host_vnic_name} 2>/dev/null`
-        );
-        await executeCommand('pfexec svcadm refresh dhcp/server:ipv4 2>/dev/null');
-        await executeCommand('pfexec svcadm enable dhcp/server:ipv4 2>/dev/null');
-        results.push({ component: 'dhcp', status: 'configured' });
-      } else {
-        errors.push({ component: 'dhcp', error: dhcpResult.error });
-      }
-    }
+    // 7. Start/Refresh DHCP Service
+    await queueTask('dhcp_service_control', { action: 'restart' });
 
-    const allSuccess = errors.length === 0;
-
-    return res.json({
-      success: allSuccess,
-      message: allSuccess
-        ? 'Provisioning network setup completed successfully'
-        : `Provisioning network setup completed with ${errors.length} error(s)`,
-      results,
-      errors: errors.length > 0 ? errors : undefined,
+    return res.status(202).json({
+      success: true,
+      message: `Provisioning network setup tasks queued (${taskIds.length} tasks)`,
+      task_ids: taskIds,
       config: netConfig,
     });
   } catch (error) {
@@ -403,56 +325,51 @@ export const setupProvisioningNetwork = async (req, res) => {
 export const teardownProvisioningNetwork = async (req, res) => {
   try {
     const netConfig = getProvNetConfig();
-    const results = [];
-    const errors = [];
+    const createdBy = req.entity.name;
+    const taskIds = [];
+    let lastTaskId = null;
 
-    // 1. Disable DHCP
-    const dhcpResult = await executeCommand('pfexec svcadm disable dhcp/server:ipv4 2>/dev/null');
-    results.push({ component: 'dhcp', status: dhcpResult.success ? 'disabled' : 'not_running' });
+    // Helper to create chained tasks
+    const queueTask = async (operation, metadata) => {
+      const task = await Tasks.create({
+        zone_name: 'system',
+        operation,
+        priority: TaskPriority.NORMAL,
+        created_by: createdBy,
+        status: 'pending',
+        depends_on: lastTaskId,
+        metadata: await new Promise(resolve => {
+          yj.stringifyAsync(metadata, (err, result) => resolve(result));
+        }),
+      });
+      lastTaskId = task.id;
+      taskIds.push(task.id);
+      return task;
+    };
 
-    // 2. Remove NAT rules for our subnet
-    const [subnetBase] = netConfig.subnet.split('/');
-    const natCheck = await executeCommand('cat /etc/ipf/ipnat.conf 2>/dev/null');
-    if (natCheck.success && natCheck.output) {
-      const newContent = natCheck.output
-        .split('\n')
-        .filter(line => !line.includes(subnetBase))
-        .join('\n');
-      await executeCommand(
-        `pfexec bash -c 'printf "%s" ${JSON.stringify(newContent)} > /etc/ipf/ipnat.conf'`
-      );
-      await executeCommand('pfexec svcadm refresh network/ipfilter 2>/dev/null');
-      results.push({ component: 'nat', status: 'removed' });
-    } else {
-      results.push({ component: 'nat', status: 'not_found' });
+    // 1. Stop DHCP Service
+    await queueTask('dhcp_service_control', { action: 'stop' });
+
+    // 2. Remove IP Address
+    const addrobj = `${netConfig.host_vnic_name}/v4static`;
+    if (await componentExists('ip', addrobj)) {
+      await queueTask('delete_ip_address', { addrobj });
     }
 
-    // 3. Remove IP address
-    const ipResult = await executeCommand(
-      `pfexec ipadm delete-addr ${netConfig.host_vnic_name}/v4static 2>/dev/null`
-    );
-    results.push({ component: 'ip_address', status: ipResult.success ? 'removed' : 'not_found' });
+    // 3. Remove VNIC
+    if (await componentExists('vnic', netConfig.host_vnic_name)) {
+      await queueTask('delete_vnic', { vnic: netConfig.host_vnic_name });
+    }
 
-    // Remove IP interface
-    await executeCommand(`pfexec ipadm delete-if ${netConfig.host_vnic_name} 2>/dev/null`);
+    // 4. Remove Etherstub
+    if (await componentExists('etherstub', netConfig.etherstub_name)) {
+      await queueTask('delete_etherstub', { etherstub: netConfig.etherstub_name });
+    }
 
-    // 4. Remove VNIC
-    const vnicResult = await executeCommand(
-      `pfexec dladm delete-vnic ${netConfig.host_vnic_name} 2>/dev/null`
-    );
-    results.push({ component: 'vnic', status: vnicResult.success ? 'removed' : 'not_found' });
-
-    // 5. Remove etherstub
-    const ethResult = await executeCommand(
-      `pfexec dladm delete-etherstub ${netConfig.etherstub_name} 2>/dev/null`
-    );
-    results.push({ component: 'etherstub', status: ethResult.success ? 'removed' : 'not_found' });
-
-    return res.json({
+    return res.status(202).json({
       success: true,
-      message: 'Provisioning network teardown completed',
-      results,
-      errors: errors.length > 0 ? errors : undefined,
+      message: `Provisioning network teardown tasks queued (${taskIds.length} tasks)`,
+      task_ids: taskIds,
     });
   } catch (error) {
     log.api.error('Provisioning network teardown failed', { error: error.message });

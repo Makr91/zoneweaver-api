@@ -220,6 +220,10 @@ const OPERATION_CATEGORIES = {
   delete_nat_rule: 'network_nat',
   configure_forwarding: 'network_nat',
 
+  // Provisioning network orchestration
+  provisioning_network_setup: 'network_provisioning',
+  provisioning_network_teardown: 'network_provisioning',
+
   // Network DHCP operations
   dhcp_update_config: 'network_dhcp',
   dhcp_add_host: 'network_dhcp',
