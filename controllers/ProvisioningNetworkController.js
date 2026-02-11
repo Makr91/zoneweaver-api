@@ -220,7 +220,7 @@ export const setupProvisioningNetwork = async (req, res) => {
       operation: 'provisioning_network_setup',
       priority: TaskPriority.NORMAL,
       created_by: createdBy,
-      status: 'pending',
+      status: 'running', // Start immediately as a container
       metadata: JSON.stringify(netConfig),
     });
 
@@ -232,6 +232,7 @@ export const setupProvisioningNetwork = async (req, res) => {
         priority: TaskPriority.HIGH, // Subtasks run at higher priority to finish quickly
         created_by: createdBy,
         status: 'pending',
+        parent_task_id: parentTask.id,
         depends_on: lastTaskId,
         metadata: await new Promise(resolve => {
           yj.stringifyAsync(metadata, (err, result) => resolve(result));
@@ -346,7 +347,7 @@ export const teardownProvisioningNetwork = async (req, res) => {
       operation: 'provisioning_network_teardown',
       priority: TaskPriority.NORMAL,
       created_by: createdBy,
-      status: 'pending',
+      status: 'running', // Start immediately as a container
       metadata: JSON.stringify(netConfig),
     });
 
@@ -358,6 +359,7 @@ export const teardownProvisioningNetwork = async (req, res) => {
         priority: TaskPriority.HIGH,
         created_by: createdBy,
         status: 'pending',
+        parent_task_id: parentTask.id,
         depends_on: lastTaskId,
         metadata: await new Promise(resolve => {
           yj.stringifyAsync(metadata, (err, result) => resolve(result));

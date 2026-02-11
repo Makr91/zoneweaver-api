@@ -123,6 +123,11 @@ const Tasks = db.define(
       allowNull: true,
       comment: 'Task dependency - must complete before this task can run',
     },
+    parent_task_id: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment: 'Parent task ID for grouped operations (e.g. provisioning pipeline)',
+    },
     error_message: {
       type: DataTypes.TEXT,
       allowNull: true,
@@ -196,5 +201,7 @@ const Tasks = db.define(
 
 // Set up associations
 Tasks.belongsTo(Tasks, { as: 'DependsOnTask', foreignKey: 'depends_on' });
+Tasks.belongsTo(Tasks, { as: 'ParentTask', foreignKey: 'parent_task_id' });
+Tasks.hasMany(Tasks, { as: 'SubTasks', foreignKey: 'parent_task_id' });
 
 export default Tasks;

@@ -136,6 +136,11 @@ class DatabaseMigrations {
         );
       }
 
+      // Migration for tasks table parent_task_id
+      if (await this.tableExists('tasks')) {
+        await this.addColumnIfNotExists('tasks', 'parent_task_id', 'CHAR(36) REFERENCES tasks(id)');
+      }
+
       log.database.info('All database migrations completed successfully');
       return true;
     } catch (error) {

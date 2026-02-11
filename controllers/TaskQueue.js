@@ -406,58 +406,49 @@ const executeSystemTask = (operation, metadata) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 const executeNetworkTask = (operation, metadata) => {
-  switch (operation) {
-    case 'create_ip_address':
-      return executeCreateIPAddressTask(metadata);
-    case 'delete_ip_address':
-      return executeDeleteIPAddressTask(metadata);
-    case 'enable_ip_address':
-      return executeEnableIPAddressTask(metadata);
-    case 'disable_ip_address':
-      return executeDisableIPAddressTask(metadata);
-    case 'create_vnic':
-      return executeCreateVNICTask(metadata);
-    case 'delete_vnic':
-      return executeDeleteVNICTask(metadata);
-    case 'set_vnic_properties':
-      return executeSetVNICPropertiesTask(metadata);
-    case 'create_aggregate':
-      return executeCreateAggregateTask(metadata);
-    case 'delete_aggregate':
-      return executeDeleteAggregateTask(metadata);
-    case 'modify_aggregate_links':
-      return executeModifyAggregateLinksTask(metadata);
-    case 'create_etherstub':
-      return executeCreateEtherstubTask(metadata);
-    case 'delete_etherstub':
-      return executeDeleteEtherstubTask(metadata);
-    case 'create_vlan':
-      return executeCreateVlanTask(metadata);
-    case 'delete_vlan':
-      return executeDeleteVlanTask(metadata);
-    case 'create_bridge':
-      return executeCreateBridgeTask(metadata);
-    case 'delete_bridge':
-      return executeDeleteBridgeTask(metadata);
-    case 'modify_bridge_links':
-      return executeModifyBridgeLinksTask(metadata);
-    case 'create_nat_rule':
-      return executeCreateNatRuleTask(metadata);
-    case 'delete_nat_rule':
-      return executeDeleteNatRuleTask(metadata);
-    case 'configure_forwarding':
-      return executeConfigureForwardingTask(metadata);
-    case 'dhcp_update_config':
-      return executeDhcpUpdateConfigTask(metadata);
-    case 'dhcp_add_host':
-      return executeDhcpAddHostTask(metadata);
-    case 'dhcp_remove_host':
-      return executeDhcpRemoveHostTask(metadata);
-    case 'dhcp_service_control':
-      return executeDhcpServiceControlTask(metadata);
-    default:
-      return { success: false, error: `Unknown network operation: ${operation}` };
+  const taskMap = {
+    create_ip_address: executeCreateIPAddressTask,
+    delete_ip_address: executeDeleteIPAddressTask,
+    enable_ip_address: executeEnableIPAddressTask,
+    disable_ip_address: executeDisableIPAddressTask,
+    create_vnic: executeCreateVNICTask,
+    delete_vnic: executeDeleteVNICTask,
+    set_vnic_properties: executeSetVNICPropertiesTask,
+    create_aggregate: executeCreateAggregateTask,
+    delete_aggregate: executeDeleteAggregateTask,
+    modify_aggregate_links: executeModifyAggregateLinksTask,
+    create_etherstub: executeCreateEtherstubTask,
+    delete_etherstub: executeDeleteEtherstubTask,
+    create_vlan: executeCreateVlanTask,
+    delete_vlan: executeDeleteVlanTask,
+    create_bridge: executeCreateBridgeTask,
+    delete_bridge: executeDeleteBridgeTask,
+    modify_bridge_links: executeModifyBridgeLinksTask,
+    create_nat_rule: executeCreateNatRuleTask,
+    delete_nat_rule: executeDeleteNatRuleTask,
+    configure_forwarding: executeConfigureForwardingTask,
+    dhcp_update_config: executeDhcpUpdateConfigTask,
+    dhcp_add_host: executeDhcpAddHostTask,
+    dhcp_remove_host: executeDhcpRemoveHostTask,
+    dhcp_service_control: executeDhcpServiceControlTask,
+    provisioning_network_setup: () => ({
+      success: true,
+      message: 'Provisioning network setup in progress',
+      keep_running: true,
+    }),
+    provisioning_network_teardown: () => ({
+      success: true,
+      message: 'Provisioning network teardown in progress',
+      keep_running: true,
+    }),
+  };
+
+  const handler = taskMap[operation];
+  if (handler) {
+    return handler(metadata);
   }
+
+  return { success: false, error: `Unknown network operation: ${operation}` };
 };
 
 /**
@@ -998,6 +989,53 @@ const executeAndHandleTask = async (task, operationCategory) => {
   await task.update(updateData);
 
   runningTasks.delete(task.id);
+
+  // Update parent task progress if this was a sub-task
+  if (task.parent_task_id) {
+    try {
+      const parentTask = await Tasks.findByPk(task.parent_task_id);
+      if (parentTask && parentTask.status === 'running') {
+        const subTasks = await Tasks.findAll({
+          where: { parent_task_id: task.parent_task_id },
+          attributes: ['status'],
+        });
+
+        const total = subTasks.length;
+        const completed = subTasks.filter(t => t.status === 'completed').length;
+        const failed = subTasks.filter(
+          t => t.status === 'failed' || t.status === 'cancelled'
+        ).length;
+        const done = completed + failed;
+
+        const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
+        let parentStatus = 'running';
+        if (done === total) {
+          parentStatus = failed > 0 ? 'completed_with_errors' : 'completed';
+        }
+
+        const parentUpdate = {
+          progress_percent: percent,
+          progress_info: {
+            completed_tasks: completed,
+            failed_tasks: failed,
+            total_tasks: total,
+            status: parentStatus,
+          },
+        };
+
+        if (done === total) {
+          parentUpdate.status = failed === total ? 'failed' : 'completed';
+          parentUpdate.completed_at = new Date();
+          runningTasks.delete(parentTask.id);
+        }
+
+        await parentTask.update(parentUpdate);
+      }
+    } catch (parentError) {
+      log.task.error('Failed to update parent task progress', { error: parentError.message });
+    }
+  }
 
   // Release operation category lock if it had one
   if (operationCategory) {
