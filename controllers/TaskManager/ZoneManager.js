@@ -144,23 +144,15 @@ const extractZoneDatasets = async zoneName => {
   const datasets = [];
   let zonepath = null;
 
-  const result = await executeCommand(`pfexec zadm show ${zoneName}`);
-  if (!result.success) {
-    return { zonepath, datasets };
-  }
-
   try {
-    const config = await new Promise((resolve, reject) => {
-      yj.parseAsync(result.output, (err, parseResult) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(parseResult);
-        }
-      });
-    });
+    // Get zone configuration from database
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone || !zone.configuration) {
+      log.task.warn('Zone not found in database or has no configuration', { zone_name: zoneName });
+      return { zonepath, datasets };
+    }
 
-    const zoneConfig = config[zoneName] || {};
+    const zoneConfig = zone.configuration;
 
     // Extract zonepath (e.g., /rpool/zones/myzone/path)
     if (zoneConfig.zonepath) {
@@ -175,19 +167,22 @@ const extractZoneDatasets = async zoneName => {
       }
     }
 
-    // Extract bootdisk and additional disk attributes
+    // Extract bootdisk (top-level property in zadm JSON format)
+    if (zoneConfig.bootdisk && zoneConfig.bootdisk.path) {
+      datasets.push(zoneConfig.bootdisk.path);
+    }
+
+    // Extract additional disk attributes from attr array (disk0, disk1, etc.)
     if (zoneConfig.attr) {
       const attrs = Array.isArray(zoneConfig.attr) ? zoneConfig.attr : [zoneConfig.attr];
       for (const attr of attrs) {
-        if (attr.name && /^(?:bootdisk|disk\d+)$/.test(attr.name) && attr.value) {
-          // Only include datasets that appear to be within the zone hierarchy
-          // Skip external datasets (those not starting with the zone root)
+        if (attr.name && /^disk\d+$/.test(attr.name) && attr.value) {
           datasets.push(attr.value);
         }
       }
     }
   } catch (error) {
-    log.task.warn('Failed to parse zone config for dataset extraction', {
+    log.task.warn('Failed to extract zone datasets', {
       zone_name: zoneName,
       error: error.message,
     });
