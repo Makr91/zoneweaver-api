@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { executeCommand } from '../../lib/CommandManager.js';
+import { getZoneConfig } from '../../lib/ZoneConfigUtils.js';
 import { log } from '../../lib/Logger.js';
 import { calculateChecksum } from '../../lib/ChecksumHelper.js';
 import config from '../../config/ConfigLoader.js';
@@ -881,18 +882,8 @@ const uploadRegistryArtifact = async (
 const createBoxArtifact = async (zoneName, snapshotName, tempDir, task) => {
   await updateTaskProgress(task, 10, { status: 'getting_zone_config' });
 
-  // 1. Get zone configuration to identify dataset
-  const configResult = await executeCommand(`pfexec zadm show ${zoneName}`);
-  if (!configResult.success) {
-    throw new Error(`Failed to get zone config: ${configResult.error}`);
-  }
-
-  let zoneConfig;
-  try {
-    zoneConfig = JSON.parse(configResult.output);
-  } catch (e) {
-    throw new Error(`Failed to parse zone config: ${e.message}`);
-  }
+  // 1. Get zone configuration to identify dataset using shared utility
+  const zoneConfig = await getZoneConfig(zoneName);
 
   const dataset = await getZoneBootDataset(zoneConfig);
   if (!dataset) {

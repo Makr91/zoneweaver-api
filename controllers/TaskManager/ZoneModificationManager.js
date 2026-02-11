@@ -1,7 +1,9 @@
+import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import yj from 'yieldable-json';
 import { checkZvolInUse } from './ZoneCreationManager.js';
+import { getZoneConfig, updateZoneConfigInDatabase } from '../../lib/ZoneConfigUtils.js';
+import Zones from '../../models/ZoneModel.js';
 
 /**
  * Zone Modification Manager for Zone Configuration Changes
@@ -27,28 +29,6 @@ const updateTaskProgress = async (task, percent, info) => {
   } catch (error) {
     log.task.debug('Progress update failed', { error: error.message });
   }
-};
-
-/**
- * Get current zone configuration via zadm show
- * @param {string} zoneName - Zone name
- * @returns {Promise<Object>} Zone configuration
- */
-const getZoneConfig = async zoneName => {
-  const result = await executeCommand(`pfexec zadm show ${zoneName}`);
-  if (!result.success) {
-    throw new Error(`Failed to get zone configuration: ${result.error}`);
-  }
-
-  return new Promise((resolve, reject) => {
-    yj.parseAsync(result.output, (err, parsed) => {
-      if (err) {
-        reject(new Error(`Failed to parse zone configuration: ${err.message}`));
-      } else {
-        resolve(parsed);
-      }
-    });
-  });
 };
 
 /**
@@ -444,6 +424,75 @@ const applyCloudInitChanges = async (zoneName, zoneConfig, cloudInit) => {
 };
 
 /**
+ * Parse modification metadata
+ * @param {Object} task - Task object
+ * @returns {Promise<{metadata: Object, zoneName: string, zoneConfig: Object}>}
+ */
+const parseModificationMetadata = async task => {
+  await updateTaskProgress(task, 5, { status: 'parsing_metadata' });
+
+  const metadata = await new Promise((resolve, reject) => {
+    yj.parseAsync(task.metadata, (err, parsed) => (err ? reject(err) : resolve(parsed)));
+  });
+
+  const zoneName = task.zone_name;
+
+  await updateTaskProgress(task, 10, { status: 'reading_configuration' });
+  const zoneConfig = await getZoneConfig(zoneName);
+
+  return { metadata, zoneName, zoneConfig };
+};
+
+/**
+ * Apply attribute changes if needed
+ * @param {string} zoneName - Zone name
+ * @param {Object} zoneConfig - Current zone configuration
+ * @param {Object} metadata - Modification metadata
+ * @param {Object} task - Task object
+ * @param {Array} changes - Changes array to update
+ * @returns {Promise<void>}
+ */
+const applyAttributeChangesIfNeeded = async (zoneName, zoneConfig, metadata, task, changes) => {
+  const hasAttrChanges = [
+    'ram',
+    'vcpus',
+    'bootrom',
+    'hostbridge',
+    'diskif',
+    'netif',
+    'os_type',
+    'vnc',
+    'acpi',
+    'xhci',
+  ].some(key => metadata[key] !== undefined);
+
+  if (hasAttrChanges) {
+    await updateTaskProgress(task, 20, { status: 'modifying_attributes' });
+    await applyAttributeChanges(zoneName, zoneConfig, metadata);
+    changes.push('attributes');
+  }
+};
+
+/**
+ * Finalize modification and update database
+ * @param {string} zoneName - Zone name
+ * @param {Object} task - Task object
+ * @param {Array} changes - Array of changes made
+ * @returns {Promise<void>}
+ */
+const finalizeModification = async (zoneName, task, changes) => {
+  await updateTaskProgress(task, 95, { status: 'updating_database_configuration' });
+  await updateZoneConfigInDatabase(Zones, zoneName);
+
+  await updateTaskProgress(task, 100, { status: 'completed', changes });
+
+  log.task.info('Zone modification completed', {
+    zone_name: zoneName,
+    changes,
+  });
+};
+
+/**
  * Execute zone modification task
  * @param {Object} task - Task object from database
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -455,105 +504,65 @@ export const executeZoneModifyTask = async task => {
   });
 
   try {
-    // === Parse metadata (5%) ===
-    await updateTaskProgress(task, 5, { status: 'parsing_metadata' });
-
-    const metadata = await new Promise((resolve, reject) => {
-      yj.parseAsync(task.metadata, (err, parsed) => (err ? reject(err) : resolve(parsed)));
-    });
-
-    const { zone_name } = task;
-
-    // === Get current config (10%) ===
-    await updateTaskProgress(task, 10, { status: 'reading_configuration' });
-    const zoneConfig = await getZoneConfig(zone_name);
+    const { metadata, zoneName, zoneConfig } = await parseModificationMetadata(task);
 
     const changes = [];
 
-    // === Attribute changes (20-40%) ===
-    const hasAttrChanges = [
-      'ram',
-      'vcpus',
-      'bootrom',
-      'hostbridge',
-      'diskif',
-      'netif',
-      'os_type',
-      'vnc',
-      'acpi',
-      'xhci',
-    ].some(key => metadata[key] !== undefined);
+    await applyAttributeChangesIfNeeded(zoneName, zoneConfig, metadata, task, changes);
 
-    if (hasAttrChanges) {
-      await updateTaskProgress(task, 20, { status: 'modifying_attributes' });
-      await applyAttributeChanges(zone_name, zoneConfig, metadata);
-      changes.push('attributes');
-    }
-
-    // === Autoboot (40%) ===
     if (metadata.autoboot !== undefined) {
       await updateTaskProgress(task, 40, { status: 'modifying_autoboot' });
-      await applyAutobootChange(zone_name, metadata.autoboot);
+      await applyAutobootChange(zoneName, metadata.autoboot);
       changes.push('autoboot');
     }
 
-    // === NICs (50%) ===
     if (metadata.add_nics?.length > 0) {
       await updateTaskProgress(task, 50, { status: 'adding_nics' });
-      await addNics(zone_name, metadata.add_nics);
+      await addNics(zoneName, metadata.add_nics);
       changes.push('add_nics');
     }
 
     if (metadata.remove_nics?.length > 0) {
       await updateTaskProgress(task, 55, { status: 'removing_nics' });
-      await removeNics(zone_name, metadata.remove_nics);
+      await removeNics(zoneName, metadata.remove_nics);
       changes.push('remove_nics');
     }
 
-    // === Disks (60%) ===
     if (metadata.add_disks?.length > 0) {
       await updateTaskProgress(task, 60, { status: 'adding_disks' });
-      await addDisks(zone_name, zoneConfig, metadata.add_disks, metadata.force);
+      await addDisks(zoneName, zoneConfig, metadata.add_disks, metadata.force);
       changes.push('add_disks');
     }
 
     if (metadata.remove_disks?.length > 0) {
       await updateTaskProgress(task, 70, { status: 'removing_disks' });
-      await removeDisks(zone_name, zoneConfig, metadata.remove_disks);
+      await removeDisks(zoneName, zoneConfig, metadata.remove_disks);
       changes.push('remove_disks');
     }
 
-    // === CDROMs (75%) ===
     if (metadata.add_cdroms?.length > 0) {
       await updateTaskProgress(task, 75, { status: 'adding_cdroms' });
-      await addCdroms(zone_name, zoneConfig, metadata.add_cdroms);
+      await addCdroms(zoneName, zoneConfig, metadata.add_cdroms);
       changes.push('add_cdroms');
     }
 
     if (metadata.remove_cdroms?.length > 0) {
       await updateTaskProgress(task, 80, { status: 'removing_cdroms' });
-      await removeCdroms(zone_name, zoneConfig, metadata.remove_cdroms);
+      await removeCdroms(zoneName, zoneConfig, metadata.remove_cdroms);
       changes.push('remove_cdroms');
     }
 
-    // === Cloud-init (85%) ===
     if (metadata.cloud_init) {
       await updateTaskProgress(task, 85, { status: 'modifying_cloud_init' });
-      await applyCloudInitChanges(zone_name, zoneConfig, metadata.cloud_init);
+      await applyCloudInitChanges(zoneName, zoneConfig, metadata.cloud_init);
       changes.push('cloud_init');
     }
 
-    // === Complete (100%) ===
-    await updateTaskProgress(task, 100, { status: 'completed', changes });
-
-    log.task.info('Zone modification completed', {
-      zone_name,
-      changes,
-    });
+    await finalizeModification(zoneName, task, changes);
 
     return {
       success: true,
-      message: `Zone ${zone_name} modified successfully (${changes.join(', ')}). Changes will take effect on next zone boot.`,
+      message: `Zone ${zoneName} modified successfully (${changes.join(', ')}). Changes will take effect on next zone boot.`,
     };
   } catch (error) {
     log.task.error('Zone modification task exception', {

@@ -1,5 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
+import { getAllZoneConfigs } from '../../lib/ZoneConfigUtils.js';
 import yj from 'yieldable-json';
 import Tasks from '../../models/TaskModel.js';
 import Zones from '../../models/ZoneModel.js';
@@ -350,20 +351,7 @@ export const executeDeleteTask = async (zoneName, metadataJson) => {
 export const executeDiscoverTask = async () => {
   try {
     // Get all zones from system using zadm
-    const result = await executeCommand('pfexec zadm show');
-    if (!result.success) {
-      return { success: false, error: `Failed to get system zones: ${result.error}` };
-    }
-
-    const systemZones = await new Promise((resolve, reject) => {
-      yj.parseAsync(result.output, (err, parseResult) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(parseResult);
-        }
-      });
-    });
+    const systemZones = await getAllZoneConfigs();
     const systemZoneNames = Object.keys(systemZones);
 
     // Get all zones from database

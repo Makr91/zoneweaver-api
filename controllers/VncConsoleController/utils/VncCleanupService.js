@@ -8,10 +8,9 @@
 import fs from 'fs';
 import { Op } from 'sequelize';
 import VncSessions from '../../../models/VncSessionModel.js';
-import { executeCommand } from '../../../lib/CommandManager.js';
+import { getZoneConfig } from '../../../lib/ZoneConfigUtils.js';
 import { testVncConnection } from './VncValidation.js';
 import { sessionManager } from './VncSessionManager.js';
-import yj from 'yieldable-json';
 import { log } from '../../../lib/Logger.js';
 import config from '../../../config/ConfigLoader.js';
 
@@ -24,27 +23,8 @@ export const isVncEnabledAtBoot = async zoneName => {
   try {
     log.websocket.debug('Checking VNC boot configuration for zone', { zone_name: zoneName });
 
-    // Use CommandManager instead of custom spawn logic
-    const configResult = await executeCommand(`pfexec zadm show ${zoneName}`);
-
-    if (!configResult.success) {
-      log.websocket.warn('Failed to get zone configuration', {
-        zone_name: zoneName,
-        error: configResult.error,
-      });
-      return false;
-    }
-
-    // Parse the JSON configuration
-    const zoneConfig = await new Promise((resolve, reject) => {
-      yj.parseAsync(configResult.output, (err, result) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    // Get zone configuration using shared utility
+    const zoneConfig = await getZoneConfig(zoneName);
 
     // Check if VNC is enabled: zoneConfig.vnc.enabled === "on"
     const vncEnabled = zoneConfig.vnc && zoneConfig.vnc.enabled === 'on';

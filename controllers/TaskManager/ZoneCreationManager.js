@@ -3,6 +3,7 @@ import { log } from '../../lib/Logger.js';
 import yj from 'yieldable-json';
 import Zones from '../../models/ZoneModel.js';
 import os from 'os';
+import { getZoneConfig } from '../../lib/ZoneConfigUtils.js';
 
 /**
  * Zone Creation Manager for Zone Lifecycle Operations
@@ -427,6 +428,58 @@ const rollbackCreation = async (zoneName, zonecfgApplied, zfsCreated) => {
 };
 
 /**
+ * Validate zone creation request
+ * @param {Object} metadata - Parsed metadata
+ * @param {string} zoneName - Zone name
+ * @returns {Promise<{valid: boolean, error?: string}>}
+ */
+const validateZoneCreationRequest = async (metadata, zoneName) => {
+  if (!zoneName || !metadata.brand) {
+    return {
+      valid: false,
+      error: 'Missing required parameters: name and brand are required',
+    };
+  }
+
+  const existCheck = await executeCommand(`pfexec zoneadm -z ${zoneName} list -p`);
+  if (existCheck.success) {
+    return { valid: false, error: `Zone ${zoneName} already exists on the system` };
+  }
+
+  return { valid: true };
+};
+
+/**
+ * Install zone and create database record
+ * @param {string} zoneName - Zone name
+ * @param {Object} metadata - Zone metadata
+ * @param {Object} task - Task object
+ * @returns {Promise<void>}
+ */
+const installAndRegisterZone = async (zoneName, metadata, task) => {
+  await updateTaskProgress(task, 90, { status: 'installing_zone' });
+  const installResult = await executeCommand(`pfexec zoneadm -z ${zoneName} install`, 3600 * 1000);
+  if (!installResult.success) {
+    throw new Error(`Zone installation failed: ${installResult.error}`);
+  }
+
+  await updateTaskProgress(task, 95, { status: 'fetching_zone_configuration' });
+  const zoneConfig = await getZoneConfig(zoneName);
+
+  await updateTaskProgress(task, 97, { status: 'creating_database_record' });
+  await Zones.create({
+    name: zoneName,
+    zone_id: zoneName,
+    host: os.hostname(),
+    status: 'installed',
+    brand: metadata.brand,
+    auto_discovered: false,
+    last_seen: new Date(),
+    configuration: zoneConfig,
+  });
+};
+
+/**
  * Execute zone creation task
  * @param {Object} task - Task object from database
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -442,33 +495,19 @@ export const executeZoneCreateTask = async task => {
   let zoneName = null;
 
   try {
-    // === Validate (5%) ===
     await updateTaskProgress(task, 5, { status: 'validating' });
 
     const metadata = await parseMetadata(task.metadata);
     zoneName = metadata.name;
 
-    if (!zoneName || !metadata.brand) {
-      return {
-        success: false,
-        error: 'Missing required parameters: name and brand are required',
-      };
+    const validation = await validateZoneCreationRequest(metadata, zoneName);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
     }
 
-    // Check zone doesn't already exist on system
-    const existCheck = await executeCommand(`pfexec zoneadm -z ${zoneName} list -p`);
-    if (existCheck.success) {
-      return {
-        success: false,
-        error: `Zone ${zoneName} already exists on the system`,
-      };
-    }
-
-    // === ZFS Datasets (10%) ===
     await updateTaskProgress(task, 10, { status: 'preparing_storage' });
     let bootdiskPath = await prepareBootVolume(metadata, zoneName, zfsCreated);
 
-    // === Template Import (30%) ===
     if (metadata.source?.type === 'template') {
       await updateTaskProgress(task, 30, { status: 'importing_template' });
       const templatePath = await importTemplate(metadata, zoneName, zfsCreated);
@@ -477,18 +516,15 @@ export const executeZoneCreateTask = async task => {
       }
     }
 
-    // === Zone Configuration (40%) ===
     await updateTaskProgress(task, 40, { status: 'configuring_zone' });
     await applyZoneConfig(zoneName, metadata);
     zonecfgApplied = true;
 
-    // === Bootdisk (50%) ===
     if (bootdiskPath) {
       await updateTaskProgress(task, 50, { status: 'configuring_bootdisk' });
       await configureBootdisk(zoneName, bootdiskPath);
     }
 
-    // === Additional Disks (60%) ===
     if (metadata.additional_disks?.length > 0) {
       await updateTaskProgress(task, 60, { status: 'configuring_disks' });
       await configureAdditionalDisks(
@@ -499,45 +535,22 @@ export const executeZoneCreateTask = async task => {
       );
     }
 
-    // === CDROMs (70%) ===
     if (metadata.cdroms?.length > 0) {
       await updateTaskProgress(task, 70, { status: 'configuring_cdroms' });
       await configureCdroms(zoneName, metadata.cdroms);
     }
 
-    // === Network (75%) ===
     if (metadata.nics?.length > 0) {
       await updateTaskProgress(task, 75, { status: 'configuring_network' });
       await configureNics(zoneName, metadata.nics);
     }
 
-    // === Cloud-init (80%) ===
     if (metadata.cloud_init) {
       await updateTaskProgress(task, 80, { status: 'configuring_cloud_init' });
       await configureCloudInit(zoneName, metadata.cloud_init);
     }
 
-    // === Install (90%) ===
-    await updateTaskProgress(task, 90, { status: 'installing_zone' });
-    const installResult = await executeCommand(
-      `pfexec zoneadm -z ${zoneName} install`,
-      3600 * 1000
-    );
-    if (!installResult.success) {
-      throw new Error(`Zone installation failed: ${installResult.error}`);
-    }
-
-    // === DB Record (95%) ===
-    await updateTaskProgress(task, 95, { status: 'creating_database_record' });
-    await Zones.create({
-      name: zoneName,
-      zone_id: zoneName,
-      host: os.hostname(),
-      status: 'installed',
-      brand: metadata.brand,
-      auto_discovered: false,
-      last_seen: new Date(),
-    });
+    await installAndRegisterZone(zoneName, metadata, task);
 
     await updateTaskProgress(task, 100, { status: 'completed' });
 

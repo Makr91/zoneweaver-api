@@ -2,6 +2,7 @@ import Zones from '../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import VncSessions from '../models/VncSessionModel.js';
 import { executeCommand } from '../lib/CommandManager.js';
+import { getZoneConfig as fetchZoneConfig } from '../lib/ZoneConfigUtils.js';
 import { errorResponse } from './SystemHostController/utils/ResponseHelpers.js';
 import { log } from '../lib/Logger.js';
 import { validateZoneName } from '../lib/ZoneValidation.js';
@@ -164,9 +165,15 @@ export const getZoneDetails = async (req, res) => {
     }
 
     // Get all data in parallel for optimal performance (fixes slow frontend loading)
-    const [configResult, vncSession, pendingTasks] = await Promise.all([
-      // Get zone configuration using CommandManager
-      executeCommand(`pfexec zadm show ${zoneName}`),
+    const [configuration, vncSession, pendingTasks] = await Promise.all([
+      // Get zone configuration using shared utility
+      fetchZoneConfig(zoneName).catch(error => {
+        log.monitoring.error('Failed to get zone configuration', {
+          zone_name: zoneName,
+          error: error.message,
+        });
+        return {};
+      }),
 
       // Get VNC session
       VncSessions.findOne({
@@ -199,24 +206,14 @@ export const getZoneDetails = async (req, res) => {
       zone.reload(),
     ]);
 
-    // Parse zone configuration
-    let configuration = {};
-    if (configResult.success && configResult.output) {
-      try {
-        const configData = JSON.parse(configResult.output);
-        configuration = configData;
-        log.monitoring.debug('Zone configuration loaded successfully', {
-          zone_name: zoneName,
-          ram: configData.ram,
-          vcpus: configData.vcpus,
-          brand: configData.brand,
-        });
-      } catch (parseError) {
-        log.monitoring.error('Failed to parse zadm JSON output', {
-          zone_name: zoneName,
-          error: parseError.message,
-        });
-      }
+    // Log configuration details if successfully loaded
+    if (configuration && Object.keys(configuration).length > 0) {
+      log.monitoring.debug('Zone configuration loaded successfully', {
+        zone_name: zoneName,
+        ram: configuration.ram,
+        vcpus: configuration.vcpus,
+        brand: configuration.brand,
+      });
     }
 
     // Process VNC session data
@@ -284,22 +281,8 @@ export const getZoneConfig = async (req, res) => {
       return errorResponse(res, 400, 'Invalid zone name');
     }
 
-    // Get zone configuration using CommandManager
-    const configResult = await executeCommand(`pfexec zadm show ${zoneName}`);
-
-    if (!configResult.success) {
-      if (configResult.error.includes('does not exist')) {
-        return errorResponse(res, 404, 'Zone not found');
-      }
-      return errorResponse(res, 500, 'Failed to retrieve zone configuration', configResult.error);
-    }
-
-    let config;
-    try {
-      config = JSON.parse(configResult.output);
-    } catch (parseError) {
-      return errorResponse(res, 500, 'Failed to parse zone configuration', parseError.message);
-    }
+    // Get zone configuration using shared utility
+    const config = await fetchZoneConfig(zoneName);
 
     return res.json({
       zone_name: zoneName,
@@ -310,7 +293,13 @@ export const getZoneConfig = async (req, res) => {
       error: error.message,
       zone_name: req.params.zoneName,
     });
-    return errorResponse(res, 500, 'Failed to retrieve zone configuration');
+
+    // Check if it's a "zone does not exist" error
+    if (error.message && error.message.includes('does not exist')) {
+      return errorResponse(res, 404, 'Zone not found');
+    }
+
+    return errorResponse(res, 500, 'Failed to retrieve zone configuration', error.message);
   }
 };
 
