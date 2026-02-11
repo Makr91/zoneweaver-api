@@ -597,7 +597,16 @@ export const executeZoneModifyTask = async task => {
       await updateTaskProgress(task, 90, { status: 'updating_provisioning_config' });
       const zone = await Zones.findOne({ where: { name: zoneName } });
       if (zone) {
-        const newConfig = { ...zone.configuration, provisioning: metadata.provisioning };
+        let currentConfig = zone.configuration || {};
+        if (typeof currentConfig === 'string') {
+          try {
+            currentConfig = JSON.parse(currentConfig);
+          } catch (e) {
+            log.task.warn('Failed to parse current zone configuration', { error: e.message });
+            currentConfig = {};
+          }
+        }
+        const newConfig = { ...currentConfig, provisioning: metadata.provisioning };
         await zone.update({ configuration: newConfig });
         changes.push('provisioning');
       }

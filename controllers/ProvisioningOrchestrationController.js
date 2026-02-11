@@ -27,7 +27,16 @@ const validateProvisioningRequest = async (zoneName, zone, skipRecipe) => {
     return { valid: false, error: `Zone '${zoneName}' not found` };
   }
 
-  const provisioning = zone.configuration?.provisioning;
+  let zoneConfig = zone.configuration;
+  if (typeof zoneConfig === 'string') {
+    try {
+      zoneConfig = JSON.parse(zoneConfig);
+    } catch (e) {
+      log.api.warn('Failed to parse zone configuration', { error: e.message });
+      zoneConfig = {};
+    }
+  }
+  const provisioning = zoneConfig?.provisioning;
   if (!provisioning) {
     return {
       valid: false,
@@ -96,7 +105,15 @@ const buildProvisioningTaskChain = async params => {
 
   // Step 0: Extract artifact (if provided)
   if (artifactId) {
-    const zoneConfig = zone.configuration || {};
+    let zoneConfig = zone.configuration || {};
+    if (typeof zoneConfig === 'string') {
+      try {
+        zoneConfig = JSON.parse(zoneConfig);
+      } catch (e) {
+        log.api.warn('Failed to parse zone configuration', { error: e.message });
+        zoneConfig = {};
+      }
+    }
     const zoneDataset = zoneConfig.zonepath
       ? zoneConfig.zonepath.replace('/path', '')
       : `/rpool/zones/${zoneName}`;

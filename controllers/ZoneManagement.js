@@ -1268,7 +1268,15 @@ export const modifyZone = async (req, res) => {
     // Handle provisioning config update immediately (DB only)
     // This ensures the config is available for the provision endpoint without waiting for the task
     if (req.body.provisioning) {
-      const currentConfig = zone.configuration || {};
+      let currentConfig = zone.configuration || {};
+      if (typeof currentConfig === 'string') {
+        try {
+          currentConfig = JSON.parse(currentConfig);
+        } catch (e) {
+          log.database.warn('Failed to parse current zone configuration', { error: e.message });
+          currentConfig = {};
+        }
+      }
       const newConfig = { ...currentConfig, provisioning: req.body.provisioning };
       await zone.update({ configuration: newConfig });
 
