@@ -29,7 +29,7 @@ import yj from 'yieldable-json';
  *             properties:
  *               type:
  *                 type: string
- *                 enum: [iso, image]
+ *                 enum: [iso, image, provisioning]
  *                 description: Scan only locations of this type
  *               storage_path_id:
  *                 type: string

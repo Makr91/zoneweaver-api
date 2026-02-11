@@ -79,6 +79,7 @@ const createTask = params =>
     metadata: params.metadata ? JSON.stringify(params.metadata) : null,
     depends_on: params.depends_on,
     parent_task_id: params.parent_task_id,
+    created_by: params.created_by,
   });
 
 /**
@@ -97,6 +98,7 @@ const buildProvisioningTaskChain = async params => {
     zoneIP,
     artifactId,
     parentTaskId,
+    createdBy,
   } = params;
 
   const taskChain = [];
@@ -129,6 +131,7 @@ const buildProvisioningTaskChain = async params => {
       },
       depends_on: null,
       parent_task_id: parentTaskId,
+      created_by: createdBy,
     });
     taskChain.push({ step: 'extract', task_id: extractTask.id });
     previousTaskId = extractTask.id;
@@ -141,6 +144,7 @@ const buildProvisioningTaskChain = async params => {
       operation: 'start',
       depends_on: previousTaskId,
       parent_task_id: parentTaskId,
+      created_by: createdBy,
     });
     taskChain.push({ step: 'boot', task_id: bootTask.id });
     previousTaskId = bootTask.id;
@@ -157,6 +161,7 @@ const buildProvisioningTaskChain = async params => {
       },
       depends_on: previousTaskId,
       parent_task_id: parentTaskId,
+      created_by: createdBy,
     });
     taskChain.push({ step: 'setup', task_id: setupTask.id });
     previousTaskId = setupTask.id;
@@ -173,6 +178,7 @@ const buildProvisioningTaskChain = async params => {
     },
     depends_on: previousTaskId,
     parent_task_id: parentTaskId,
+    created_by: createdBy,
   });
   taskChain.push({ step: 'wait_ssh', task_id: sshTask.id });
   previousTaskId = sshTask.id;
@@ -199,6 +205,7 @@ const buildProvisioningTaskChain = async params => {
       },
       depends_on: previousTaskId,
       parent_task_id: parentTaskId,
+      created_by: createdBy,
     });
     taskChain.push({ step: 'sync', task_id: syncTask.id });
     previousTaskId = syncTask.id;
@@ -217,6 +224,7 @@ const buildProvisioningTaskChain = async params => {
       },
       depends_on: previousTaskId,
       parent_task_id: parentTaskId,
+      created_by: createdBy,
     });
     taskChain.push({ step: 'provision', task_id: provisionTask.id });
   }
@@ -309,6 +317,7 @@ export const provisionZone = async (req, res) => {
       zoneIP,
       artifactId: provisioning.artifact_id,
       parentTaskId: parentTask.id,
+      createdBy: req.entity.name,
     });
 
     log.api.info('Provisioning pipeline started', {

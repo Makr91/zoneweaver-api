@@ -25,7 +25,7 @@ import { Op } from 'sequelize';
  *         name: type
  *         schema:
  *           type: string
- *           enum: [iso, image]
+ *           enum: [iso, image, provisioning]
  *         description: Filter by artifact type
  *       - in: query
  *         name: storage_path_id

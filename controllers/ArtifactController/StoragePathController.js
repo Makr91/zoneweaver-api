@@ -28,7 +28,7 @@ import yj from 'yieldable-json';
  *         name: type
  *         schema:
  *           type: string
- *           enum: [iso, image]
+ *           enum: [iso, image, provisioning]
  *         description: Filter by storage type
  *       - in: query
  *         name: enabled
@@ -162,7 +162,7 @@ export const listStoragePaths = async (req, res) => {
  *                 example: "/data/isos"
  *               type:
  *                 type: string
- *                 enum: [iso, image]
+ *                 enum: [iso, image, provisioning]
  *                 description: Type of artifacts to store
  *                 example: "iso"
  *               enabled:
@@ -197,9 +197,9 @@ export const createStoragePath = async (req, res) => {
       });
     }
 
-    if (!['iso', 'image'].includes(type)) {
+    if (!['iso', 'image', 'provisioning'].includes(type)) {
       return res.status(400).json({
-        error: 'type must be either "iso" or "image"',
+        error: 'type must be either "iso", "image", or "provisioning"',
       });
     }
 
