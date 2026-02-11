@@ -150,15 +150,6 @@ const extractZoneDatasets = async zoneName => {
     const zone = await Zones.findOne({ where: { name: zoneName } });
     let zoneConfig = zone?.configuration;
 
-    // <DEBUG_LOG_REMOVE_LATER>
-    log.task.info('DEBUG: extractZoneDatasets - Initial DB Config', {
-      zone_name: zoneName,
-      config_type: typeof zoneConfig,
-      is_string: typeof zoneConfig === 'string',
-      raw_value_preview: typeof zoneConfig === 'string' ? zoneConfig.substring(0, 200) : 'Object',
-    });
-    // </DEBUG_LOG_REMOVE_LATER>
-
     // Fix: Explicitly parse JSON if it's a string (SQLite behavior)
     if (typeof zoneConfig === 'string') {
       try {
@@ -187,52 +178,110 @@ const extractZoneDatasets = async zoneName => {
       }
     }
 
-    // <DEBUG_LOG_REMOVE_LATER>
-    log.task.info('DEBUG: extractZoneDatasets - Final Config Object', {
-      zone_name: zoneName,
-      has_bootdisk: !!zoneConfig?.bootdisk,
-      bootdisk_path: zoneConfig?.bootdisk?.path,
-    });
-    // </DEBUG_LOG_REMOVE_LATER>
-
     if (!zoneConfig) {
       return { zonepath, datasets };
     }
 
-    // Extract zonepath (e.g., /rpool/zones/myzone/path)
+    const potentialDatasets = new Set();
+
+    // 1. Zonepath - resolve to dataset
     if (zoneConfig.zonepath) {
       ({ zonepath } = zoneConfig);
-      // Zone root dataset is the parent of the zonepath
-      // e.g., zonepath=/rpool/zones/myzone/path → root dataset = rpool/zones/myzone
-      const pathParts = zonepath.replace(/^\//, '').split('/');
-      if (pathParts.length >= 2) {
-        // Remove the last segment (usually "path") to get the zone root dataset
-        const rootDataset = pathParts.slice(0, -1).join('/');
-        datasets.push(rootDataset);
+      // Try to resolve the zonepath to a real ZFS dataset
+      try {
+        const result = await executeCommand(`pfexec zfs list -H -o name "${zonepath}"`);
+        if (result.success && result.output.trim()) {
+          potentialDatasets.add(result.output.trim());
+        }
+      } catch (e) {
+        // Ignore if zonepath is not a dataset (e.g. just a directory)
       }
     }
 
-    // Extract bootdisk (top-level property in zadm JSON format)
+    // 2. Bootdisk (zadm helper object)
     if (zoneConfig.bootdisk && zoneConfig.bootdisk.path) {
-      datasets.push(zoneConfig.bootdisk.path);
+      potentialDatasets.add(zoneConfig.bootdisk.path);
+      // Also add the parent dataset of the bootdisk (likely the zone root)
+      // e.g. rpool/zones/myzone/root -> rpool/zones/myzone
+      const parts = zoneConfig.bootdisk.path.split('/');
+      if (parts.length > 1) {
+        potentialDatasets.add(parts.slice(0, -1).join('/'));
+      }
     }
 
-    // Extract additional disk attributes from attr array (disk0, disk1, etc.)
-    if (zoneConfig.attr) {
-      const attrs = Array.isArray(zoneConfig.attr) ? zoneConfig.attr : [zoneConfig.attr];
-      for (const attr of attrs) {
-        if (attr.name && /^disk\d+$/.test(attr.name) && attr.value) {
-          datasets.push(attr.value);
+    // 3. Disks (zadm helper array - easier to parse than raw attributes)
+    if (zoneConfig.disk) {
+      const disks = Array.isArray(zoneConfig.disk) ? zoneConfig.disk : [zoneConfig.disk];
+      for (const disk of disks) {
+        if (disk.path) {
+          potentialDatasets.add(disk.path);
         }
       }
     }
 
-    // <DEBUG_LOG_REMOVE_LATER>
-    log.task.info('DEBUG: extractZoneDatasets - Identified Datasets', {
-      zone_name: zoneName,
-      datasets,
-    });
-    // </DEBUG_LOG_REMOVE_LATER>
+    // 4. Attributes (diskN - fallback for legacy configs)
+    if (zoneConfig.attr) {
+      const attrs = Array.isArray(zoneConfig.attr) ? zoneConfig.attr : [zoneConfig.attr];
+      for (const attr of attrs) {
+        if (attr.name && /^disk\d+$/.test(attr.name) && attr.value) {
+          potentialDatasets.add(attr.value);
+        }
+      }
+    }
+
+    // 5. Devices (zvol devices - fallback)
+    if (zoneConfig.device) {
+      const devices = Array.isArray(zoneConfig.device) ? zoneConfig.device : [zoneConfig.device];
+      for (const dev of devices) {
+        if (dev.match) {
+          // Extract dataset from /dev/zvol/rdsk/PATH or /dev/zvol/dsk/PATH
+          const match = dev.match.match(/\/dev\/zvol\/(?:r)?dsk\/(.+)/);
+          if (match && match[1]) {
+            potentialDatasets.add(match[1]);
+          }
+        }
+      }
+    }
+
+    // 6. File Systems (fs)
+    if (zoneConfig.fs) {
+      const fss = Array.isArray(zoneConfig.fs) ? zoneConfig.fs : [zoneConfig.fs];
+      for (const fs of fss) {
+        if (fs.special) {
+          // If special looks like a dataset (no leading /) or zvol path
+          if (!fs.special.startsWith('/')) {
+            potentialDatasets.add(fs.special);
+          } else {
+            const match = fs.special.match(/\/dev\/zvol\/(?:r)?dsk\/(.+)/);
+            if (match && match[1]) {
+              potentialDatasets.add(match[1]);
+            }
+          }
+        }
+      }
+    }
+
+    // 7. Datasets (dataset resource)
+    if (zoneConfig.dataset) {
+      const dss = Array.isArray(zoneConfig.dataset) ? zoneConfig.dataset : [zoneConfig.dataset];
+      for (const ds of dss) {
+        if (ds.name) {
+          potentialDatasets.add(ds.name);
+        }
+      }
+    }
+
+    // Verify existence of all collected datasets
+    for (const ds of potentialDatasets) {
+      try {
+        const result = await executeCommand(`pfexec zfs list -H -o name "${ds}"`);
+        if (result.success && result.output.trim()) {
+          datasets.push(result.output.trim());
+        }
+      } catch (e) {
+        // Dataset doesn't exist or error
+      }
+    }
   } catch (error) {
     log.task.warn('Failed to extract zone datasets', {
       zone_name: zoneName,
@@ -348,6 +397,11 @@ export const executeDeleteTask = async (zoneName, metadataJson) => {
           zone_name: zoneName,
           errors: datasetErrors,
         });
+        
+        return {
+          success: false,
+          error: `Zone deleted but ZFS cleanup failed: ${datasetErrors.join('; ')}`,
+        };
       }
     }
 
