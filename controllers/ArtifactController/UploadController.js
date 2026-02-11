@@ -288,7 +288,9 @@ export const uploadArtifactToTask = async (req, res) => {
       await task.update({
         metadata: await new Promise((resolve, reject) => {
           yj.stringifyAsync(updatedMetadata, (err, result) => {
-            if (err) return reject(err);
+            if (err) {
+              return reject(err);
+            }
             return resolve(result);
           });
         }),

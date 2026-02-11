@@ -1257,6 +1257,7 @@ export const modifyZone = async (req, res) => {
       'add_cdroms',
       'remove_cdroms',
       'cloud_init',
+      'provisioning',
     ];
     const hasChanges = changeFields.some(field => req.body[field] !== undefined);
 

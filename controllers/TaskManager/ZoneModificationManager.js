@@ -3,6 +3,7 @@ import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import { checkZvolInUse } from './ZoneCreationManager.js';
 import { getZoneConfig, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
+import Zones from '../../models/ZoneModel.js';
 
 /**
  * Zone Modification Manager for Zone Configuration Changes
@@ -589,6 +590,17 @@ export const executeZoneModifyTask = async task => {
       await applyCloudInitChanges(zoneName, zoneConfig, metadata.cloud_init);
       changes.push('cloud_init');
       await syncZoneToDatabase(zoneName);
+    }
+
+    // Handle provisioning config update (DB only)
+    if (metadata.provisioning) {
+      await updateTaskProgress(task, 90, { status: 'updating_provisioning_config' });
+      const zone = await Zones.findOne({ where: { name: zoneName } });
+      if (zone) {
+        const newConfig = { ...zone.configuration, provisioning: metadata.provisioning };
+        await zone.update({ configuration: newConfig });
+        changes.push('provisioning');
+      }
     }
 
     await finalizeModification(zoneName, task, changes);
