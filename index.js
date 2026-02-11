@@ -33,6 +33,7 @@ import { setupHTTPSServer } from './lib/SSLManager.js';
 import { setupSwaggerDocs } from './lib/SwaggerManager.js';
 import { startZoneOrchestration } from './controllers/ZoneOrchestrationService.js';
 import Tasks from './models/TaskModel.js';
+import { up as seedDefaultRecipes } from './db/seeders/20260209-default-recipes.js';
 
 /**
  * Express application instance
@@ -148,6 +149,14 @@ httpServer.listen(httpPort, () => {
           log.app.warn('Failed to clear tasks on startup', {
             error: error.message,
           });
+        }
+
+        // Seed default recipes
+        try {
+          await seedDefaultRecipes(DatabaseMigrations.getQueryInterface());
+          log.app.info('Default recipes seeded successfully');
+        } catch (error) {
+          log.app.error('Failed to seed default recipes', { error: error.message });
         }
 
         // Check and install required packages

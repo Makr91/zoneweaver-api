@@ -6,6 +6,7 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import yj from 'yieldable-json';
+import NatRules from '../../models/NatRuleModel.js';
 
 /**
  * Refresh ipfilter service to apply NAT rule changes
@@ -35,6 +36,93 @@ const refreshIpfilter = async () => {
   }
 
   return { success: true };
+};
+
+/**
+ * Parse a raw NAT rule string into components
+ * @param {string} rule - Raw rule string
+ * @returns {Object|null} Parsed rule object or null if invalid
+ */
+const parseNatRule = rule => {
+  // Example: map igb0 10.0.0.0/24 -> 0/32 portmap tcp/udp auto
+  // Example: rdr igb0 0.0.0.0/0 port 80 -> 10.0.0.5 port 80 tcp
+  const parts = rule.trim().split(/\s+/);
+  if (parts.length < 4) {
+    return null;
+  }
+
+  const [type, bridge] = parts;
+
+  // Basic parsing - this can be improved for complex rules
+  // For now, we store the raw_rule as the unique identifier/content
+  return {
+    type,
+    bridge,
+    raw_rule: rule.trim(),
+    // Other fields are harder to extract reliably without a full parser,
+    // but raw_rule is sufficient for sync
+    subnet: parts[2], // Approximation
+    target: parts[4], // Approximation
+    protocol: rule.includes('tcp/udp') ? 'tcp/udp' : 'any',
+  };
+};
+
+/**
+ * Synchronize Database with System Configuration File
+ * 1. Read ipnat.conf
+ * 2. Import new rules to DB
+ * 3. Remove DB rules missing from file
+ */
+const syncDatabaseWithSystem = async () => {
+  // 1. Read System Config
+  const readResult = await executeCommand('cat /etc/ipf/ipnat.conf 2>/dev/null');
+  const fileRules = new Set();
+
+  if (readResult.success && readResult.output) {
+    const lines = readResult.output.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        fileRules.add(trimmed);
+      }
+    }
+  }
+
+  // 2. Get DB Rules
+  const dbRules = await NatRules.findAll();
+
+  // 3. Import missing rules (File -> DB)
+  const importPromises = [];
+  for (const ruleStr of fileRules) {
+    const exists = dbRules.find(r => r.raw_rule === ruleStr);
+    if (!exists) {
+      const parsed = parseNatRule(ruleStr);
+      if (parsed) {
+        importPromises.push(
+          NatRules.create({
+            ...parsed,
+            created_by: 'system_import',
+          }).then(() => {
+            log.task.info('Imported manual NAT rule to database', { rule: ruleStr });
+          })
+        );
+      }
+    }
+  }
+  await Promise.all(importPromises);
+
+  // 4. Prune deleted rules (DB -> File)
+  const prunePromises = [];
+  for (const dbRule of dbRules) {
+    if (!fileRules.has(dbRule.raw_rule)) {
+      prunePromises.push(
+        dbRule.destroy().then(() => {
+          log.task.info('Removed deleted NAT rule from database', { rule: dbRule.raw_rule });
+        })
+      );
+    }
+  }
+  await Promise.all(prunePromises);
 };
 
 /**
@@ -76,21 +164,39 @@ export const executeCreateNatRuleTask = async metadataJson => {
     // Ensure /etc/ipf directory exists
     await executeCommand('pfexec mkdir -p /etc/ipf');
 
-    // Check if rule already exists
-    const checkResult = await executeCommand('cat /etc/ipf/ipnat.conf 2>/dev/null');
-    if (checkResult.success && checkResult.output && checkResult.output.includes(rule)) {
+    // 1. Sync DB with current System State
+    await syncDatabaseWithSystem();
+
+    // 2. Check if rule already exists in DB (now synced)
+    const existing = await NatRules.findOne({ where: { raw_rule: rule } });
+    if (existing) {
       return {
         success: true,
         message: `NAT rule already exists: ${rule}`,
       };
     }
 
-    // Append rule to config file
-    const appendResult = await executeCommand(
-      `pfexec bash -c 'echo "${rule}" >> /etc/ipf/ipnat.conf'`
+    // 3. Add to DB
+    await NatRules.create({
+      bridge,
+      subnet,
+      target,
+      protocol,
+      type,
+      raw_rule: rule,
+      created_by: 'api', // Or from metadata if passed
+    });
+
+    // 4. Regenerate File from DB
+    const allRules = await NatRules.findAll();
+    const configContent = `${allRules.map(r => r.raw_rule).join('\n')}\n`;
+
+    const writeResult = await executeCommand(
+      `pfexec bash -c 'printf "%s" ${JSON.stringify(configContent)} > /etc/ipf/ipnat.conf'`
     );
-    if (!appendResult.success) {
-      return { success: false, error: `Failed to write NAT rule: ${appendResult.error}` };
+
+    if (!writeResult.success) {
+      return { success: false, error: `Failed to write NAT config: ${writeResult.error}` };
     }
 
     // Refresh ipfilter service
@@ -135,42 +241,30 @@ export const executeDeleteNatRuleTask = async metadataJson => {
       });
     });
 
-    const { rule_id } = metadata;
+    const { rule_id } = metadata; // This is now a UUID
 
-    // Read current config
-    const readResult = await executeCommand('cat /etc/ipf/ipnat.conf 2>/dev/null');
-    if (!readResult.success || !readResult.output) {
-      return { success: false, error: 'No NAT configuration file found or file is empty' };
+    // 1. Sync DB with current System State
+    await syncDatabaseWithSystem();
+
+    // 2. Find Rule in DB
+    const rule = await NatRules.findByPk(rule_id);
+    if (!rule) {
+      return { success: false, error: `NAT rule not found: ${rule_id}` };
     }
 
-    const allLines = readResult.output.split('\n');
-    // Filter to non-comment, non-empty lines for indexing
-    const ruleLines = [];
-    const ruleLineIndices = [];
-    allLines.forEach((line, idx) => {
-      if (line.trim() && !line.trim().startsWith('#')) {
-        ruleLines.push(line);
-        ruleLineIndices.push(idx);
-      }
-    });
+    const ruleText = rule.raw_rule;
 
-    if (rule_id < 0 || rule_id >= ruleLines.length) {
-      return {
-        success: false,
-        error: `Rule index ${rule_id} out of range (0-${ruleLines.length - 1})`,
-      };
-    }
+    // 3. Delete from DB
+    await rule.destroy();
 
-    const removedRule = ruleLines[rule_id];
-    const lineToRemove = ruleLineIndices[rule_id];
-
-    // Remove the line from the file
-    const newLines = allLines.filter((_, idx) => idx !== lineToRemove);
-    const newContent = newLines.join('\n');
+    // 4. Regenerate File from DB
+    const allRules = await NatRules.findAll();
+    const configContent = `${allRules.map(r => r.raw_rule).join('\n')}\n`;
 
     const writeResult = await executeCommand(
-      `pfexec bash -c 'printf "%s" ${JSON.stringify(newContent)} > /etc/ipf/ipnat.conf'`
+      `pfexec bash -c 'printf "%s" ${JSON.stringify(configContent)} > /etc/ipf/ipnat.conf'`
     );
+
     if (!writeResult.success) {
       return { success: false, error: `Failed to update NAT config: ${writeResult.error}` };
     }
@@ -181,10 +275,10 @@ export const executeDeleteNatRuleTask = async metadataJson => {
       log.task.warn('NAT rule removed but ipfilter refresh failed', { error: refreshResult.error });
     }
 
-    log.task.info('NAT rule deleted successfully', { rule_id, rule: removedRule });
+    log.task.info('NAT rule deleted successfully', { rule_id, rule: ruleText });
     return {
       success: true,
-      message: `NAT rule deleted: ${removedRule}`,
+      message: `NAT rule deleted: ${ruleText}`,
     };
   } catch (error) {
     log.task.error('NAT rule deletion failed', { error: error.message });

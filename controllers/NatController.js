@@ -10,6 +10,7 @@ import util from 'util';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import yj from 'yieldable-json';
 import { log } from '../lib/Logger.js';
+import NatRules from '../models/NatRuleModel.js';
 
 const execPromise = util.promisify(exec);
 
@@ -54,21 +55,17 @@ export const getNatRules = async (req, res) => {
     // Get active NAT rules from kernel
     const activeResult = await executeCommand('pfexec ipnat -l');
 
-    // Get configured rules from config file
-    const configResult = await executeCommand('cat /etc/ipf/ipnat.conf 2>/dev/null');
+    // Get configured rules from Database
+    // Note: We assume the TaskManager keeps DB in sync.
+    // If we want absolute freshness, we could trigger a sync task here, but that's slow.
+    // For listing, DB read is standard.
+    const dbRules = await NatRules.findAll();
 
-    const rules = [];
-    if (configResult.success && configResult.output) {
-      const lines = configResult.output
-        .split('\n')
-        .filter(line => line.trim() && !line.trim().startsWith('#'));
-      lines.forEach((line, index) => {
-        rules.push({
-          id: index,
-          rule: line.trim(),
-        });
-      });
-    }
+    const rules = dbRules.map(r => ({
+      id: r.id, // UUID
+      rule: r.raw_rule,
+      ...r.toJSON(),
+    }));
 
     return res.json({
       active_rules: activeResult.success ? activeResult.output : null,
@@ -177,7 +174,7 @@ export const createNatRule = async (req, res) => {
  * /network/nat/rules/{ruleId}:
  *   delete:
  *     summary: Delete NAT rule
- *     description: Removes a NAT rule from /etc/ipf/ipnat.conf by line index and refreshes ipfilter
+ *     description: Removes a NAT rule from /etc/ipf/ipnat.conf by UUID and refreshes ipfilter
  *     tags: [NAT Management]
  *     security:
  *       - ApiKeyAuth: []
@@ -186,8 +183,8 @@ export const createNatRule = async (req, res) => {
  *         name: ruleId
  *         required: true
  *         schema:
- *           type: integer
- *         description: Rule index (0-based) from the configured rules list
+ *           type: string
+ *         description: Rule UUID
  *     responses:
  *       202:
  *         description: NAT rule deletion task queued
@@ -198,9 +195,9 @@ export const createNatRule = async (req, res) => {
  */
 export const deleteNatRule = async (req, res) => {
   try {
-    const ruleId = parseInt(req.params.ruleId, 10);
-    if (isNaN(ruleId) || ruleId < 0) {
-      return res.status(400).json({ error: 'Invalid rule ID' });
+    const { ruleId } = req.params;
+    if (!ruleId) {
+      return res.status(400).json({ error: 'Rule ID is required' });
     }
 
     const task = await Tasks.create({

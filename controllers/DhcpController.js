@@ -10,6 +10,7 @@ import util from 'util';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import yj from 'yieldable-json';
 import { log } from '../lib/Logger.js';
+import DhcpHosts from '../models/DhcpHostModel.js';
 
 const execPromise = util.promisify(exec);
 
@@ -240,10 +241,10 @@ export const updateDhcpConfig = async (req, res) => {
  */
 export const getDhcpHosts = async (req, res) => {
   try {
-    const config = await parseDhcpdConf();
+    const hosts = await DhcpHosts.findAll();
     return res.json({
-      hosts: config.hosts,
-      total: config.hosts.length,
+      hosts,
+      total: hosts.length,
     });
   } catch (error) {
     log.api.error('Failed to get DHCP hosts', { error: error.message });

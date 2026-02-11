@@ -6,9 +6,77 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import yj from 'yieldable-json';
+import DhcpHosts from '../../models/DhcpHostModel.js';
+import { Op } from 'sequelize';
 
 const DHCPD_CONF_PATH = '/etc/dhcpd.conf';
 const DHCP_SERVICE = 'dhcp/server:ipv4';
+
+/**
+ * Synchronize Database with System Configuration File (Hosts only)
+ */
+const syncDatabaseWithSystem = async () => {
+  // 1. Read System Config
+  const readResult = await executeCommand(`cat ${DHCPD_CONF_PATH} 2>/dev/null`);
+  const fileHosts = new Map(); // hostname -> { mac, ip }
+
+  if (readResult.success && readResult.output) {
+    const hostRegex = /host\s+(?<hostname>\S+)\s*\{(?<block>[^}]*)}/gs;
+    let match;
+    while ((match = hostRegex.exec(readResult.output)) !== null) {
+      const { hostname } = match.groups;
+      const { block } = match.groups;
+      const macMatch = block.match(/hardware\s+ethernet\s+(?<mac>[^;]+);/);
+      const ipMatch = block.match(/fixed-address\s+(?<ip>[^;]+);/);
+
+      if (macMatch && ipMatch) {
+        fileHosts.set(hostname, {
+          mac: macMatch.groups.mac.trim(),
+          ip: ipMatch.groups.ip.trim(),
+        });
+      }
+    }
+  }
+
+  // 2. Get DB Hosts
+  const dbHosts = await DhcpHosts.findAll();
+
+  // 3. Import missing hosts (File -> DB)
+  const importPromises = [];
+  for (const [hostname, data] of fileHosts) {
+    const exists = dbHosts.find(h => h.hostname === hostname);
+    if (!exists) {
+      // Check if MAC or IP is already taken by another hostname (conflict)
+      const conflict = dbHosts.find(h => h.mac === data.mac || h.ip === data.ip);
+      if (!conflict) {
+        importPromises.push(
+          DhcpHosts.create({
+            hostname,
+            mac: data.mac,
+            ip: data.ip,
+            created_by: 'system_import',
+          }).then(() => {
+            log.task.info('Imported manual DHCP host to database', { hostname });
+          })
+        );
+      }
+    }
+  }
+  await Promise.all(importPromises);
+
+  // 4. Prune deleted hosts (DB -> File)
+  const prunePromises = [];
+  for (const dbHost of dbHosts) {
+    if (!fileHosts.has(dbHost.hostname)) {
+      prunePromises.push(
+        dbHost.destroy().then(() => {
+          log.task.info('Removed deleted DHCP host from database', { hostname: dbHost.hostname });
+        })
+      );
+    }
+  }
+  await Promise.all(prunePromises);
+};
 
 /**
  * Execute DHCP config update task
@@ -124,24 +192,36 @@ export const executeDhcpAddHostTask = async metadataJson => {
       return { success: false, error: 'hostname, mac, and ip are required' };
     }
 
-    // Check if host already exists
-    const existingResult = await executeCommand(`cat ${DHCPD_CONF_PATH} 2>/dev/null`);
-    if (existingResult.success && existingResult.output) {
-      const hostPattern = new RegExp(
-        `host\\s+${hostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`
-      );
-      if (hostPattern.test(existingResult.output)) {
-        return { success: false, error: `Host entry '${hostname}' already exists` };
-      }
+    // 1. Sync DB
+    await syncDatabaseWithSystem();
+
+    // 2. Check for conflicts
+    const existing = await DhcpHosts.findOne({
+      where: {
+        [Op.or]: [{ hostname }, { mac }, { ip }],
+      },
+    });
+
+    if (existing) {
+      return {
+        success: false,
+        error: `Host entry conflict: ${existing.hostname} already uses this hostname, MAC, or IP`,
+      };
     }
 
-    // Build host block
-    const hostBlock = `\nhost ${hostname} {\n  hardware ethernet ${mac};\n  fixed-address ${ip};\n}\n`;
+    // 3. Add to DB
+    await DhcpHosts.create({ hostname, mac, ip, created_by: 'api' });
 
-    // Append to config
+    // 4. Regenerate Config (We need to preserve the global config part!)
+    // For now, we'll stick to the append method for safety, OR we need to read the global config part and rewrite.
+    // Given the complexity of parsing/preserving global config, APPEND is safer for now,
+    // but we MUST ensure the DB is the source of truth for HOSTS.
+
+    const hostBlock = `\nhost ${hostname} {\n  hardware ethernet ${mac};\n  fixed-address ${ip};\n}\n`;
     const appendResult = await executeCommand(
       `pfexec bash -c 'cat >> ${DHCPD_CONF_PATH} << '"'"'HOSTEOF'"'"'\n${hostBlock}HOSTEOF'`
     );
+
     if (!appendResult.success) {
       return { success: false, error: `Failed to add host entry: ${appendResult.error}` };
     }
@@ -184,22 +264,25 @@ export const executeDhcpRemoveHostTask = async metadataJson => {
       return { success: false, error: 'hostname is required' };
     }
 
-    // Read current config
+    // 1. Sync DB
+    await syncDatabaseWithSystem();
+
+    // 2. Remove from DB
+    const deleted = await DhcpHosts.destroy({ where: { hostname } });
+    if (!deleted) {
+      return { success: false, error: `Host entry '${hostname}' not found in database` };
+    }
+
+    // 3. Remove from File (Regex replace is still best here to preserve global config)
     const readResult = await executeCommand(`cat ${DHCPD_CONF_PATH} 2>/dev/null`);
     if (!readResult.success || !readResult.output) {
       return { success: false, error: 'No DHCP configuration file found' };
     }
 
-    // Remove the host block using regex
     const escapedHostname = hostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const hostPattern = new RegExp(`\\n?host\\s+${escapedHostname}\\s*\\{[^}]*}\\n?`, 'gs');
     const newContent = readResult.output.replace(hostPattern, '\n');
 
-    if (newContent === readResult.output) {
-      return { success: false, error: `Host entry '${hostname}' not found` };
-    }
-
-    // Write updated config
     const writeResult = await executeCommand(
       `pfexec bash -c 'cat > ${DHCPD_CONF_PATH} << '"'"'DHCPEOF'"'"'\n${newContent}DHCPEOF'`
     );
