@@ -8,6 +8,8 @@ import VncSessions from '../../models/VncSessionModel.js';
 import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
 import NetworkUsage from '../../models/NetworkUsageModel.js';
 import IPAddresses from '../../models/IPAddressModel.js';
+import { executeDeleteVNICTask } from './VNICManager.js';
+import { executeDeleteIPAddressTask } from './NetworkManager.js';
 import { Op } from 'sequelize';
 import os from 'os';
 
@@ -400,6 +402,103 @@ const getProtectedDatasets = async excludeZoneName => {
 };
 
 /**
+ * Parse delete task metadata
+ * @param {string} metadataJson - JSON metadata string
+ * @returns {Promise<{cleanupDatasets: boolean, cleanupNetworking: boolean}>}
+ */
+const parseDeleteMetadata = async metadataJson => {
+  let cleanupDatasets = false;
+  let cleanupNetworking = false;
+  if (metadataJson) {
+    try {
+      const metadata = await new Promise((resolve, reject) => {
+        yj.parseAsync(metadataJson, (err, parseResult) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(parseResult);
+          }
+        });
+      });
+      cleanupDatasets = metadata.cleanup_datasets === true;
+      cleanupNetworking = metadata.cleanup_networking === true;
+    } catch {
+      // Ignore metadata parse errors - proceed without cleanup
+    }
+  }
+  return { cleanupDatasets, cleanupNetworking };
+};
+
+/**
+ * Clean up ZFS datasets for a zone
+ * @param {string} zoneName - Name of the zone
+ * @param {Object} zoneDatasets - Datasets to clean up
+ * @returns {Promise<string[]>} Array of error messages
+ */
+const cleanupZoneDatasets = async (zoneName, zoneDatasets) => {
+  const datasetErrors = [];
+  // 1. Inventory & Protect: Get datasets used by other zones
+  const protectedDatasets = await getProtectedDatasets(zoneName);
+
+  // 2. Sort candidates by length (shortest first) to try deleting parents first
+  const sortedDatasets = [...zoneDatasets.datasets].sort((a, b) => a.length - b.length);
+
+  for (const dataset of sortedDatasets) {
+    // 3. Safety Check: Intersection with protected datasets
+    let isSafe = true;
+    for (const protectedDs of protectedDatasets) {
+      // Check 1: Is this dataset explicitly protected?
+      if (dataset === protectedDs) {
+        isSafe = false;
+        log.task.warn('Skipping dataset deletion: Dataset is used by another zone', {
+          zone_name: zoneName,
+          dataset,
+          used_by: protectedDs,
+        });
+        break;
+      }
+      // Check 2: Is this dataset a parent of a protected dataset? (Prevent recursive destroy of shared parents)
+      if (protectedDs.startsWith(`${dataset}/`) || protectedDs.startsWith(`/${dataset}/`)) {
+        isSafe = false;
+        log.task.warn(
+          'Skipping dataset deletion: Dataset contains resources used by another zone',
+          {
+            zone_name: zoneName,
+            dataset,
+            protected_child: protectedDs,
+          }
+        );
+        break;
+      }
+    }
+
+    if (!isSafe) {
+      continue;
+    }
+
+    // 4. Execute Safe Destroy
+    // Check if dataset exists first to avoid noise from children already deleted by parent
+    // eslint-disable-next-line no-await-in-loop
+    const check = await executeCommand(`pfexec zfs list -H -o name "${dataset}" 2>/dev/null`);
+    if (check.success) {
+      // eslint-disable-next-line no-await-in-loop
+      const destroyResult = await executeCommand(`pfexec zfs destroy -r "${dataset}"`);
+      if (!destroyResult.success) {
+        datasetErrors.push(`Failed to destroy ${dataset}: ${destroyResult.error}`);
+      } else {
+        log.task.info('Destroyed ZFS dataset', { dataset });
+      }
+    } else {
+      log.task.info('Skipping dataset (not found or already deleted)', {
+        zone_name: zoneName,
+        dataset,
+      });
+    }
+  }
+  return datasetErrors;
+};
+
+/**
  * Execute zone delete task
  * @param {string} zoneName - Name of zone to delete
  * @param {string} [metadataJson] - Optional JSON metadata string with cleanup options
@@ -407,23 +506,7 @@ const getProtectedDatasets = async excludeZoneName => {
  */
 export const executeDeleteTask = async (zoneName, metadataJson) => {
   try {
-    let cleanupDatasets = false;
-    if (metadataJson) {
-      try {
-        const metadata = await new Promise((resolve, reject) => {
-          yj.parseAsync(metadataJson, (err, parseResult) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(parseResult);
-            }
-          });
-        });
-        cleanupDatasets = metadata.cleanup_datasets === true;
-      } catch {
-        // Ignore metadata parse errors - proceed without cleanup
-      }
-    }
+    const { cleanupDatasets, cleanupNetworking } = await parseDeleteMetadata(metadataJson);
 
     // Collect dataset info before deleting the zone config
     let zoneDatasets = { zonepath: null, datasets: [] };
@@ -462,61 +545,9 @@ export const executeDeleteTask = async (zoneName, metadataJson) => {
     }
 
     // Clean up ZFS datasets if requested
-    const datasetErrors = [];
+    let datasetErrors = [];
     if (cleanupDatasets && zoneDatasets.datasets.length > 0) {
-      // 1. Inventory & Protect: Get datasets used by other zones
-      const protectedDatasets = await getProtectedDatasets(zoneName);
-
-      // 2. Sort candidates by length (shortest first) to try deleting parents first
-      const sortedDatasets = [...zoneDatasets.datasets].sort((a, b) => a.length - b.length);
-
-      for (const dataset of sortedDatasets) {
-        // 3. Safety Check: Intersection with protected datasets
-        let isSafe = true;
-        for (const protectedDs of protectedDatasets) {
-          // Check 1: Is this dataset explicitly protected?
-          if (dataset === protectedDs) {
-            isSafe = false;
-            log.task.warn('Skipping dataset deletion: Dataset is used by another zone', {
-              zone_name: zoneName,
-              dataset,
-              used_by: protectedDs,
-            });
-            break;
-          }
-          // Check 2: Is this dataset a parent of a protected dataset? (Prevent recursive destroy of shared parents)
-          if (protectedDs.startsWith(`${dataset}/`) || protectedDs.startsWith(`/${dataset}/`)) {
-            isSafe = false;
-            log.task.warn('Skipping dataset deletion: Dataset contains resources used by another zone', {
-              zone_name: zoneName,
-              dataset,
-              protected_child: protectedDs,
-            });
-            break;
-          }
-        }
-
-        if (!isSafe) {
-          continue;
-        }
-
-        // 4. Execute Safe Destroy
-        // Check if dataset exists first to avoid noise from children already deleted by parent
-        const check = await executeCommand(`pfexec zfs list -H -o name "${dataset}" 2>/dev/null`);
-        if (check.success) {
-          const destroyResult = await executeCommand(`pfexec zfs destroy -r "${dataset}"`);
-          if (!destroyResult.success) {
-            datasetErrors.push(`Failed to destroy ${dataset}: ${destroyResult.error}`);
-          } else {
-            log.task.info('Destroyed ZFS dataset', { dataset });
-          }
-        } else {
-          log.task.info('Skipping dataset (not found or already deleted)', {
-            zone_name: zoneName,
-            dataset,
-          });
-        }
-      }
+      datasetErrors = await cleanupZoneDatasets(zoneName, zoneDatasets);
 
       if (datasetErrors.length > 0) {
         log.task.warn('Some ZFS datasets could not be cleaned up', {
@@ -531,13 +562,51 @@ export const executeDeleteTask = async (zoneName, metadataJson) => {
       }
     }
 
+    // Handle Network Cleanup
+    // Find all interfaces associated with this zone
+    const zoneInterfaces = await NetworkInterfaces.findAll({ where: { zone: zoneName } });
+
+    if (cleanupNetworking) {
+      log.task.info('Cleaning up network resources for zone', {
+        zone_name: zoneName,
+        count: zoneInterfaces.length,
+      });
+
+      await Promise.all(
+        zoneInterfaces.map(async iface => {
+          // 1. Delete IPs associated with this interface
+          const ips = await IPAddresses.findAll({ where: { interface: iface.link } });
+          await Promise.all(
+            ips.map(ip =>
+              executeDeleteIPAddressTask(JSON.stringify({ addrobj: ip.addrobj, release: true }))
+            )
+          );
+
+          // 2. Delete VNIC if it is a VNIC
+          if (iface.class === 'vnic') {
+            await executeDeleteVNICTask(JSON.stringify({ vnic: iface.link }));
+          } else {
+            // For physical/other interfaces, just dissociate
+            await iface.update({ zone: null });
+          }
+        })
+      );
+    } else if (zoneInterfaces.length > 0) {
+      // Just dissociate interfaces from the zone
+      log.task.info('Dissociating network interfaces from zone', {
+        zone_name: zoneName,
+        count: zoneInterfaces.length,
+      });
+      await NetworkInterfaces.update({ zone: null }, { where: { zone: zoneName } });
+    }
+
     // Clean up all database entries in parallel
     await Promise.all([
       // Remove zone from database
       Zones.destroy({ where: { name: zoneName } }),
 
-      // Clean up associated data
-      NetworkInterfaces.destroy({ where: { zone: zoneName } }),
+      // Clean up orphaned usage/IP records that might have been missed by manager tasks
+      // (Only if they match the strict naming convention, as a fallback)
       NetworkUsage.destroy({ where: { link: { [Op.like]: `${zoneName}%` } } }),
       IPAddresses.destroy({ where: { interface: { [Op.like]: `${zoneName}%` } } }),
 

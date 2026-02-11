@@ -1296,7 +1296,7 @@ export const modifyZone = async (req, res) => {
 export const deleteZone = async (req, res) => {
   try {
     const { zoneName } = req.params;
-    const { force = false, cleanup_datasets = false } = req.query;
+    const { force = false, cleanup_datasets = false, cleanup_networking = false } = req.query;
 
     if (!validateZoneName(zoneName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -1320,10 +1320,10 @@ export const deleteZone = async (req, res) => {
     }
 
     // Build delete task metadata
-    const deleteMetadata =
-      cleanup_datasets === 'true' || cleanup_datasets === true
-        ? JSON.stringify({ cleanup_datasets: true })
-        : undefined;
+    const deleteMetadata = JSON.stringify({
+      cleanup_datasets: cleanup_datasets === 'true' || cleanup_datasets === true,
+      cleanup_networking: cleanup_networking === 'true' || cleanup_networking === true,
+    });
 
     // If zone is running, create stop task first
     if (currentStatus === 'running') {
