@@ -147,7 +147,7 @@ class DatabaseMigrations {
   async seedDefaultData() {
     try {
       // Seed default recipes
-      await seedDefaultRecipes(db.getQueryInterface());
+      await seedDefaultRecipes();
 
       log.database.info('Default data seeding completed');
       return true;

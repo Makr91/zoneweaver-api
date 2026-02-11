@@ -6,6 +6,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { log } from '../../lib/Logger.js';
+import Recipes from '../../models/RecipeModel.js';
 
 /**
  * Default recipes for common operating systems
@@ -228,11 +229,9 @@ const defaultRecipes = [
  * @param {Object} queryInterface - Sequelize query interface
  * @returns {Promise<void>}
  */
-export const up = async queryInterface => {
-  const existingRecipes = await queryInterface.sequelize.query('SELECT name FROM recipes', {
-    type: queryInterface.sequelize.QueryTypes.SELECT,
-  });
-
+export const up = async () => {
+  // Use Model directly instead of raw queryInterface
+  const existingRecipes = await Recipes.findAll({ attributes: ['name'] });
   const existingNames = new Set(existingRecipes.map(r => r.name));
 
   // Only insert recipes that don't already exist
@@ -244,13 +243,7 @@ export const up = async queryInterface => {
   }
 
   // Convert JSON fields to strings for insertion
-  const formattedRecipes = recipesToInsert.map(recipe => ({
-    ...recipe,
-    steps: JSON.stringify(recipe.steps),
-    variables: JSON.stringify(recipe.variables),
-  }));
-
-  await queryInterface.bulkInsert('recipes', formattedRecipes);
+  await Recipes.bulkCreate(recipesToInsert);
   log.database.info('Default recipes seeded successfully', {
     count: recipesToInsert.length,
   });
@@ -261,11 +254,10 @@ export const up = async queryInterface => {
  * @param {Object} queryInterface - Sequelize query interface
  * @returns {Promise<void>}
  */
-export const down = async queryInterface => {
+export const down = async () => {
   const recipeNames = defaultRecipes.map(r => r.name);
-  await queryInterface.bulkDelete('recipes', {
-    name: recipeNames,
-    created_by: 'system',
+  await Recipes.destroy({
+    where: { name: recipeNames, created_by: 'system' },
   });
   log.database.info('Default recipes removed', {
     count: recipeNames.length,
