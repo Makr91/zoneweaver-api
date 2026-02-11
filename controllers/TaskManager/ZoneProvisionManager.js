@@ -499,7 +499,7 @@ export const executeZoneProvisioningExtractTask = async task => {
     // dataset_path is like "/rpool/zones/myzone/provisioning" (mountpoint)
     // We need the ZFS dataset name (rpool/zones/myzone/provisioning)
     // Assuming dataset_path is the mountpoint which matches the dataset name with leading slash
-    const zfsDataset = dataset_path.startsWith('/') ? dataset_path.substring(1) : dataset_path;
+    const zfsDataset = dataset_path.replace(/^\/+/, '');
 
     const createResult = await executeCommand(
       `pfexec zfs create -o mountpoint=${dataset_path} ${zfsDataset}`

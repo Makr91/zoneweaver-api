@@ -119,7 +119,10 @@ const buildProvisioningTaskChain = async params => {
     const zoneDataset = zoneConfig.zonepath
       ? zoneConfig.zonepath.replace('/path', '')
       : `/rpool/zones/${zoneName}`;
-    const provisioningDataset = `${zoneDataset}/provisioning`;
+
+    // Ensure clean path construction
+    const cleanZoneDataset = zoneDataset.startsWith('/') ? zoneDataset.substring(1) : zoneDataset;
+    const provisioningDataset = `${cleanZoneDataset}/provisioning`;
     provisioningDatasetPath = `/${provisioningDataset}`;
 
     const extractTask = await createTask({
