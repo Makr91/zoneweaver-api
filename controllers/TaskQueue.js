@@ -644,7 +644,7 @@ const executeArtifactTask = (operation, metadata) => {
       return executeArtifactDeleteFileTask(metadata);
     case 'artifact_delete_folder':
       return executeArtifactDeleteFolderTask(metadata);
-    case 'artifact_upload_process':
+    case 'artifact_upload':
       return executeArtifactUploadProcessTask(metadata);
     case 'artifact_move':
       return executeArtifactMoveTask(metadata);

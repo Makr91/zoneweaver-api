@@ -127,7 +127,7 @@ export const prepareArtifactUpload = async (req, res) => {
     // Create upload processing task (prepared status prevents TaskQueue from processing before upload)
     const task = await Tasks.create({
       zone_name: 'artifact',
-      operation: 'artifact_upload_process',
+      operation: 'artifact_upload',
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       status: 'prepared',

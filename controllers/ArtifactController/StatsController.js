@@ -92,7 +92,7 @@ export const getArtifactStats = async (req, res) => {
     const recentTasks = await Tasks.findAll({
       where: {
         operation: {
-          [Op.in]: ['artifact_download_url', 'artifact_upload_process'],
+          [Op.in]: ['artifact_download_url', 'artifact_upload'],
         },
         created_at: { [Op.gte]: yesterday },
       },
@@ -104,7 +104,7 @@ export const getArtifactStats = async (req, res) => {
         t => t.operation === 'artifact_download_url' && t.status === 'completed'
       ).length,
       uploads_last_24h: recentTasks.filter(
-        t => t.operation === 'artifact_upload_process' && t.status === 'completed'
+        t => t.operation === 'artifact_upload' && t.status === 'completed'
       ).length,
       failed_operations_last_24h: recentTasks.filter(t => t.status === 'failed').length,
     };

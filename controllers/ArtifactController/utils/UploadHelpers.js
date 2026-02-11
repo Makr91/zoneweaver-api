@@ -30,7 +30,7 @@ export const getAndValidateUploadTask = async (taskId, requestId) => {
     throw new Error('Upload task not found');
   }
 
-  if (task.operation !== 'artifact_upload_process') {
+  if (task.operation !== 'artifact_upload') {
     log.artifact.error('UPLOAD DEBUG: Invalid task type for upload', { requestId, taskId });
     throw new Error('Invalid task type for upload');
   }
