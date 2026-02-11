@@ -8,6 +8,7 @@ import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import { waitForSSH, executeSSHCommand, syncFiles } from '../../lib/SSHManager.js';
 import Zones from '../../models/ZoneModel.js';
+import Artifacts from '../../models/ArtifactModel.js';
 import config from '../../config/ConfigLoader.js';
 import yj from 'yieldable-json';
 
@@ -464,5 +465,78 @@ export const executeZoneProvisionTask = async task => {
   } catch (error) {
     log.task.error('Zone provisioning failed', { zone_name, error: error.message });
     return { success: false, error: `Provisioning failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute zone provisioning extraction task
+ * Creates ZFS dataset and extracts artifact
+ * @param {Object} task - Task object from TaskQueue
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeZoneProvisioningExtractTask = async task => {
+  const { zone_name } = task;
+
+  try {
+    const metadata = await new Promise((resolve, reject) => {
+      yj.parseAsync(task.metadata, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const { artifact_id, dataset_path } = metadata;
+
+    const artifact = await Artifacts.findByPk(artifact_id);
+    if (!artifact) {
+      return { success: false, error: `Artifact '${artifact_id}' not found` };
+    }
+
+    // Create ZFS dataset
+    // dataset_path is like "/rpool/zones/myzone/provisioning" (mountpoint)
+    // We need the ZFS dataset name (rpool/zones/myzone/provisioning)
+    // Assuming dataset_path is the mountpoint which matches the dataset name with leading slash
+    const zfsDataset = dataset_path.startsWith('/') ? dataset_path.substring(1) : dataset_path;
+
+    const createResult = await executeCommand(
+      `pfexec zfs create -o mountpoint=${dataset_path} ${zfsDataset}`
+    );
+
+    // Check if dataset exists if creation failed (idempotency)
+    if (!createResult.success) {
+      const checkResult = await executeCommand(`pfexec zfs list ${zfsDataset}`);
+      if (!checkResult.success) {
+        return {
+          success: false,
+          error: 'Failed to create provisioning dataset',
+          details: createResult.error,
+        };
+      }
+    }
+
+    // Extract artifact
+    const extractResult = await executeCommand(
+      `pfexec tar -xzf ${artifact.path} -C ${dataset_path}`,
+      { timeout: 300000 }
+    );
+
+    if (!extractResult.success) {
+      return {
+        success: false,
+        error: 'Failed to extract provisioning artifact',
+        details: extractResult.error,
+      };
+    }
+
+    // Create snapshot
+    await executeCommand(`pfexec zfs snapshot ${zfsDataset}@pre-provision`);
+
+    return { success: true, message: 'Provisioning artifact extracted successfully' };
+  } catch (error) {
+    log.task.error('Artifact extraction failed', { zone_name, error: error.message });
+    return { success: false, error: `Extraction failed: ${error.message}` };
   }
 };

@@ -8,9 +8,7 @@ import Zones from '../models/ZoneModel.js';
 import Tasks from '../models/TaskModel.js';
 import ProvisioningProfiles from '../models/ProvisioningProfileModel.js';
 import Recipes from '../models/RecipeModel.js';
-import Artifacts from '../models/ArtifactModel.js';
 import { log } from '../lib/Logger.js';
-import { executeCommand } from '../lib/CommandManager.js';
 import { validateZoneName } from '../lib/ZoneValidation.js';
 
 /**
@@ -74,112 +72,46 @@ const createTask = params =>
   });
 
 /**
- * Extract provisioning artifact to ZFS dataset
- * @param {string} zoneName - Zone name
- * @param {string} artifactId - Artifact ID
- * @param {Object} zone - Zone database record
- * @returns {Promise<{success: boolean, datasetPath?: string, error?: string}>}
- */
-const extractProvisioningArtifact = async (zoneName, artifactId, zone) => {
-  try {
-    const artifact = await Artifacts.findByPk(artifactId);
-    if (!artifact) {
-      return { success: false, error: `Artifact '${artifactId}' not found` };
-    }
-
-    const zoneConfig = zone.configuration || {};
-    const zoneDataset = zoneConfig.zonepath
-      ? zoneConfig.zonepath.replace('/path', '')
-      : `/rpool/zones/${zoneName}`;
-
-    const provisioningDataset = `${zoneDataset}/provisioning`;
-    const provisioningDatasetPath = `/${provisioningDataset}`;
-
-    // Create ZFS dataset
-    const createResult = await executeCommand(
-      `pfexec zfs create -o mountpoint=${provisioningDatasetPath} ${provisioningDataset}`
-    );
-
-    // Check if dataset exists if creation failed
-    if (!createResult.success) {
-      const checkResult = await executeCommand(`pfexec zfs list ${provisioningDataset}`);
-      if (!checkResult.success) {
-        return {
-          success: false,
-          error: 'Failed to create provisioning dataset',
-          details: createResult.error,
-        };
-      }
-    }
-
-    // Extract artifact
-    const extractResult = await executeCommand(
-      `pfexec tar -xzf ${artifact.path} -C ${provisioningDatasetPath}`,
-      { timeout: 300000 }
-    );
-
-    if (!extractResult.success) {
-      return {
-        success: false,
-        error: 'Failed to extract provisioning artifact',
-        details: extractResult.error,
-      };
-    }
-
-    // Create snapshot
-    const snapshotResult = await executeCommand(
-      `pfexec zfs snapshot ${provisioningDataset}@pre-provision`
-    );
-
-    if (!snapshotResult.success) {
-      log.api.warn('Failed to create pre-provision snapshot', {
-        zone_name: zoneName,
-        error: snapshotResult.error,
-      });
-    }
-
-    log.api.info('Provisioning artifact extracted', {
-      zone_name: zoneName,
-      artifact_id: artifactId,
-      dataset: provisioningDataset,
-    });
-
-    return { success: true, datasetPath: provisioningDatasetPath };
-  } catch (error) {
-    log.api.error('Artifact extraction failed', {
-      zone_name: zoneName,
-      error: error.message,
-    });
-    return { success: false, error: error.message };
-  }
-};
-
-/**
  * Build provisioning task chain
  * @param {Object} params - Parameters
  * @returns {Promise<Array>} Task chain
  */
 const buildProvisioningTaskChain = async params => {
-  const {
-    zoneName,
-    zone,
-    skipBoot,
-    skipRecipe,
-    recipeId,
-    provisioning,
-    zoneIP,
-    provisioningDatasetPath,
-  } = params;
+  const { zoneName, zone, skipBoot, skipRecipe, recipeId, provisioning, zoneIP, artifactId } =
+    params;
 
   const taskChain = [];
   let previousTaskId = null;
+  let provisioningDatasetPath = null;
+
+  // Step 0: Extract artifact (if provided)
+  if (artifactId) {
+    const zoneConfig = zone.configuration || {};
+    const zoneDataset = zoneConfig.zonepath
+      ? zoneConfig.zonepath.replace('/path', '')
+      : `/rpool/zones/${zoneName}`;
+    const provisioningDataset = `${zoneDataset}/provisioning`;
+    provisioningDatasetPath = `/${provisioningDataset}`;
+
+    const extractTask = await createTask({
+      zone_name: zoneName,
+      operation: 'zone_provisioning_extract',
+      metadata: {
+        artifact_id: artifactId,
+        dataset_path: provisioningDatasetPath,
+      },
+      depends_on: null,
+    });
+    taskChain.push({ step: 'extract', task_id: extractTask.id });
+    previousTaskId = extractTask.id;
+  }
 
   // Step 1: Boot zone
   if (!skipBoot && zone.status !== 'running') {
     const bootTask = await createTask({
       zone_name: zoneName,
       operation: 'start',
-      depends_on: null,
+      depends_on: previousTaskId,
     });
     taskChain.push({ step: 'boot', task_id: bootTask.id });
     previousTaskId = bootTask.id;
@@ -323,25 +255,6 @@ export const provisionZone = async (req, res) => {
 
     const { provisioning, recipeId, zoneIP } = validation;
 
-    // Extract artifact if provided
-    let provisioningDatasetPath = null;
-    if (provisioning.artifact_id) {
-      const extractResult = await extractProvisioningArtifact(
-        zoneName,
-        provisioning.artifact_id,
-        zone
-      );
-
-      if (!extractResult.success) {
-        return res.status(extractResult.error.includes('not found') ? 400 : 500).json({
-          error: extractResult.error,
-          details: extractResult.details,
-        });
-      }
-
-      provisioningDatasetPath = extractResult.datasetPath;
-    }
-
     // Build task chain
     const taskChain = await buildProvisioningTaskChain({
       zoneName,
@@ -351,7 +264,7 @@ export const provisionZone = async (req, res) => {
       recipeId,
       provisioning,
       zoneIP,
-      provisioningDatasetPath,
+      artifactId: provisioning.artifact_id,
     });
 
     log.api.info('Provisioning pipeline started', {

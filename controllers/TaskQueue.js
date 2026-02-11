@@ -152,6 +152,7 @@ import {
 import { executeZoneSetupTask } from './TaskManager/ZoneSetupManager.js';
 import {
   executeZoneWaitSSHTask,
+  executeZoneProvisioningExtractTask,
   executeZoneSyncTask,
   executeZoneProvisionTask,
 } from './TaskManager/ZoneProvisionManager.js';
@@ -304,6 +305,7 @@ const OPERATION_CATEGORIES = {
   // Zone lifecycle operations
   zone_create: 'zone_lifecycle',
   zone_modify: 'zone_lifecycle',
+  zone_provisioning_extract: 'zone_lifecycle',
   zone_setup: 'zone_lifecycle',
   zone_wait_ssh: 'zone_lifecycle',
   zone_sync: 'zone_lifecycle',
@@ -799,6 +801,9 @@ const executeTask = async task => {
     }
     if (operation === 'zone_setup') {
       return await executeZoneSetupTask(task);
+    }
+    if (operation === 'zone_provisioning_extract') {
+      return await executeZoneProvisioningExtractTask(task);
     }
     if (operation === 'zone_wait_ssh') {
       return await executeZoneWaitSSHTask(task);
