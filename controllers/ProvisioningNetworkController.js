@@ -45,7 +45,7 @@ const getProvNetConfig = () => {
   const netConfig = provConfig.network || {};
   return {
     enabled: netConfig.enabled !== false,
-    etherstub_name: netConfig.etherstub_name || 'provstub0', // Default to safe name
+    etherstub_name: netConfig.etherstub_name || 'estub_vz_1', // Default to safe name
     host_vnic_name: netConfig.host_vnic_name || 'provision_interconnect0',
     subnet: netConfig.subnet || '10.190.190.0/24',
     host_ip: netConfig.host_ip || '10.190.190.1',
