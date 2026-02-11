@@ -1,6 +1,6 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import { getAllZoneConfigs } from '../../lib/ZoneConfigUtils.js';
+import { getAllZoneConfigs, getZoneConfig, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
 import yj from 'yieldable-json';
 import Tasks from '../../models/TaskModel.js';
 import Zones from '../../models/ZoneModel.js';
@@ -148,12 +148,23 @@ const extractZoneDatasets = async zoneName => {
   try {
     // Get zone configuration from database
     const zone = await Zones.findOne({ where: { name: zoneName } });
-    if (!zone || !zone.configuration) {
-      log.task.warn('Zone not found in database or has no configuration', { zone_name: zoneName });
-      return { zonepath, datasets };
+    let zoneConfig = zone?.configuration;
+
+    // Self-healing: If not in DB, check system and create record if found
+    if (!zoneConfig) {
+      try {
+        log.task.info('Zone not found in DB, attempting to sync from system for cleanup', { zone_name: zoneName });
+        const newZone = await syncZoneToDatabase(zoneName);
+        zoneConfig = newZone.configuration;
+      } catch (err) {
+        // Zone truly doesn't exist on system either
+        log.task.warn('Zone not found in database or system', { zone_name: zoneName });
+      }
     }
 
-    const zoneConfig = zone.configuration;
+    if (!zoneConfig) {
+      return { zonepath, datasets };
+    }
 
     // Extract zonepath (e.g., /rpool/zones/myzone/path)
     if (zoneConfig.zonepath) {

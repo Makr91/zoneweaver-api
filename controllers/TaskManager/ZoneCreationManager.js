@@ -3,7 +3,7 @@ import { log } from '../../lib/Logger.js';
 import yj from 'yieldable-json';
 import Zones from '../../models/ZoneModel.js';
 import os from 'os';
-import { getZoneConfig } from '../../lib/ZoneConfigUtils.js';
+import { getZoneConfig, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
 
 /**
  * Zone Creation Manager for Zone Lifecycle Operations
@@ -463,20 +463,8 @@ const installAndRegisterZone = async (zoneName, metadata, task) => {
     throw new Error(`Zone installation failed: ${installResult.error}`);
   }
 
-  await updateTaskProgress(task, 95, { status: 'fetching_zone_configuration' });
-  const zoneConfig = await getZoneConfig(zoneName);
-
   await updateTaskProgress(task, 97, { status: 'creating_database_record' });
-  await Zones.create({
-    name: zoneName,
-    zone_id: zoneName,
-    host: os.hostname(),
-    status: 'installed',
-    brand: metadata.brand,
-    auto_discovered: false,
-    last_seen: new Date(),
-    configuration: zoneConfig,
-  });
+  await syncZoneToDatabase(zoneName, 'installed');
 };
 
 /**
@@ -519,6 +507,9 @@ export const executeZoneCreateTask = async task => {
     await updateTaskProgress(task, 40, { status: 'configuring_zone' });
     await applyZoneConfig(zoneName, metadata);
     zonecfgApplied = true;
+
+    // Checkpoint 1: Sync immediately so we have a DB record even if install fails later
+    await syncZoneToDatabase(zoneName, 'configured');
 
     if (bootdiskPath) {
       await updateTaskProgress(task, 50, { status: 'configuring_bootdisk' });

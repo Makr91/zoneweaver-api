@@ -2,7 +2,7 @@ import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import { checkZvolInUse } from './ZoneCreationManager.js';
-import { getZoneConfig, updateZoneConfigInDatabase } from '../../lib/ZoneConfigUtils.js';
+import { getZoneConfig, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
 import Zones from '../../models/ZoneModel.js';
 
 /**
@@ -482,7 +482,7 @@ const applyAttributeChangesIfNeeded = async (zoneName, zoneConfig, metadata, tas
  */
 const finalizeModification = async (zoneName, task, changes) => {
   await updateTaskProgress(task, 95, { status: 'updating_database_configuration' });
-  await updateZoneConfigInDatabase(Zones, zoneName);
+  await syncZoneToDatabase(zoneName);
 
   await updateTaskProgress(task, 100, { status: 'completed', changes });
 
