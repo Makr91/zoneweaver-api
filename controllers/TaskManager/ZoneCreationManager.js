@@ -1,9 +1,7 @@
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import yj from 'yieldable-json';
-import Zones from '../../models/ZoneModel.js';
-import os from 'os';
-import { getZoneConfig, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
+import { syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
 
 /**
  * Zone Creation Manager for Zone Lifecycle Operations

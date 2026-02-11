@@ -3,7 +3,6 @@ import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import { checkZvolInUse } from './ZoneCreationManager.js';
 import { getZoneConfig, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
-import Zones from '../../models/ZoneModel.js';
 
 /**
  * Zone Modification Manager for Zone Configuration Changes
