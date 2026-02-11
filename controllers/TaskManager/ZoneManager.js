@@ -137,166 +137,266 @@ export const executeRestartTask = async zoneName => {
 };
 
 /**
+ * Fetches and parses the zone configuration, with a self-healing fallback.
+ * @param {string} zoneName - The name of the zone.
+ * @returns {Promise<Object|null>} The parsed zone configuration or null on failure.
+ */
+const getZoneConfigurationForCleanup = async zoneName => {
+  try {
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    let zoneConfig = zone?.configuration;
+
+    if (typeof zoneConfig === 'string') {
+      try {
+        zoneConfig = JSON.parse(zoneConfig);
+      } catch (parseErr) {
+        log.task.error('Failed to parse zone configuration string', {
+          zone_name: zoneName,
+          error: parseErr.message,
+        });
+        return null; // Unusable config
+      }
+    }
+
+    if (!zoneConfig) {
+      log.task.info('Zone not found in DB, attempting to sync from system for cleanup', {
+        zone_name: zoneName,
+      });
+      const newZone = await syncZoneToDatabase(zoneName);
+      zoneConfig = newZone.configuration;
+    }
+    return zoneConfig;
+  } catch (error) {
+    log.task.warn('Could not get zone configuration for cleanup', {
+      zone_name: zoneName,
+      error: error.message,
+    });
+    return null;
+  }
+};
+
+/**
+ * Helper to collect datasets from zonepath
+ * @param {Object} zoneConfig - Zone configuration
+ * @param {Set<string>} potentialDatasets - Set to add datasets to
+ */
+const collectZonepathDatasets = (zoneConfig, potentialDatasets) => {
+  if (zoneConfig.zonepath) {
+    let candidateDataset = zoneConfig.zonepath.startsWith('/')
+      ? zoneConfig.zonepath.substring(1)
+      : zoneConfig.zonepath;
+    if (candidateDataset.endsWith('/path')) {
+      candidateDataset = candidateDataset.substring(0, candidateDataset.length - 5);
+    }
+    potentialDatasets.add(candidateDataset);
+  }
+};
+
+/**
+ * Helper to collect datasets from bootdisk
+ * @param {Object} zoneConfig - Zone configuration
+ * @param {Set<string>} potentialDatasets - Set to add datasets to
+ */
+const collectBootdiskDatasets = (zoneConfig, potentialDatasets) => {
+  if (zoneConfig.bootdisk?.path) {
+    potentialDatasets.add(zoneConfig.bootdisk.path);
+    const parts = zoneConfig.bootdisk.path.split('/');
+    if (parts.length > 1) {
+      potentialDatasets.add(parts.slice(0, -1).join('/'));
+    }
+  }
+};
+
+/**
+ * Helper to collect datasets from disks and legacy attributes
+ * @param {Object} zoneConfig - Zone configuration
+ * @param {Set<string>} potentialDatasets - Set to add datasets to
+ */
+const collectDiskDatasets = (zoneConfig, potentialDatasets) => {
+  // Additional Disks
+  if (zoneConfig.disk) {
+    const disks = Array.isArray(zoneConfig.disk) ? zoneConfig.disk : [zoneConfig.disk];
+    for (const disk of disks) {
+      if (disk.path) {
+        potentialDatasets.add(disk.path);
+      }
+    }
+  }
+
+  // Legacy disk attributes
+  if (zoneConfig.attr) {
+    const attrs = Array.isArray(zoneConfig.attr) ? zoneConfig.attr : [zoneConfig.attr];
+    for (const attr of attrs) {
+      if (attr.name && /^disk\d+$/.test(attr.name) && attr.value) {
+        potentialDatasets.add(attr.value);
+      }
+    }
+  }
+};
+
+/**
+ * Helper to collect datasets from devices, filesystems, and explicit datasets
+ * @param {Object} zoneConfig - Zone configuration
+ * @param {Set<string>} potentialDatasets - Set to add datasets to
+ */
+const collectMiscDatasets = (zoneConfig, potentialDatasets) => {
+  // ZVOL devices
+  if (zoneConfig.device) {
+    const devices = Array.isArray(zoneConfig.device) ? zoneConfig.device : [zoneConfig.device];
+    for (const dev of devices) {
+      if (dev.match) {
+        const match = dev.match.match(/\/dev\/zvol\/(?:r)?dsk\/(?<dataset>.+)/);
+        if (match?.groups?.dataset) {
+          potentialDatasets.add(match.groups.dataset);
+        }
+      }
+    }
+  }
+
+  // Filesystems
+  if (zoneConfig.fs) {
+    const fss = Array.isArray(zoneConfig.fs) ? zoneConfig.fs : [zoneConfig.fs];
+    for (const fs of fss) {
+      if (fs.special) {
+        if (!fs.special.startsWith('/')) {
+          potentialDatasets.add(fs.special);
+        } else {
+          const match = fs.special.match(/\/dev\/zvol\/(?:r)?dsk\/(?<dataset>.+)/);
+          if (match?.groups?.dataset) {
+            potentialDatasets.add(match.groups.dataset);
+          }
+        }
+      }
+    }
+  }
+
+  // Explicit datasets
+  if (zoneConfig.dataset) {
+    const dss = Array.isArray(zoneConfig.dataset) ? zoneConfig.dataset : [zoneConfig.dataset];
+    for (const ds of dss) {
+      if (ds.name) {
+        potentialDatasets.add(ds.name);
+      }
+    }
+  }
+};
+
+/**
+ * Collects all potential ZFS dataset paths from a zone's configuration.
+ * @param {Object} zoneConfig - The parsed zone configuration.
+ * @returns {Set<string>} A set of potential dataset paths.
+ */
+const collectPotentialDatasets = zoneConfig => {
+  const potentialDatasets = new Set();
+  collectZonepathDatasets(zoneConfig, potentialDatasets);
+  collectBootdiskDatasets(zoneConfig, potentialDatasets);
+  collectDiskDatasets(zoneConfig, potentialDatasets);
+  collectMiscDatasets(zoneConfig, potentialDatasets);
+  return potentialDatasets;
+};
+
+/**
+ * Verifies the existence of potential datasets in parallel.
+ * @param {Set<string>} potentialDatasets - A set of dataset names to verify.
+ * @returns {Promise<string[]>} An array of dataset names that exist on the system.
+ */
+const verifyDatasets = async potentialDatasets => {
+  const verificationPromises = Array.from(potentialDatasets).map(async ds => {
+    try {
+      // Suppress error logging for non-existent datasets using shell redirection
+      const result = await executeCommand(`pfexec zfs list -H -o name "${ds}" 2>/dev/null || true`);
+      if (result.success && result.output.trim()) {
+        return result.output.trim();
+      }
+      return null;
+    } catch (error) {
+      log.task.debug('Dataset verification failed for potential dataset', {
+        dataset: ds,
+        error: error.message,
+      });
+      return null;
+    }
+  });
+
+  const verified = await Promise.all(verificationPromises);
+  return verified.filter(Boolean); // Filter out nulls
+};
+
+/**
  * Extract ZFS dataset paths from a zone configuration for cleanup
  * @param {string} zoneName - Name of zone
  * @returns {Promise<{zonepath: string|null, datasets: string[]}>}
  */
 const extractZoneDatasets = async zoneName => {
-  const datasets = [];
-  let zonepath = null;
-
   try {
-    // Get zone configuration from database
-    const zone = await Zones.findOne({ where: { name: zoneName } });
-    let zoneConfig = zone?.configuration;
-
-    // Fix: Explicitly parse JSON if it's a string (SQLite behavior)
-    if (typeof zoneConfig === 'string') {
-      try {
-        zoneConfig = JSON.parse(zoneConfig);
-      } catch (parseErr) {
-        log.task.error('DEBUG: Failed to parse zone configuration string', {
-          error: parseErr.message,
-        });
-      }
-    }
-
-    // Self-healing: If not in DB, check system and create record if found
-    if (!zoneConfig) {
-      try {
-        log.task.info('Zone not found in DB, attempting to sync from system for cleanup', {
-          zone_name: zoneName,
-        });
-        const newZone = await syncZoneToDatabase(zoneName);
-        zoneConfig = newZone.configuration;
-      } catch (err) {
-        // Zone truly doesn't exist on system either
-        log.task.warn('Zone not found in database or system', {
-          zone_name: zoneName,
-          error: err.message,
-        });
-      }
-    }
+    const zoneConfig = await getZoneConfigurationForCleanup(zoneName);
 
     if (!zoneConfig) {
-      return { zonepath, datasets };
+      return { zonepath: null, datasets: [] };
     }
 
-    const potentialDatasets = new Set();
+    const potentialDatasets = collectPotentialDatasets(zoneConfig);
+    const datasets = await verifyDatasets(potentialDatasets);
 
-    // 1. Zonepath - derive dataset from path string (User requested logic)
-    if (zoneConfig.zonepath) {
-      ({ zonepath } = zoneConfig);
-      
-      // Strip leading slash and trailing /path to get the dataset name
-      let candidateDataset = zonepath.startsWith('/') ? zonepath.substring(1) : zonepath;
-      if (candidateDataset.endsWith('/path')) {
-        candidateDataset = candidateDataset.substring(0, candidateDataset.length - 5);
-      }
-
-      // Verify this specific dataset exists (exact match only)
-      try {
-        const result = await executeCommand(`pfexec zfs list -H -o name "${candidateDataset}"`);
-        if (result.success && result.output.trim() === candidateDataset) {
-          potentialDatasets.add(candidateDataset);
-        }
-      } catch (e) {
-        // Dataset derived from zonepath does not exist - ignore
-      }
-    }
-
-    // 2. Bootdisk (zadm helper object)
-    if (zoneConfig.bootdisk && zoneConfig.bootdisk.path) {
-      potentialDatasets.add(zoneConfig.bootdisk.path);
-      // Also add the parent dataset of the bootdisk (likely the zone root)
-      // e.g. rpool/zones/myzone/root -> rpool/zones/myzone
-      const parts = zoneConfig.bootdisk.path.split('/');
-      if (parts.length > 1) {
-        potentialDatasets.add(parts.slice(0, -1).join('/'));
-      }
-    }
-
-    // 3. Disks (zadm helper array - easier to parse than raw attributes)
-    if (zoneConfig.disk) {
-      const disks = Array.isArray(zoneConfig.disk) ? zoneConfig.disk : [zoneConfig.disk];
-      for (const disk of disks) {
-        if (disk.path) {
-          potentialDatasets.add(disk.path);
-        }
-      }
-    }
-
-    // 4. Attributes (diskN - fallback for legacy configs)
-    if (zoneConfig.attr) {
-      const attrs = Array.isArray(zoneConfig.attr) ? zoneConfig.attr : [zoneConfig.attr];
-      for (const attr of attrs) {
-        if (attr.name && /^disk\d+$/.test(attr.name) && attr.value) {
-          potentialDatasets.add(attr.value);
-        }
-      }
-    }
-
-    // 5. Devices (zvol devices - fallback)
-    if (zoneConfig.device) {
-      const devices = Array.isArray(zoneConfig.device) ? zoneConfig.device : [zoneConfig.device];
-      for (const dev of devices) {
-        if (dev.match) {
-          // Extract dataset from /dev/zvol/rdsk/PATH or /dev/zvol/dsk/PATH
-          const match = dev.match.match(/\/dev\/zvol\/(?:r)?dsk\/(.+)/);
-          if (match && match[1]) {
-            potentialDatasets.add(match[1]);
-          }
-        }
-      }
-    }
-
-    // 6. File Systems (fs)
-    if (zoneConfig.fs) {
-      const fss = Array.isArray(zoneConfig.fs) ? zoneConfig.fs : [zoneConfig.fs];
-      for (const fs of fss) {
-        if (fs.special) {
-          // If special looks like a dataset (no leading /) or zvol path
-          if (!fs.special.startsWith('/')) {
-            potentialDatasets.add(fs.special);
-          } else {
-            const match = fs.special.match(/\/dev\/zvol\/(?:r)?dsk\/(.+)/);
-            if (match && match[1]) {
-              potentialDatasets.add(match[1]);
-            }
-          }
-        }
-      }
-    }
-
-    // 7. Datasets (dataset resource)
-    if (zoneConfig.dataset) {
-      const dss = Array.isArray(zoneConfig.dataset) ? zoneConfig.dataset : [zoneConfig.dataset];
-      for (const ds of dss) {
-        if (ds.name) {
-          potentialDatasets.add(ds.name);
-        }
-      }
-    }
-
-    // Verify existence of all collected datasets
-    for (const ds of potentialDatasets) {
-      try {
-        const result = await executeCommand(`pfexec zfs list -H -o name "${ds}"`);
-        if (result.success && result.output.trim()) {
-          datasets.push(result.output.trim());
-        }
-      } catch (e) {
-        // Dataset doesn't exist or error
-      }
-    }
+    return { zonepath: zoneConfig.zonepath, datasets };
   } catch (error) {
     log.task.warn('Failed to extract zone datasets', {
       zone_name: zoneName,
       error: error.message,
     });
+    return { zonepath: null, datasets: [] };
   }
+};
 
-  return { zonepath, datasets };
+/**
+ * Get a set of datasets that are protected (used by other zones)
+ * @param {string} excludeZoneName - The name of the zone being deleted
+ * @returns {Promise<Set<string>>} Set of protected dataset paths
+ */
+const getProtectedDatasets = async excludeZoneName => {
+  const protectedDatasets = new Set();
+  try {
+    const allZones = await getAllZoneConfigs();
+
+    for (const [zoneName, config] of Object.entries(allZones)) {
+      if (zoneName === excludeZoneName) {
+        continue;
+      }
+
+      // Protect zonepath (and normalized dataset name)
+      if (config.zonepath) {
+        protectedDatasets.add(config.zonepath);
+        // Normalize to dataset name (strip leading / and trailing /path)
+        let dsName = config.zonepath.startsWith('/')
+          ? config.zonepath.substring(1)
+          : config.zonepath;
+        if (dsName.endsWith('/path')) {
+          dsName = dsName.substring(0, dsName.length - 5);
+        }
+        protectedDatasets.add(dsName);
+      }
+
+      // Protect bootdisk
+      if (config.bootdisk?.path) {
+        protectedDatasets.add(config.bootdisk.path);
+      }
+
+      // Protect disks
+      if (config.disk) {
+        const disks = Array.isArray(config.disk) ? config.disk : [config.disk];
+        for (const disk of disks) {
+          if (disk.path) {
+            protectedDatasets.add(disk.path);
+          }
+        }
+      }
+      // Note: Legacy 'attr' disks are covered if they appear in 'disk' array (zadm handles this),
+      // but we could add specific attr parsing if needed. zadm show usually normalizes this.
+    }
+  } catch (error) {
+    log.task.warn('Failed to build protected datasets list', { error: error.message });
+  }
+  return protectedDatasets;
 };
 
 /**
@@ -364,37 +464,56 @@ export const executeDeleteTask = async (zoneName, metadataJson) => {
     // Clean up ZFS datasets if requested
     const datasetErrors = [];
     if (cleanupDatasets && zoneDatasets.datasets.length > 0) {
-      // Find the zone root dataset (shortest path, typically the parent of all others)
+      // 1. Inventory & Protect: Get datasets used by other zones
+      const protectedDatasets = await getProtectedDatasets(zoneName);
+
+      // 2. Sort candidates by length (shortest first) to try deleting parents first
       const sortedDatasets = [...zoneDatasets.datasets].sort((a, b) => a.length - b.length);
-      const [rootDataset] = sortedDatasets;
 
-      // Destroy the root dataset recursively (covers boot volume, zonepath, provisioning datasets)
-      const destroyResult = await executeCommand(`pfexec zfs destroy -r ${rootDataset}`);
-      if (!destroyResult.success) {
-        datasetErrors.push(`Failed to destroy ${rootDataset}: ${destroyResult.error}`);
-
-        // If recursive destroy of root failed, try individual datasets in parallel
-        const individualDestroys = sortedDatasets
-          .reverse()
-          .filter(dataset => dataset !== rootDataset)
-          .map(dataset => executeCommand(`pfexec zfs destroy -r ${dataset}`));
-
-        const individualResults = await Promise.all(individualDestroys);
-        individualResults.forEach((result, idx) => {
-          if (!result.success) {
-            const dataset = sortedDatasets.reverse()[idx];
-            datasetErrors.push(`Failed to destroy ${dataset}: ${result.error}`);
+      for (const dataset of sortedDatasets) {
+        // 3. Safety Check: Intersection with protected datasets
+        let isSafe = true;
+        for (const protectedDs of protectedDatasets) {
+          // Check 1: Is this dataset explicitly protected?
+          if (dataset === protectedDs) {
+            isSafe = false;
+            log.task.warn('Skipping dataset deletion: Dataset is used by another zone', {
+              zone_name: zoneName,
+              dataset,
+              used_by: protectedDs,
+            });
+            break;
           }
-        });
-      }
+          // Check 2: Is this dataset a parent of a protected dataset? (Prevent recursive destroy of shared parents)
+          if (protectedDs.startsWith(`${dataset}/`) || protectedDs.startsWith(`/${dataset}/`)) {
+            isSafe = false;
+            log.task.warn('Skipping dataset deletion: Dataset contains resources used by another zone', {
+              zone_name: zoneName,
+              dataset,
+              protected_child: protectedDs,
+            });
+            break;
+          }
+        }
 
-      // Destroy any external disks that are NOT under the root dataset
-      for (const dataset of zoneDatasets.datasets) {
-        if (!dataset.startsWith(rootDataset)) {
-          log.task.info('Skipping external dataset (not in zone hierarchy)', {
+        if (!isSafe) {
+          continue;
+        }
+
+        // 4. Execute Safe Destroy
+        // Check if dataset exists first to avoid noise from children already deleted by parent
+        const check = await executeCommand(`pfexec zfs list -H -o name "${dataset}" 2>/dev/null`);
+        if (check.success) {
+          const destroyResult = await executeCommand(`pfexec zfs destroy -r "${dataset}"`);
+          if (!destroyResult.success) {
+            datasetErrors.push(`Failed to destroy ${dataset}: ${destroyResult.error}`);
+          } else {
+            log.task.info('Destroyed ZFS dataset', { dataset });
+          }
+        } else {
+          log.task.info('Skipping dataset (not found or already deleted)', {
             zone_name: zoneName,
             dataset,
-            root_dataset: rootDataset,
           });
         }
       }
