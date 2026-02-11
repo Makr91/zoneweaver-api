@@ -56,10 +56,10 @@ export const getAndValidateUploadTask = async (taskId, requestId) => {
  */
 export const configureMulter = (storageLocation, maxUploadSizeBytes, requestId) => {
   const storage = multer.diskStorage({
-    destination: (file, cb) => {
+    destination: (req, file, cb) => {
       cb(null, storageLocation.path);
     },
-    filename: async (file, cb) => {
+    filename: async (req, file, cb) => {
       try {
         const finalPath = path.join(storageLocation.path, file.originalname);
         // Pre-create file with pfexec and set writable permissions
