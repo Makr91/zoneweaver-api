@@ -126,9 +126,9 @@ const Artifact = db.define(
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        isIn: [['iso', 'image']],
+        isIn: [['iso', 'image', 'provisioning']],
       },
-      comment: 'Type of artifact (iso or image)',
+      comment: 'Type of artifact (iso, image, or provisioning)',
     },
     extension: {
       type: DataTypes.STRING,

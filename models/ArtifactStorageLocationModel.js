@@ -88,9 +88,9 @@ const ArtifactStorageLocation = db.define(
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        isIn: [['iso', 'image']],
+        isIn: [['iso', 'image', 'provisioning']],
       },
-      comment: 'Type of artifacts stored (iso or image)',
+      comment: 'Type of artifacts stored (iso, image, or provisioning)',
     },
     enabled: {
       type: DataTypes.BOOLEAN,
