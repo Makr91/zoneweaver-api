@@ -506,9 +506,6 @@ export const executeZoneCreateTask = async task => {
     await applyZoneConfig(zoneName, metadata);
     zonecfgApplied = true;
 
-    // Checkpoint 1: Sync immediately so we have a DB record even if install fails later
-    await syncZoneToDatabase(zoneName, 'configured');
-
     if (bootdiskPath) {
       await updateTaskProgress(task, 50, { status: 'configuring_bootdisk' });
       await configureBootdisk(zoneName, bootdiskPath);
@@ -538,6 +535,9 @@ export const executeZoneCreateTask = async task => {
       await updateTaskProgress(task, 80, { status: 'configuring_cloud_init' });
       await configureCloudInit(zoneName, metadata.cloud_init);
     }
+
+    // Checkpoint 1: Sync immediately so we have a DB record with ALL disks before install begins
+    await syncZoneToDatabase(zoneName, 'configured');
 
     await installAndRegisterZone(zoneName, metadata, task);
 
