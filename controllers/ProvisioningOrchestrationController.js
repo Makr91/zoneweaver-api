@@ -5,7 +5,7 @@
  */
 
 import Zones from '../models/ZoneModel.js';
-import Tasks from '../models/TaskModel.js';
+import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import ProvisioningProfiles from '../models/ProvisioningProfileModel.js';
 import Recipes from '../models/RecipeModel.js';
 import { log } from '../lib/Logger.js';
@@ -69,6 +69,7 @@ const createTask = params =>
     status: 'pending',
     metadata: params.metadata ? JSON.stringify(params.metadata) : null,
     depends_on: params.depends_on,
+    parent_task_id: params.parent_task_id,
   });
 
 /**
@@ -77,8 +78,17 @@ const createTask = params =>
  * @returns {Promise<Array>} Task chain
  */
 const buildProvisioningTaskChain = async params => {
-  const { zoneName, zone, skipBoot, skipRecipe, recipeId, provisioning, zoneIP, artifactId } =
-    params;
+  const {
+    zoneName,
+    zone,
+    skipBoot,
+    skipRecipe,
+    recipeId,
+    provisioning,
+    zoneIP,
+    artifactId,
+    parentTaskId,
+  } = params;
 
   const taskChain = [];
   let previousTaskId = null;
@@ -101,6 +111,7 @@ const buildProvisioningTaskChain = async params => {
         dataset_path: provisioningDatasetPath,
       },
       depends_on: null,
+      parent_task_id: parentTaskId,
     });
     taskChain.push({ step: 'extract', task_id: extractTask.id });
     previousTaskId = extractTask.id;
@@ -112,6 +123,7 @@ const buildProvisioningTaskChain = async params => {
       zone_name: zoneName,
       operation: 'start',
       depends_on: previousTaskId,
+      parent_task_id: parentTaskId,
     });
     taskChain.push({ step: 'boot', task_id: bootTask.id });
     previousTaskId = bootTask.id;
@@ -127,6 +139,7 @@ const buildProvisioningTaskChain = async params => {
         variables: provisioning.variables || {},
       },
       depends_on: previousTaskId,
+      parent_task_id: parentTaskId,
     });
     taskChain.push({ step: 'setup', task_id: setupTask.id });
     previousTaskId = setupTask.id;
@@ -142,6 +155,7 @@ const buildProvisioningTaskChain = async params => {
       credentials: provisioning.credentials,
     },
     depends_on: previousTaskId,
+    parent_task_id: parentTaskId,
   });
   taskChain.push({ step: 'wait_ssh', task_id: sshTask.id });
   previousTaskId = sshTask.id;
@@ -167,6 +181,7 @@ const buildProvisioningTaskChain = async params => {
         sync_folders: effectiveSyncFolders,
       },
       depends_on: previousTaskId,
+      parent_task_id: parentTaskId,
     });
     taskChain.push({ step: 'sync', task_id: syncTask.id });
     previousTaskId = syncTask.id;
@@ -184,6 +199,7 @@ const buildProvisioningTaskChain = async params => {
         provisioners: provisioning.provisioners,
       },
       depends_on: previousTaskId,
+      parent_task_id: parentTaskId,
     });
     taskChain.push({ step: 'provision', task_id: provisionTask.id });
   }
@@ -255,6 +271,16 @@ export const provisionZone = async (req, res) => {
 
     const { provisioning, recipeId, zoneIP } = validation;
 
+    // Create Parent Task
+    const parentTask = await Tasks.create({
+      zone_name: zoneName,
+      operation: 'zone_provision_orchestration',
+      priority: TaskPriority.NORMAL,
+      created_by: req.entity.name,
+      status: 'running', // Start immediately as a container
+      metadata: JSON.stringify({ provisioning, recipeId, zoneIP }),
+    });
+
     // Build task chain
     const taskChain = await buildProvisioningTaskChain({
       zoneName,
@@ -265,6 +291,7 @@ export const provisionZone = async (req, res) => {
       provisioning,
       zoneIP,
       artifactId: provisioning.artifact_id,
+      parentTaskId: parentTask.id,
     });
 
     log.api.info('Provisioning pipeline started', {
@@ -278,6 +305,7 @@ export const provisionZone = async (req, res) => {
       success: true,
       message: `Provisioning pipeline started for ${zoneName}`,
       zone_name: zoneName,
+      parent_task_id: parentTask.id,
       steps: taskChain.length,
       task_chain: taskChain,
     });

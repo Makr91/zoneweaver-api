@@ -310,6 +310,7 @@ const OPERATION_CATEGORIES = {
   zone_wait_ssh: 'zone_lifecycle',
   zone_sync: 'zone_lifecycle',
   zone_provision: 'zone_lifecycle',
+  zone_provision_orchestration: 'zone_lifecycle',
 };
 
 /**
@@ -813,6 +814,14 @@ const executeTask = async task => {
     }
     if (operation === 'zone_provision') {
       return await executeZoneProvisionTask(task);
+    }
+
+    if (operation === 'zone_provision_orchestration') {
+      return {
+        success: true,
+        message: 'Zone provisioning orchestration in progress',
+        keep_running: true,
+      };
     }
 
     // Zone operations

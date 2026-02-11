@@ -1265,6 +1265,29 @@ export const modifyZone = async (req, res) => {
       return res.status(400).json({ error: 'No modification fields specified' });
     }
 
+    // Handle provisioning config update immediately (DB only)
+    // This ensures the config is available for the provision endpoint without waiting for the task
+    if (req.body.provisioning) {
+      const currentConfig = zone.configuration || {};
+      const newConfig = { ...currentConfig, provisioning: req.body.provisioning };
+      await zone.update({ configuration: newConfig });
+
+      // If this is the only change, we can return early without queuing a task
+      const otherChanges = changeFields
+        .filter(f => f !== 'provisioning')
+        .some(field => req.body[field] !== undefined);
+      if (!otherChanges) {
+        return res.json({
+          success: true,
+          zone_name: zoneName,
+          operation: 'zone_modify',
+          status: 'completed',
+          message: 'Provisioning configuration updated successfully.',
+          requires_restart: false,
+        });
+      }
+    }
+
     // Create the zone_modify task
     const modifyTask = await Tasks.create({
       zone_name: zoneName,
