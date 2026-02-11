@@ -150,6 +150,26 @@ const extractZoneDatasets = async zoneName => {
     const zone = await Zones.findOne({ where: { name: zoneName } });
     let zoneConfig = zone?.configuration;
 
+    // <DEBUG_LOG_REMOVE_LATER>
+    log.task.info('DEBUG: extractZoneDatasets - Initial DB Config', {
+      zone_name: zoneName,
+      config_type: typeof zoneConfig,
+      is_string: typeof zoneConfig === 'string',
+      raw_value_preview: typeof zoneConfig === 'string' ? zoneConfig.substring(0, 200) : 'Object',
+    });
+    // </DEBUG_LOG_REMOVE_LATER>
+
+    // Fix: Explicitly parse JSON if it's a string (SQLite behavior)
+    if (typeof zoneConfig === 'string') {
+      try {
+        zoneConfig = JSON.parse(zoneConfig);
+      } catch (parseErr) {
+        log.task.error('DEBUG: Failed to parse zone configuration string', {
+          error: parseErr.message,
+        });
+      }
+    }
+
     // Self-healing: If not in DB, check system and create record if found
     if (!zoneConfig) {
       try {
@@ -166,6 +186,14 @@ const extractZoneDatasets = async zoneName => {
         });
       }
     }
+
+    // <DEBUG_LOG_REMOVE_LATER>
+    log.task.info('DEBUG: extractZoneDatasets - Final Config Object', {
+      zone_name: zoneName,
+      has_bootdisk: !!zoneConfig?.bootdisk,
+      bootdisk_path: zoneConfig?.bootdisk?.path,
+    });
+    // </DEBUG_LOG_REMOVE_LATER>
 
     if (!zoneConfig) {
       return { zonepath, datasets };
@@ -198,6 +226,13 @@ const extractZoneDatasets = async zoneName => {
         }
       }
     }
+
+    // <DEBUG_LOG_REMOVE_LATER>
+    log.task.info('DEBUG: extractZoneDatasets - Identified Datasets', {
+      zone_name: zoneName,
+      datasets,
+    });
+    // </DEBUG_LOG_REMOVE_LATER>
   } catch (error) {
     log.task.warn('Failed to extract zone datasets', {
       zone_name: zoneName,

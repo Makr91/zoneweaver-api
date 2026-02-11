@@ -492,6 +492,67 @@ const finalizeModification = async (zoneName, task, changes) => {
 };
 
 /**
+ * Handle network modifications
+ * @param {string} zoneName - Zone name
+ * @param {Object} metadata - Modification metadata
+ * @param {Object} task - Task object
+ * @param {Array} changes - Changes array
+ */
+const handleNetworkModifications = async (zoneName, metadata, task, changes) => {
+  if (metadata.add_nics?.length > 0) {
+    await updateTaskProgress(task, 50, { status: 'adding_nics' });
+    await addNics(zoneName, metadata.add_nics);
+    changes.push('add_nics');
+    await syncZoneToDatabase(zoneName);
+  }
+
+  if (metadata.remove_nics?.length > 0) {
+    await updateTaskProgress(task, 55, { status: 'removing_nics' });
+    await removeNics(zoneName, metadata.remove_nics);
+    changes.push('remove_nics');
+    await syncZoneToDatabase(zoneName);
+  }
+};
+
+/**
+ * Handle storage modifications
+ * @param {string} zoneName - Zone name
+ * @param {Object} zoneConfig - Zone configuration
+ * @param {Object} metadata - Modification metadata
+ * @param {Object} task - Task object
+ * @param {Array} changes - Changes array
+ */
+const handleStorageModifications = async (zoneName, zoneConfig, metadata, task, changes) => {
+  if (metadata.add_disks?.length > 0) {
+    await updateTaskProgress(task, 60, { status: 'adding_disks' });
+    await addDisks(zoneName, zoneConfig, metadata.add_disks, metadata.force);
+    changes.push('add_disks');
+    await syncZoneToDatabase(zoneName);
+  }
+
+  if (metadata.remove_disks?.length > 0) {
+    await updateTaskProgress(task, 70, { status: 'removing_disks' });
+    await removeDisks(zoneName, zoneConfig, metadata.remove_disks);
+    changes.push('remove_disks');
+    await syncZoneToDatabase(zoneName);
+  }
+
+  if (metadata.add_cdroms?.length > 0) {
+    await updateTaskProgress(task, 75, { status: 'adding_cdroms' });
+    await addCdroms(zoneName, zoneConfig, metadata.add_cdroms);
+    changes.push('add_cdroms');
+    await syncZoneToDatabase(zoneName);
+  }
+
+  if (metadata.remove_cdroms?.length > 0) {
+    await updateTaskProgress(task, 80, { status: 'removing_cdroms' });
+    await removeCdroms(zoneName, zoneConfig, metadata.remove_cdroms);
+    changes.push('remove_cdroms');
+    await syncZoneToDatabase(zoneName);
+  }
+};
+
+/**
  * Execute zone modification task
  * @param {Object} task - Task object from database
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -509,7 +570,9 @@ export const executeZoneModifyTask = async task => {
 
     const initialChanges = changes.length;
     await applyAttributeChangesIfNeeded(zoneName, zoneConfig, metadata, task, changes);
-    if (changes.length > initialChanges) await syncZoneToDatabase(zoneName);
+    if (changes.length > initialChanges) {
+      await syncZoneToDatabase(zoneName);
+    }
 
     if (metadata.autoboot !== undefined) {
       await updateTaskProgress(task, 40, { status: 'modifying_autoboot' });
@@ -518,47 +581,8 @@ export const executeZoneModifyTask = async task => {
       await syncZoneToDatabase(zoneName);
     }
 
-    if (metadata.add_nics?.length > 0) {
-      await updateTaskProgress(task, 50, { status: 'adding_nics' });
-      await addNics(zoneName, metadata.add_nics);
-      changes.push('add_nics');
-      await syncZoneToDatabase(zoneName);
-    }
-
-    if (metadata.remove_nics?.length > 0) {
-      await updateTaskProgress(task, 55, { status: 'removing_nics' });
-      await removeNics(zoneName, metadata.remove_nics);
-      changes.push('remove_nics');
-      await syncZoneToDatabase(zoneName);
-    }
-
-    if (metadata.add_disks?.length > 0) {
-      await updateTaskProgress(task, 60, { status: 'adding_disks' });
-      await addDisks(zoneName, zoneConfig, metadata.add_disks, metadata.force);
-      changes.push('add_disks');
-      await syncZoneToDatabase(zoneName);
-    }
-
-    if (metadata.remove_disks?.length > 0) {
-      await updateTaskProgress(task, 70, { status: 'removing_disks' });
-      await removeDisks(zoneName, zoneConfig, metadata.remove_disks);
-      changes.push('remove_disks');
-      await syncZoneToDatabase(zoneName);
-    }
-
-    if (metadata.add_cdroms?.length > 0) {
-      await updateTaskProgress(task, 75, { status: 'adding_cdroms' });
-      await addCdroms(zoneName, zoneConfig, metadata.add_cdroms);
-      changes.push('add_cdroms');
-      await syncZoneToDatabase(zoneName);
-    }
-
-    if (metadata.remove_cdroms?.length > 0) {
-      await updateTaskProgress(task, 80, { status: 'removing_cdroms' });
-      await removeCdroms(zoneName, zoneConfig, metadata.remove_cdroms);
-      changes.push('remove_cdroms');
-      await syncZoneToDatabase(zoneName);
-    }
+    await handleNetworkModifications(zoneName, metadata, task, changes);
+    await handleStorageModifications(zoneName, zoneConfig, metadata, task, changes);
 
     if (metadata.cloud_init) {
       await updateTaskProgress(task, 85, { status: 'modifying_cloud_init' });
