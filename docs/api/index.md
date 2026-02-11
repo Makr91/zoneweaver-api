@@ -50,25 +50,38 @@ The ZoneweaverAPI is fully documented using OpenAPI 3.0 specification.
 The ZoneweaverAPI is organized into the following categories:
 
 #### Zone Management
-- Zone lifecycle management (create, start, stop, delete)
+- Zone lifecycle management (create, start, stop, delete, restart)
 - Zone configuration and properties
+- Zone modification (add/remove disks, NICs, CD-ROMs)
 - Boot environment management
+- **Zone provisioning pipeline** (automated configuration, file sync, provisioner execution)
 
-#### Network Management  
+#### Network Management
 - VLAN configuration and management
 - VNIC (Virtual Network Interface) management
 - Etherstub management
 - Network bridge configuration
+- **NAT rules and IP forwarding** (network address translation, routing)
+- **DHCP server management** (subnet config, static host entries, service control)
+- **Provisioning network setup** (isolated network for zone setup)
 
 #### Storage Management
 - ZFS dataset management
 - ZFS pool management and monitoring
 - Swap area management
+- Artifact management (provisioning file uploads)
 
 #### Console Access
 - VNC console sessions
 - Terminal/SSH sessions (zlogin)
+- **Zlogin automation** (recipe-based serial console automation)
 - WebSocket connections for real-time access
+
+#### Provisioning System
+- **Recipe management** (zlogin automation templates for OS-specific network setup)
+- **Provisioning profiles** (reusable provisioning configurations)
+- **Provisioning orchestration** (complete pipeline: extract → boot → setup → sync → execute)
+- **Tool installation** (automatic setup of rsync, ansible, dhcpd, git)
 
 #### System Monitoring
 - Host system metrics and statistics
@@ -76,10 +89,10 @@ The ZoneweaverAPI is organized into the following categories:
 - Storage I/O and capacity monitoring
 - CPU and memory statistics
 
-#### Package Management
-- Zone provisioning and package installation
-- System update management
-- Repository management
+#### Template Management
+- Vagrant box import from BoxVault registries
+- Template storage and versioning
+- ZFS clone strategies (thin clone vs full copy)
 
 #### API Management
 - API key generation and management

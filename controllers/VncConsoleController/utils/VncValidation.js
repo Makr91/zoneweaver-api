@@ -10,6 +10,7 @@ import { spawn } from 'child_process';
 import VncSessions from '../../../models/VncSessionModel.js';
 import { log } from '../../../lib/Logger.js';
 import config from '../../../config/ConfigLoader.js';
+import { validateZoneName } from '../../../lib/ZoneValidation.js';
 
 /**
  * Get VNC port range from configuration
@@ -43,15 +44,8 @@ const getVncSessionTimeout = () => {
  */
 export const VNC_SESSION_TIMEOUT = getVncSessionTimeout();
 
-/**
- * Validate zone name for security
- * @param {string} zoneName - Zone name to validate
- * @returns {boolean} True if valid
- */
-export const validateZoneName = zoneName => {
-  const validPattern = /^[a-zA-Z0-9\-_.]+$/;
-  return validPattern.test(zoneName) && zoneName.length <= 64;
-};
+// Note: validateZoneName is imported from lib/ZoneValidation.js and re-exported for backwards compatibility
+export { validateZoneName };
 
 /**
  * Check if port is available using multiple methods (restored original working logic)

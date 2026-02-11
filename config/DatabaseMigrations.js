@@ -7,6 +7,7 @@
 
 import db from './Database.js';
 import { log } from '../lib/Logger.js';
+import { up as seedDefaultRecipes } from '../db/seeders/20260209-default-recipes.js';
 
 // Import models to ensure they are registered before sync
 import '../models/TemplateModel.js';
@@ -139,6 +140,26 @@ class DatabaseMigrations {
   }
 
   /**
+   * Seed default data into database
+   * @description Seeds default recipes and other initial data
+   * @returns {Promise<boolean>} True if seeding successful
+   */
+  async seedDefaultData() {
+    try {
+      // Seed default recipes
+      await seedDefaultRecipes(db.getQueryInterface());
+
+      log.database.info('Default data seeding completed');
+      return true;
+    } catch (error) {
+      log.database.warn('Default data seeding failed (may already exist)', {
+        error: error.message,
+      });
+      return true; // Don't fail setup if seeding fails (data may already exist)
+    }
+  }
+
+  /**
    * Full database setup: initialize tables and run migrations
    * @description Complete database setup process for new and existing installations
    * @returns {Promise<boolean>} True if setup successful
@@ -150,6 +171,9 @@ class DatabaseMigrations {
 
       // Then run migrations to update existing tables
       await this.runMigrations();
+
+      // Finally, seed default data
+      await this.seedDefaultData();
 
       return true;
     } catch (error) {

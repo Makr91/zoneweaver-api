@@ -4,6 +4,7 @@ import VncSessions from '../models/VncSessionModel.js';
 import { executeCommand } from '../lib/CommandManager.js';
 import { errorResponse } from './SystemHostController/utils/ResponseHelpers.js';
 import { log } from '../lib/Logger.js';
+import { validateZoneName } from '../lib/ZoneValidation.js';
 
 /**
  * @fileoverview Zone Management controller for Zoneweaver API
@@ -23,17 +24,6 @@ const getSystemZoneStatus = async zoneName => {
     return parts[2] || 'unknown';
   }
   return 'not_found';
-};
-
-/**
- * Validate zone name for security
- * @param {string} zoneName - Zone name to validate
- * @returns {boolean} True if valid
- */
-const validateZoneName = zoneName => {
-  // Allow alphanumeric, hyphens, underscores, dots
-  const validPattern = /^[a-zA-Z0-9\-_.]+$/;
-  return validPattern.test(zoneName) && zoneName.length <= 64;
 };
 
 /**

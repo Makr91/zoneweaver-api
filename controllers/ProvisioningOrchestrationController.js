@@ -8,8 +8,10 @@ import Zones from '../models/ZoneModel.js';
 import Tasks from '../models/TaskModel.js';
 import ProvisioningProfiles from '../models/ProvisioningProfileModel.js';
 import Recipes from '../models/RecipeModel.js';
+import Artifacts from '../models/ArtifactModel.js';
 import { log } from '../lib/Logger.js';
-import { validateZoneName } from '../controllers/VncConsoleController/utils/VncValidation.js';
+import { executeCommand } from '../lib/CommandManager.js';
+import { validateZoneName } from '../lib/ZoneValidation.js';
 
 /**
  * Validate provisioning request and zone state
@@ -19,9 +21,8 @@ import { validateZoneName } from '../controllers/VncConsoleController/utils/VncV
  * @returns {Promise<{valid: boolean, error?: string, provisioning?: Object, recipeId?: string}>}
  */
 const validateProvisioningRequest = async (zoneName, zone, skipRecipe) => {
-  const nameValidation = validateZoneName(zoneName);
-  if (!nameValidation.valid) {
-    return { valid: false, error: nameValidation.error };
+  if (!validateZoneName(zoneName)) {
+    return { valid: false, error: 'Invalid zone name' };
   }
 
   if (!zone) {
@@ -63,14 +64,200 @@ const validateProvisioningRequest = async (zoneName, zone, skipRecipe) => {
  * @param {Object} params - Task parameters
  * @returns {Promise<Object>} Created task
  */
-const createTask = ({ zoneName, operation, metadata, dependsOn }) =>
+const createTask = params =>
   Tasks.create({
-    zone_name: zoneName,
-    operation,
+    zone_name: params.zone_name,
+    operation: params.operation,
     status: 'pending',
-    metadata: metadata ? JSON.stringify(metadata) : null,
-    depends_on: dependsOn,
+    metadata: params.metadata ? JSON.stringify(params.metadata) : null,
+    depends_on: params.depends_on,
   });
+
+/**
+ * Extract provisioning artifact to ZFS dataset
+ * @param {string} zoneName - Zone name
+ * @param {string} artifactId - Artifact ID
+ * @param {Object} zone - Zone database record
+ * @returns {Promise<{success: boolean, datasetPath?: string, error?: string}>}
+ */
+const extractProvisioningArtifact = async (zoneName, artifactId, zone) => {
+  try {
+    const artifact = await Artifacts.findByPk(artifactId);
+    if (!artifact) {
+      return { success: false, error: `Artifact '${artifactId}' not found` };
+    }
+
+    const zoneConfig = zone.configuration || {};
+    const zoneDataset = zoneConfig.zonepath
+      ? zoneConfig.zonepath.replace('/path', '')
+      : `/rpool/zones/${zoneName}`;
+
+    const provisioningDataset = `${zoneDataset}/provisioning`;
+    const provisioningDatasetPath = `/${provisioningDataset}`;
+
+    // Create ZFS dataset
+    const createResult = await executeCommand(
+      `pfexec zfs create -o mountpoint=${provisioningDatasetPath} ${provisioningDataset}`
+    );
+
+    // Check if dataset exists if creation failed
+    if (!createResult.success) {
+      const checkResult = await executeCommand(`pfexec zfs list ${provisioningDataset}`);
+      if (!checkResult.success) {
+        return {
+          success: false,
+          error: 'Failed to create provisioning dataset',
+          details: createResult.error,
+        };
+      }
+    }
+
+    // Extract artifact
+    const extractResult = await executeCommand(
+      `pfexec tar -xzf ${artifact.path} -C ${provisioningDatasetPath}`,
+      { timeout: 300000 }
+    );
+
+    if (!extractResult.success) {
+      return {
+        success: false,
+        error: 'Failed to extract provisioning artifact',
+        details: extractResult.error,
+      };
+    }
+
+    // Create snapshot
+    const snapshotResult = await executeCommand(
+      `pfexec zfs snapshot ${provisioningDataset}@pre-provision`
+    );
+
+    if (!snapshotResult.success) {
+      log.api.warn('Failed to create pre-provision snapshot', {
+        zone_name: zoneName,
+        error: snapshotResult.error,
+      });
+    }
+
+    log.api.info('Provisioning artifact extracted', {
+      zone_name: zoneName,
+      artifact_id: artifactId,
+      dataset: provisioningDataset,
+    });
+
+    return { success: true, datasetPath: provisioningDatasetPath };
+  } catch (error) {
+    log.api.error('Artifact extraction failed', {
+      zone_name: zoneName,
+      error: error.message,
+    });
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Build provisioning task chain
+ * @param {Object} params - Parameters
+ * @returns {Promise<Array>} Task chain
+ */
+const buildProvisioningTaskChain = async params => {
+  const {
+    zoneName,
+    zone,
+    skipBoot,
+    skipRecipe,
+    recipeId,
+    provisioning,
+    zoneIP,
+    provisioningDatasetPath,
+  } = params;
+
+  const taskChain = [];
+  let previousTaskId = null;
+
+  // Step 1: Boot zone
+  if (!skipBoot && zone.status !== 'running') {
+    const bootTask = await createTask({
+      zone_name: zoneName,
+      operation: 'start',
+      depends_on: null,
+    });
+    taskChain.push({ step: 'boot', task_id: bootTask.id });
+    previousTaskId = bootTask.id;
+  }
+
+  // Step 2: Run zlogin recipe
+  if (recipeId && !skipRecipe) {
+    const setupTask = await createTask({
+      zone_name: zoneName,
+      operation: 'zone_setup',
+      metadata: {
+        recipe_id: recipeId,
+        variables: provisioning.variables || {},
+      },
+      depends_on: previousTaskId,
+    });
+    taskChain.push({ step: 'setup', task_id: setupTask.id });
+    previousTaskId = setupTask.id;
+  }
+
+  // Step 3: Wait for SSH
+  const sshTask = await createTask({
+    zone_name: zoneName,
+    operation: 'zone_wait_ssh',
+    metadata: {
+      ip: zoneIP,
+      port: provisioning.ssh_port || 22,
+      credentials: provisioning.credentials,
+    },
+    depends_on: previousTaskId,
+  });
+  taskChain.push({ step: 'wait_ssh', task_id: sshTask.id });
+  previousTaskId = sshTask.id;
+
+  // Step 4: Sync files
+  const effectiveSyncFolders = [...(provisioning.sync_folders || [])];
+  if (provisioningDatasetPath) {
+    effectiveSyncFolders.push({
+      source: provisioningDatasetPath,
+      dest: '/vagrant',
+      exclude: [],
+    });
+  }
+
+  if (effectiveSyncFolders.length > 0) {
+    const syncTask = await createTask({
+      zone_name: zoneName,
+      operation: 'zone_sync',
+      metadata: {
+        ip: zoneIP,
+        port: provisioning.ssh_port || 22,
+        credentials: provisioning.credentials,
+        sync_folders: effectiveSyncFolders,
+      },
+      depends_on: previousTaskId,
+    });
+    taskChain.push({ step: 'sync', task_id: syncTask.id });
+    previousTaskId = syncTask.id;
+  }
+
+  // Step 5: Execute provisioners
+  if (provisioning.provisioners && provisioning.provisioners.length > 0) {
+    const provisionTask = await createTask({
+      zone_name: zoneName,
+      operation: 'zone_provision',
+      metadata: {
+        ip: zoneIP,
+        port: provisioning.ssh_port || 22,
+        credentials: provisioning.credentials,
+        provisioners: provisioning.provisioners,
+      },
+      depends_on: previousTaskId,
+    });
+    taskChain.push({ step: 'provision', task_id: provisionTask.id });
+  }
+
+  return taskChain;
+};
 
 /**
  * @swagger
@@ -125,6 +312,7 @@ export const provisionZone = async (req, res) => {
     const zoneName = req.params.name;
     const { skip_boot = false, skip_recipe = false } = req.body;
 
+    // Validate request
     const zone = await Zones.findOne({ where: { name: zoneName } });
     const validation = await validateProvisioningRequest(zoneName, zone, skip_recipe);
     if (!validation.valid) {
@@ -134,84 +322,37 @@ export const provisionZone = async (req, res) => {
     }
 
     const { provisioning, recipeId, zoneIP } = validation;
-    const { credentials, sync_folders, provisioners } = provisioning;
 
-    const taskChain = [];
-    let previousTaskId = null;
+    // Extract artifact if provided
+    let provisioningDatasetPath = null;
+    if (provisioning.artifact_id) {
+      const extractResult = await extractProvisioningArtifact(
+        zoneName,
+        provisioning.artifact_id,
+        zone
+      );
 
-    // Step 1: Boot zone if not running and not skipped
-    if (!skip_boot && zone.status !== 'running') {
-      const bootTask = await createTask({
-        zone_name: zoneName,
-        operation: 'start',
-        depends_on: null,
-      });
-      taskChain.push({ step: 'boot', task_id: bootTask.id });
-      previousTaskId = bootTask.id;
+      if (!extractResult.success) {
+        return res.status(extractResult.error.includes('not found') ? 400 : 500).json({
+          error: extractResult.error,
+          details: extractResult.details,
+        });
+      }
+
+      provisioningDatasetPath = extractResult.datasetPath;
     }
 
-    // Step 2: Run zlogin recipe (zone_setup) if recipe_id is set and not skipped
-    if (recipeId && !skip_recipe) {
-      const setupTask = await createTask({
-        zone_name: zoneName,
-        operation: 'zone_setup',
-        metadata: {
-          recipe_id: recipeId,
-          variables: provisioning.variables || {},
-        },
-        depends_on: previousTaskId,
-      });
-      taskChain.push({ step: 'setup', task_id: setupTask.id });
-      previousTaskId = setupTask.id;
-    }
-
-    // Step 3: Wait for SSH
-    const sshTask = await createTask({
-      zone_name: zoneName,
-      operation: 'zone_wait_ssh',
-      metadata: {
-        ip: zoneIP,
-        port: provisioning.ssh_port || 22,
-        credentials,
-      },
-      depends_on: previousTaskId,
+    // Build task chain
+    const taskChain = await buildProvisioningTaskChain({
+      zoneName,
+      zone,
+      skipBoot: skip_boot,
+      skipRecipe: skip_recipe,
+      recipeId,
+      provisioning,
+      zoneIP,
+      provisioningDatasetPath,
     });
-    taskChain.push({ step: 'wait_ssh', task_id: sshTask.id });
-    previousTaskId = sshTask.id;
-
-    // Step 4: Sync files (if sync_folders configured)
-    if (sync_folders && sync_folders.length > 0) {
-      const syncTask = await createTask({
-        zone_name: zoneName,
-        operation: 'zone_sync',
-        metadata: {
-          ip: zoneIP,
-          port: provisioning.ssh_port || 22,
-          credentials,
-          sync_folders,
-        },
-        depends_on: previousTaskId,
-      });
-      taskChain.push({ step: 'sync', task_id: syncTask.id });
-      previousTaskId = syncTask.id;
-    }
-
-    // Step 5: Execute provisioners (if provisioners configured)
-    if (provisioners && provisioners.length > 0) {
-      const provisionTask = await createTask({
-        zone_name: zoneName,
-        operation: 'zone_provision',
-        metadata: {
-          ip: zoneIP,
-          port: provisioning.ssh_port || 22,
-          credentials,
-          provisioners,
-        },
-        depends_on: previousTaskId,
-      });
-      taskChain.push({ step: 'provision', task_id: provisionTask.id });
-      previousTaskId = provisionTask.id;
-    }
 
     log.api.info('Provisioning pipeline started', {
       zone_name: zoneName,

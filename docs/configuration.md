@@ -239,6 +239,118 @@ host_monitoring:
 - `system_scan_interval` - How often to collect system metrics
 - `max_scan_errors` - Maximum consecutive errors before pausing scans
 
+### Provisioning Configuration
+
+Controls the provisioning pipeline for automated zone configuration.
+
+```yaml
+provisioning:
+  install_tools: true                           # Auto-install provisioning tools
+  staging_path: /var/lib/zoneweaver-api/provisioning
+
+  ssh:
+    key_path: /etc/zoneweaver-api/ssh/provision_key
+    timeout_seconds: 300                        # SSH connection timeout
+    poll_interval_seconds: 10                   # SSH readiness poll interval
+
+  network:
+    enabled: true                               # Enable provisioning network
+    etherstub_name: estub_provision            # Etherstub name
+    host_vnic_name: provision_interconnect0    # Host VNIC name
+    subnet: 10.190.190.0/24                    # Provisioning subnet
+    host_ip: 10.190.190.1                      # Host IP on provisioning network
+    dhcp_range_start: 10.190.190.10           # DHCP pool start
+    dhcp_range_end: 10.190.190.254            # DHCP pool end
+
+  zlogin:
+    enabled: true                               # Enable zlogin automation
+    default_timeout_seconds: 300                # Default recipe timeout
+    max_concurrent_automations: 3               # Max parallel zlogin sessions
+```
+
+**Provisioning Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `install_tools` | Automatically install provisioning tools (rsync, ansible, dhcpd) on first run | `true` |
+| `staging_path` | Directory for staging provisioning artifacts and temporary files | `/var/lib/zoneweaver-api/provisioning` |
+
+**SSH Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `ssh.key_path` | Path to SSH private key for zone access | `/etc/zoneweaver-api/ssh/provision_key` |
+| `ssh.timeout_seconds` | Maximum time to wait for SSH connection | `300` |
+| `ssh.poll_interval_seconds` | How often to poll for SSH readiness | `10` |
+
+**Network Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `network.enabled` | Enable provisioning network infrastructure | `true` |
+| `network.etherstub_name` | Name of provisioning etherstub | `estub_provision` |
+| `network.host_vnic_name` | Name of host-side provisioning VNIC | `provision_interconnect0` |
+| `network.subnet` | Provisioning network subnet (CIDR) | `10.190.190.0/24` |
+| `network.host_ip` | Host IP address on provisioning network | `10.190.190.1` |
+| `network.dhcp_range_start` | Starting IP for DHCP pool | `10.190.190.10` |
+| `network.dhcp_range_end` | Ending IP for DHCP pool | `10.190.190.254` |
+
+**Zlogin Automation Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `zlogin.enabled` | Enable zlogin automation engine | `true` |
+| `zlogin.default_timeout_seconds` | Default timeout for recipe execution | `300` |
+| `zlogin.max_concurrent_automations` | Maximum parallel zlogin sessions | `3` |
+
+**Customizing Provisioning Network:**
+
+If the default `10.190.190.0/24` subnet conflicts with your existing network infrastructure, customize it:
+
+```yaml
+provisioning:
+  network:
+    subnet: 192.168.100.0/24
+    host_ip: 192.168.100.1
+    dhcp_range_start: 192.168.100.10
+    dhcp_range_end: 192.168.100.254
+```
+
+{: .note }
+After changing provisioning network settings, run `POST /provisioning/network/teardown` followed by `POST /provisioning/network/setup` to apply changes.
+
+**Provisioning Tool Installation:**
+
+When `install_tools: true`, the API automatically installs required tools on first startup:
+- **rsync** — File synchronization between host and zones
+- **ansible** — Configuration management and provisioner execution
+- **isc-dhcp-server** — DHCP server for automatic zone IP assignment
+- **git** — Version control for provisioning artifacts
+
+Installation happens asynchronously and doesn't block API startup. Check installation status via `GET /provisioning/status`.
+
+**SSH Key Management:**
+
+The provisioning system uses SSH key-based authentication. The key specified in `ssh.key_path` is:
+- Generated automatically if it doesn't exist
+- Used for all zone SSH connections during provisioning
+- Public key can be injected via cloud-init `sshkey` attribute or zlogin recipes
+
+To use a custom SSH key:
+
+```yaml
+provisioning:
+  ssh:
+    key_path: /path/to/your/custom_key
+```
+
+{: .warning }
+The SSH private key should be readable by the zoneweaver-api process user. Ensure proper file permissions: `chmod 600 /etc/zoneweaver-api/ssh/provision_key`
+
+**Related Documentation:**
+- [Provisioning Pipeline Guide](guides/provisioning.md) — Complete provisioning workflow
+- [Network Management Guide](guides/network-management.md) — NAT, DHCP, and provisioning network setup
+
 ## Environment Variables
 
 Configuration values can be overridden using environment variables:
