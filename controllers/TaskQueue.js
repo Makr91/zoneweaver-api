@@ -969,6 +969,99 @@ const executeTask = async task => {
 };
 
 /**
+ * Execute a task and handle its result
+ * @param {Object} task - The task to execute
+ * @param {string} operationCategory - The operation category
+ */
+const executeAndHandleTask = async (task, operationCategory) => {
+  // Execute task with performance timing
+  const taskTimer = createTimer(`Task execution: ${task.operation}`);
+  const result = await executeTask(task);
+  const executionTime = taskTimer.end();
+
+  // Update task status with progress
+  const updateData = {
+    status: result.success ? 'completed' : 'failed',
+    completed_at: new Date(),
+    error_message: result.error || null,
+  };
+
+  // Set progress to 100% for successful tasks (unless already set by task execution)
+  if (result.success && task.progress_percent < 100) {
+    updateData.progress_percent = 100;
+    updateData.progress_info = {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    };
+  }
+
+  await task.update(updateData);
+
+  runningTasks.delete(task.id);
+
+  // Release operation category lock if it had one
+  if (operationCategory) {
+    runningCategories.delete(operationCategory);
+    log.task.debug('Released category lock', {
+      task_id: task.id,
+      category: operationCategory,
+    });
+  }
+
+  if (result.success) {
+    // Auto-start VNC for zones that have VNC enabled at boot after successful zone start
+    if (task.operation === 'start' && task.zone_name !== 'system') {
+      try {
+        const vncEnabled = await isVncEnabledAtBoot(task.zone_name);
+        if (vncEnabled) {
+          log.task.info('Zone has VNC enabled at boot - creating auto-VNC start task', {
+            zone_name: task.zone_name,
+            trigger_task_id: task.id,
+          });
+
+          // Create low-priority VNC start task (non-blocking)
+          await Tasks.create({
+            zone_name: task.zone_name,
+            operation: 'vnc_start',
+            priority: TaskPriority.LOW,
+            created_by: 'auto_vnc_startup',
+            status: 'pending',
+          });
+        } else {
+          log.task.debug('Zone does not have VNC enabled at boot', {
+            zone_name: task.zone_name,
+          });
+        }
+      } catch (vncCheckError) {
+        log.task.warn('Failed to check VNC boot setting for auto-start', {
+          zone_name: task.zone_name,
+          error: vncCheckError.message,
+        });
+      }
+    }
+
+    // Only log slow tasks to reduce noise
+    if (executionTime > 5000) {
+      log.performance.warn('Slow task execution', {
+        task_id: task.id,
+        operation: task.operation,
+        zone_name: task.zone_name,
+        duration_ms: executionTime,
+        message: result.message,
+      });
+    }
+  } else {
+    log.task.error('Task execution failed', {
+      task_id: task.id,
+      operation: task.operation,
+      zone_name: task.zone_name,
+      duration_ms: executionTime,
+      error: result.error,
+    });
+  }
+};
+
+/**
  * Process next task from queue
  */
 const processNextTask = async () => {
@@ -976,6 +1069,22 @@ const processNextTask = async () => {
     // Don't start new tasks if we're at max capacity
     if (runningTasks.size >= MAX_CONCURRENT_TASKS) {
       return;
+    }
+
+    // Check for failed dependencies and cancel dependent tasks
+    const failedDependencies = await Tasks.findAll({
+      where: {
+        status: { [Op.in]: ['failed', 'cancelled'] },
+      },
+      attributes: ['id'],
+    });
+
+    if (failedDependencies.length > 0) {
+      const failedIds = failedDependencies.map(t => t.id);
+      await Tasks.update(
+        { status: 'cancelled', error_message: 'Dependency failed' },
+        { where: { depends_on: { [Op.in]: failedIds }, status: 'pending' } }
+      );
     }
 
     // Find highest priority pending task that's not blocked by dependencies
@@ -1040,91 +1149,7 @@ const processNextTask = async () => {
       category: operationCategory || 'none',
     });
 
-    // Execute task with performance timing
-    const taskTimer = createTimer(`Task execution: ${task.operation}`);
-    const result = await executeTask(task);
-    const executionTime = taskTimer.end();
-
-    // Update task status with progress
-    const updateData = {
-      status: result.success ? 'completed' : 'failed',
-      completed_at: new Date(),
-      error_message: result.error || null,
-    };
-
-    // Set progress to 100% for successful tasks (unless already set by task execution)
-    if (result.success && task.progress_percent < 100) {
-      updateData.progress_percent = 100;
-      updateData.progress_info = {
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      };
-    }
-
-    await task.update(updateData);
-
-    runningTasks.delete(task.id);
-
-    // Release operation category lock if it had one
-    if (operationCategory) {
-      runningCategories.delete(operationCategory);
-      log.task.debug('Released category lock', {
-        task_id: task.id,
-        category: operationCategory,
-      });
-    }
-
-    if (result.success) {
-      // Auto-start VNC for zones that have VNC enabled at boot after successful zone start
-      if (task.operation === 'start' && task.zone_name !== 'system') {
-        try {
-          const vncEnabled = await isVncEnabledAtBoot(task.zone_name);
-          if (vncEnabled) {
-            log.task.info('Zone has VNC enabled at boot - creating auto-VNC start task', {
-              zone_name: task.zone_name,
-              trigger_task_id: task.id,
-            });
-
-            // Create low-priority VNC start task (non-blocking)
-            await Tasks.create({
-              zone_name: task.zone_name,
-              operation: 'vnc_start',
-              priority: TaskPriority.LOW,
-              created_by: 'auto_vnc_startup',
-              status: 'pending',
-            });
-          } else {
-            log.task.debug('Zone does not have VNC enabled at boot', {
-              zone_name: task.zone_name,
-            });
-          }
-        } catch (vncCheckError) {
-          log.task.warn('Failed to check VNC boot setting for auto-start', {
-            zone_name: task.zone_name,
-            error: vncCheckError.message,
-          });
-        }
-      }
-
-      // Only log slow tasks to reduce noise
-      if (executionTime > 5000) {
-        log.performance.warn('Slow task execution', {
-          task_id: task.id,
-          operation: task.operation,
-          zone_name: task.zone_name,
-          duration_ms: executionTime,
-          message: result.message,
-        });
-      }
-    } else {
-      log.task.error('Task execution failed', {
-        task_id: task.id,
-        operation: task.operation,
-        zone_name: task.zone_name,
-        duration_ms: executionTime,
-        error: result.error,
-      });
-    }
+    await executeAndHandleTask(task, operationCategory);
   } catch (error) {
     log.task.error('Task processing error', {
       error: error.message,

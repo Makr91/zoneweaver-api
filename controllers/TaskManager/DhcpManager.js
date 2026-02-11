@@ -10,7 +10,7 @@ import DhcpHosts from '../../models/DhcpHostModel.js';
 import { Op } from 'sequelize';
 
 const DHCPD_CONF_PATH = '/etc/dhcpd.conf';
-const DHCP_SERVICE = 'dhcp/server:ipv4';
+const DHCP_SERVICE = 'network/service/dhcp:ipv4';
 
 /**
  * Synchronize Database with System Configuration File (Hosts only)

@@ -44,9 +44,14 @@ const refreshIpfilter = async () => {
  * @returns {Object|null} Parsed rule object or null if invalid
  */
 const parseNatRule = rule => {
+  // Extract inline comment if present
+  const commentMatch = rule.match(/#\s*(?<comment>.*)$/);
+  const description = commentMatch ? commentMatch.groups.comment.trim() : null;
+  const cleanRule = rule.replace(/#.*$/, '').trim();
+
   // Example: map igb0 10.0.0.0/24 -> 0/32 portmap tcp/udp auto
   // Example: rdr igb0 0.0.0.0/0 port 80 -> 10.0.0.5 port 80 tcp
-  const parts = rule.trim().split(/\s+/);
+  const parts = cleanRule.split(/\s+/);
   if (parts.length < 4) {
     return null;
   }
@@ -58,12 +63,13 @@ const parseNatRule = rule => {
   return {
     type,
     bridge,
-    raw_rule: rule.trim(),
+    raw_rule: cleanRule,
     // Other fields are harder to extract reliably without a full parser,
     // but raw_rule is sufficient for sync
     subnet: parts[2], // Approximation
     target: parts[4], // Approximation
-    protocol: rule.includes('tcp/udp') ? 'tcp/udp' : 'any',
+    protocol: cleanRule.includes('tcp/udp') ? 'tcp/udp' : 'any',
+    description,
   };
 };
 
@@ -83,6 +89,7 @@ const syncDatabaseWithSystem = async () => {
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith('#')) {
+        // Still ignore full-line comments
         fileRules.add(trimmed);
       }
     }
@@ -94,9 +101,11 @@ const syncDatabaseWithSystem = async () => {
   // 3. Import missing rules (File -> DB)
   const importPromises = [];
   for (const ruleStr of fileRules) {
-    const exists = dbRules.find(r => r.raw_rule === ruleStr);
+    // Parse first to get clean rule for comparison
+    const parsed = parseNatRule(ruleStr);
+    const exists = parsed ? dbRules.find(r => r.raw_rule === parsed.raw_rule) : null;
+
     if (!exists) {
-      const parsed = parseNatRule(ruleStr);
       if (parsed) {
         importPromises.push(
           NatRules.create({
@@ -114,7 +123,9 @@ const syncDatabaseWithSystem = async () => {
   // 4. Prune deleted rules (DB -> File)
   const prunePromises = [];
   for (const dbRule of dbRules) {
-    if (!fileRules.has(dbRule.raw_rule)) {
+    // Check if the clean raw_rule exists in the file (fileRules contains full lines with comments)
+    const foundInFile = Array.from(fileRules).some(line => line.startsWith(dbRule.raw_rule));
+    if (!foundInFile) {
       prunePromises.push(
         dbRule.destroy().then(() => {
           log.task.info('Removed deleted NAT rule from database', { rule: dbRule.raw_rule });
@@ -143,7 +154,14 @@ export const executeCreateNatRuleTask = async metadataJson => {
       });
     });
 
-    const { bridge, subnet, target = '0/32', protocol = 'tcp/udp', type = 'portmap' } = metadata;
+    const {
+      bridge,
+      subnet,
+      target = '0/32',
+      protocol = 'tcp/udp',
+      type = 'portmap',
+      description,
+    } = metadata;
 
     if (!bridge || !subnet) {
       return { success: false, error: 'bridge and subnet are required' };
@@ -185,14 +203,18 @@ export const executeCreateNatRuleTask = async metadataJson => {
       type,
       raw_rule: rule,
       created_by: 'api', // Or from metadata if passed
+      description,
     });
 
     // 4. Regenerate File from DB
     const allRules = await NatRules.findAll();
-    const configContent = `${allRules.map(r => r.raw_rule).join('\n')}\n`;
+    const configContent = allRules
+      .map(r => (r.description ? `${r.raw_rule} # ${r.description}` : r.raw_rule))
+      .join('\n');
 
+    // Use heredoc pattern to correctly handle newlines
     const writeResult = await executeCommand(
-      `pfexec bash -c 'printf "%s" ${JSON.stringify(configContent)} > /etc/ipf/ipnat.conf'`
+      `pfexec bash -c 'cat > /etc/ipf/ipnat.conf << '"'"'IPNATEOF'"'"'\n${configContent}\nIPNATEOF'`
     );
 
     if (!writeResult.success) {
@@ -259,10 +281,13 @@ export const executeDeleteNatRuleTask = async metadataJson => {
 
     // 4. Regenerate File from DB
     const allRules = await NatRules.findAll();
-    const configContent = `${allRules.map(r => r.raw_rule).join('\n')}\n`;
+    const configContent = allRules
+      .map(r => (r.description ? `${r.raw_rule} # ${r.description}` : r.raw_rule))
+      .join('\n');
 
+    // Use heredoc pattern to correctly handle newlines
     const writeResult = await executeCommand(
-      `pfexec bash -c 'printf "%s" ${JSON.stringify(configContent)} > /etc/ipf/ipnat.conf'`
+      `pfexec bash -c 'cat > /etc/ipf/ipnat.conf << '"'"'IPNATEOF'"'"'\n${configContent}\nIPNATEOF'`
     );
 
     if (!writeResult.success) {

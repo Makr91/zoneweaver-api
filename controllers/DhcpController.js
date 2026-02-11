@@ -411,7 +411,7 @@ export const removeDhcpHost = async (req, res) => {
 export const getDhcpStatus = async (req, res) => {
   try {
     const result = await executeCommand(
-      'svcs -H -o state,stime dhcp/server:ipv4 2>/dev/null || svcs -H -o state,stime dhcp:ipv4 2>/dev/null'
+      'svcs -H -o state,stime network/service/dhcp:ipv4 2>/dev/null'
     );
 
     let state = 'unknown';
@@ -422,7 +422,7 @@ export const getDhcpStatus = async (req, res) => {
 
     // Get listen interface config
     const listenResult = await executeCommand(
-      'svccfg -s dhcp/server:ipv4 listprop config/listen_ifnames 2>/dev/null || svccfg -s dhcp:ipv4 listprop config/listen_ifnames 2>/dev/null'
+      'svccfg -s network/service/dhcp:ipv4 listprop config/listen_ifnames 2>/dev/null'
     );
     let listenInterface = null;
     if (listenResult.success && listenResult.output) {
@@ -431,7 +431,7 @@ export const getDhcpStatus = async (req, res) => {
     }
 
     return res.json({
-      service: 'dhcp/server:ipv4',
+      service: 'network/service/dhcp:ipv4',
       state,
       since,
       listen_interface: listenInterface,

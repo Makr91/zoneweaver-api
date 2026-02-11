@@ -157,7 +157,7 @@ export const getProvisioningNetworkStatus = async (req, res) => {
 
     // Check DHCP
     const dhcpResult = await executeCommand(
-      'svcs -H -o state dhcp/server:ipv4 2>/dev/null || svcs -H -o state dhcp:ipv4 2>/dev/null'
+      'svcs -H -o state network/service/dhcp:ipv4 2>/dev/null'
     );
     const dhcpRunning = dhcpResult.success && dhcpResult.output.trim() === 'online';
 
@@ -214,12 +214,22 @@ export const setupProvisioningNetwork = async (req, res) => {
     const taskIds = [];
     let lastTaskId = null;
 
+    // Create Parent Task
+    const parentTask = await Tasks.create({
+      zone_name: 'system',
+      operation: 'provisioning_network_setup',
+      priority: TaskPriority.NORMAL,
+      created_by: createdBy,
+      status: 'pending',
+      metadata: JSON.stringify(netConfig),
+    });
+
     // Helper to create chained tasks
     const queueTask = async (operation, metadata) => {
       const task = await Tasks.create({
         zone_name: 'system',
         operation,
-        priority: TaskPriority.NORMAL,
+        priority: TaskPriority.HIGH, // Subtasks run at higher priority to finish quickly
         created_by: createdBy,
         status: 'pending',
         depends_on: lastTaskId,
@@ -294,6 +304,7 @@ export const setupProvisioningNetwork = async (req, res) => {
     return res.status(202).json({
       success: true,
       message: `Provisioning network setup tasks queued (${taskIds.length} tasks)`,
+      parent_task_id: parentTask.id,
       task_ids: taskIds,
       config: netConfig,
     });
@@ -329,12 +340,22 @@ export const teardownProvisioningNetwork = async (req, res) => {
     const taskIds = [];
     let lastTaskId = null;
 
+    // Create Parent Task
+    const parentTask = await Tasks.create({
+      zone_name: 'system',
+      operation: 'provisioning_network_teardown',
+      priority: TaskPriority.NORMAL,
+      created_by: createdBy,
+      status: 'pending',
+      metadata: JSON.stringify(netConfig),
+    });
+
     // Helper to create chained tasks
     const queueTask = async (operation, metadata) => {
       const task = await Tasks.create({
         zone_name: 'system',
         operation,
-        priority: TaskPriority.NORMAL,
+        priority: TaskPriority.HIGH,
         created_by: createdBy,
         status: 'pending',
         depends_on: lastTaskId,
@@ -369,6 +390,7 @@ export const teardownProvisioningNetwork = async (req, res) => {
     return res.status(202).json({
       success: true,
       message: `Provisioning network teardown tasks queued (${taskIds.length} tasks)`,
+      parent_task_id: parentTask.id,
       task_ids: taskIds,
     });
   } catch (error) {
