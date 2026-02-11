@@ -28,7 +28,7 @@
   "dependencies": {
     "node-pty": "^0.10.1",
     "@jedithepro/system-info": "^3.0.0",
-    "axios": "^1.12.2",
+    "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
