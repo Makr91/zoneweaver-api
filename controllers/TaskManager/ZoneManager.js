@@ -184,17 +184,24 @@ const extractZoneDatasets = async zoneName => {
 
     const potentialDatasets = new Set();
 
-    // 1. Zonepath - resolve to dataset
+    // 1. Zonepath - derive dataset from path string (User requested logic)
     if (zoneConfig.zonepath) {
       ({ zonepath } = zoneConfig);
-      // Try to resolve the zonepath to a real ZFS dataset
+      
+      // Strip leading slash and trailing /path to get the dataset name
+      let candidateDataset = zonepath.startsWith('/') ? zonepath.substring(1) : zonepath;
+      if (candidateDataset.endsWith('/path')) {
+        candidateDataset = candidateDataset.substring(0, candidateDataset.length - 5);
+      }
+
+      // Verify this specific dataset exists (exact match only)
       try {
-        const result = await executeCommand(`pfexec zfs list -H -o name "${zonepath}"`);
-        if (result.success && result.output.trim()) {
-          potentialDatasets.add(result.output.trim());
+        const result = await executeCommand(`pfexec zfs list -H -o name "${candidateDataset}"`);
+        if (result.success && result.output.trim() === candidateDataset) {
+          potentialDatasets.add(candidateDataset);
         }
       } catch (e) {
-        // Ignore if zonepath is not a dataset (e.g. just a directory)
+        // Dataset derived from zonepath does not exist - ignore
       }
     }
 
@@ -397,7 +404,7 @@ export const executeDeleteTask = async (zoneName, metadataJson) => {
           zone_name: zoneName,
           errors: datasetErrors,
         });
-        
+
         return {
           success: false,
           error: `Zone deleted but ZFS cleanup failed: ${datasetErrors.join('; ')}`,
