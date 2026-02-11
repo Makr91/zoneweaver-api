@@ -309,7 +309,8 @@ export const scanStorageLocation = async (location, options = {}) => {
     });
 
     const existingPaths = new Set(existingArtifacts.map(a => a.path));
-    const currentPaths = new Set(artifactFiles.map(f => f.path));
+    // Use ALL files for currentPaths to prevent deleting records for files that exist but don't match extension filter
+    const currentPaths = new Set(files.map(f => f.path));
 
     const { scanned, added, skipped } = await processArtifactFiles(
       location,
