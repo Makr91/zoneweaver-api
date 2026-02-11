@@ -242,7 +242,7 @@ const buildProvisioningTaskChain = async params => {
 export const provisionZone = async (req, res) => {
   try {
     const zoneName = req.params.name;
-    const { skip_boot = false, skip_recipe = false } = req.body;
+    const { skip_boot = false, skip_recipe = false } = req.body || {};
 
     // Validate request
     const zone = await Zones.findOne({ where: { name: zoneName } });
