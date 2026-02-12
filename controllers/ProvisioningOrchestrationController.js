@@ -105,7 +105,7 @@ const buildProvisioningTaskChain = async params => {
   let previousTaskId = null;
   let provisioningDatasetPath = null;
 
-  // Step 0: Extract artifact (if provided)
+  // Step 0: Extract artifact (if provided), this should be done after the initial zone stub has been created so reference the zone creation sequence in the Zone Manager files
   if (artifactId) {
     let zoneConfig = zone.configuration || {};
     if (typeof zoneConfig === 'string') {

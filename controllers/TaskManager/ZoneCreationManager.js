@@ -195,7 +195,9 @@ const importTemplate = async (metadata, zoneName, zfsCreated) => {
  * @param {Object} metadata - Zone creation metadata
  */
 const applyZoneConfig = async (zoneName, metadata) => {
-  const zonepath = metadata.zonepath || `/zones/${zoneName}`;
+  const pool = metadata.boot_volume?.pool || 'rpool';
+  const dataset = metadata.boot_volume?.dataset || 'zones';
+  const zonepath = metadata.zonepath || `/${pool}/${dataset}/${zoneName}`;
   const autoboot = metadata.autoboot === true ? 'true' : 'false';
 
   const createResult = await executeCommand(
