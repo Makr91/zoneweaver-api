@@ -974,6 +974,53 @@ const executeTask = async task => {
 };
 
 /**
+ * Update parent task progress based on current child task status
+ * Extracted from executeAndHandleTask for reuse in bulk cancellation
+ * @param {string} parentTaskId - Parent task ID to update
+ */
+const updateParentTaskProgress = async parentTaskId => {
+  const parentTask = await Tasks.findByPk(parentTaskId);
+  if (!parentTask || parentTask.status !== 'running') {
+    return;
+  }
+
+  const subTasks = await Tasks.findAll({
+    where: { parent_task_id: parentTaskId },
+    attributes: ['status'],
+  });
+
+  const total = subTasks.length;
+  const completed = subTasks.filter(t => t.status === 'completed').length;
+  const failed = subTasks.filter(t => t.status === 'failed' || t.status === 'cancelled').length;
+  const done = completed + failed;
+
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  let parentStatus = 'running';
+  if (done === total) {
+    parentStatus = failed > 0 ? 'completed_with_errors' : 'completed';
+  }
+
+  const parentUpdate = {
+    progress_percent: percent,
+    progress_info: {
+      completed_tasks: completed,
+      failed_tasks: failed,
+      total_tasks: total,
+      status: parentStatus,
+    },
+  };
+
+  if (done === total) {
+    parentUpdate.status = failed === total ? 'failed' : 'completed';
+    parentUpdate.completed_at = new Date();
+    runningTasks.delete(parentTask.id);
+  }
+
+  await parentTask.update(parentUpdate);
+};
+
+/**
  * Execute a task and handle its result
  * @param {Object} task - The task to execute
  * @param {string} operationCategory - The operation category
@@ -1007,45 +1054,7 @@ const executeAndHandleTask = async (task, operationCategory) => {
   // Update parent task progress if this was a sub-task
   if (task.parent_task_id) {
     try {
-      const parentTask = await Tasks.findByPk(task.parent_task_id);
-      if (parentTask && parentTask.status === 'running') {
-        const subTasks = await Tasks.findAll({
-          where: { parent_task_id: task.parent_task_id },
-          attributes: ['status'],
-        });
-
-        const total = subTasks.length;
-        const completed = subTasks.filter(t => t.status === 'completed').length;
-        const failed = subTasks.filter(
-          t => t.status === 'failed' || t.status === 'cancelled'
-        ).length;
-        const done = completed + failed;
-
-        const percent = total > 0 ? Math.round((done / total) * 100) : 0;
-
-        let parentStatus = 'running';
-        if (done === total) {
-          parentStatus = failed > 0 ? 'completed_with_errors' : 'completed';
-        }
-
-        const parentUpdate = {
-          progress_percent: percent,
-          progress_info: {
-            completed_tasks: completed,
-            failed_tasks: failed,
-            total_tasks: total,
-            status: parentStatus,
-          },
-        };
-
-        if (done === total) {
-          parentUpdate.status = failed === total ? 'failed' : 'completed';
-          parentUpdate.completed_at = new Date();
-          runningTasks.delete(parentTask.id);
-        }
-
-        await parentTask.update(parentUpdate);
-      }
+      await updateParentTaskProgress(task.parent_task_id);
     } catch (parentError) {
       log.task.error('Failed to update parent task progress', { error: parentError.message });
     }
@@ -1133,10 +1142,33 @@ const processNextTask = async () => {
 
     if (failedDependencies.length > 0) {
       const failedIds = failedDependencies.map(t => t.id);
-      await Tasks.update(
-        { status: 'cancelled', error_message: 'Dependency failed' },
-        { where: { depends_on: { [Op.in]: failedIds }, status: 'pending' } }
-      );
+
+      // Get tasks to cancel (need parent_task_id before bulk update)
+      const tasksToCancel = await Tasks.findAll({
+        where: { depends_on: { [Op.in]: failedIds }, status: 'pending' },
+        attributes: ['id', 'parent_task_id'],
+      });
+
+      if (tasksToCancel.length > 0) {
+        // Bulk cancel dependent tasks
+        await Tasks.update(
+          { status: 'cancelled', error_message: 'Dependency failed', completed_at: new Date() },
+          { where: { id: { [Op.in]: tasksToCancel.map(t => t.id) } } }
+        );
+
+        // Update parent tasks for all cancelled tasks (parallel execution)
+        const parentIds = [...new Set(tasksToCancel.map(t => t.parent_task_id).filter(Boolean))];
+        await Promise.all(
+          parentIds.map(parentId =>
+            updateParentTaskProgress(parentId).catch(err => {
+              log.task.error('Failed to update parent task progress after bulk cancellation', {
+                parent_task_id: parentId,
+                error: err.message,
+              });
+            })
+          )
+        );
+      }
     }
 
     // Find highest priority pending task that's not blocked by dependencies
