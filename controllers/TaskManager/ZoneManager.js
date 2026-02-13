@@ -710,6 +710,26 @@ export const executeDiscoverTask = async () => {
           status = parts[2] || dbZone.status;
         }
 
+        // Preserve API metadata fields (provisioning, etc.)
+        // Pattern from syncZoneToDatabase() in ZoneConfigUtils.js
+        let existingConfig = dbZone.configuration;
+        if (typeof existingConfig === 'string') {
+          try {
+            existingConfig = JSON.parse(existingConfig);
+          } catch (e) {
+            log.monitoring.warn('Failed to parse existing zone configuration during discovery', {
+              zone_name: dbZone.name,
+              error: e.message,
+            });
+            existingConfig = {};
+          }
+        }
+
+        // Merge: preserve provisioning if it exists in DB but not in system config
+        if (existingConfig?.provisioning && !zoneConfig.provisioning) {
+          zoneConfig.provisioning = existingConfig.provisioning;
+        }
+
         return dbZone.update({
           status,
           brand: zoneConfig.brand || dbZone.brand,
