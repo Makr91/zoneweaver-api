@@ -149,7 +149,7 @@ const runAnsibleProvisioner = async (ip, port, credentials, provisioner) => {
     .filter(Boolean)
     .join(' ');
 
-  const result = await executeCommand(cmd, { timeout: 1800000 }); // 30 min timeout
+  const result = await executeCommand(cmd, 1800000); // 30 min timeout
 
   if (result.success) {
     return { success: true, message: `Ansible playbook completed: ${playbook}` };
@@ -520,7 +520,7 @@ export const executeZoneProvisioningExtractTask = async task => {
     // Extract artifact
     const extractResult = await executeCommand(
       `pfexec tar -xzf ${artifact.path} -C ${dataset_path}`,
-      { timeout: 300000 }
+      300000
     );
 
     if (!extractResult.success) {
