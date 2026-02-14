@@ -58,6 +58,29 @@ export const executeStartTask = async zoneName => {
   const result = await executeCommand(`pfexec zoneadm -z ${zoneName} boot`);
 
   if (result.success) {
+    // Fix zonepath permissions after boot (zoneadm resets to 700)
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (zone) {
+      let zoneConfig = zone.configuration;
+      if (typeof zoneConfig === 'string') {
+        try {
+          zoneConfig = JSON.parse(zoneConfig);
+        } catch (e) {
+          log.task.warn('Failed to parse zone configuration', { error: e.message });
+        }
+      }
+      const zonepath = zoneConfig?.zonepath;
+      if (zonepath) {
+        const chmodResult = await executeCommand(`pfexec chmod 755 ${zonepath}`);
+        if (!chmodResult.success) {
+          log.task.warn('Failed to set zonepath permissions after boot', {
+            zonepath,
+            error: chmodResult.error,
+          });
+        }
+      }
+    }
+
     // Update zone status in database
     await Zones.update(
       {

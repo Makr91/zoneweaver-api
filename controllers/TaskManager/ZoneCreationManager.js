@@ -260,7 +260,7 @@ const applyZoneConfig = async (zoneName, metadata) => {
   const pool = metadata.boot_volume?.pool || 'rpool';
   const dataset = metadata.boot_volume?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
-  const zonepath = metadata.zonepath || `/${datasetPath}`;
+  const zonepath = metadata.zonepath || `/${datasetPath}/path`;
   const autoboot = metadata.autoboot === true ? 'true' : 'false';
 
   const createResult = await executeCommand(
@@ -708,8 +708,11 @@ const finalizeAndInstallZone = async (zoneName, metadata, task) => {
   const pool = metadata.boot_volume?.pool || 'rpool';
   const dataset = metadata.boot_volume?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
-  const zonepath = metadata.zonepath || `/${datasetPath}`;
-  await executeCommand(`pfexec chmod 755 ${zonepath}`);
+  const zonepath = metadata.zonepath || `/${datasetPath}/path`;
+  const chmodResult = await executeCommand(`pfexec chmod 755 ${zonepath}`);
+  if (!chmodResult.success) {
+    log.task.warn('Failed to set zonepath permissions', { zonepath, error: chmodResult.error });
+  }
 
   await updateTaskProgress(task, 97, { status: 'creating_database_record' });
   await syncZoneToDatabase(zoneName, 'installed');
