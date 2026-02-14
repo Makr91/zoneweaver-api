@@ -182,12 +182,54 @@ const applyAutobootChange = async (zoneName, autoboot) => {
  * @param {string} zoneName - Zone name
  * @param {Array} nics - Array of NIC configurations
  */
-const addNics = async (zoneName, nics) => {
-  const cmds = nics.map(nic => {
-    if (nic.global_nic) {
-      return `add net; set physical=${nic.physical}; set global-nic=${nic.global_nic}; end;`;
+/**
+ * Map NIC type to single-character code for VNIC naming
+ * @param {string} nicType - NIC type string
+ * @returns {string} Single character code
+ */
+const nicTypeCode = nicType => {
+  const map = { external: 'e', internal: 'i', carp: 'c', management: 'm', host: 'h' };
+  return map[nicType] || 'e';
+};
+
+/**
+ * Map VM type to single-digit code for VNIC naming
+ * @param {string} vmType - VM type string
+ * @returns {string} Single digit code
+ */
+const vmTypeCode = vmType => {
+  const map = { template: '1', development: '2', production: '3', firewall: '4', other: '5' };
+  return map[vmType] || '3';
+};
+
+const addNics = async (zoneName, nics, zoneRecord) => {
+  const cmds = nics.map((nic, index) => {
+    let { physical } = nic;
+    if (!physical && zoneRecord?.partition_id) {
+      const typeChar = nicTypeCode(nic.nic_type);
+      const vmChar = vmTypeCode(zoneRecord.vm_type);
+      // Count existing NICs to offset the index
+      const existingNicCount = zoneRecord.configuration?.net?.length || 0;
+      physical = `vnic${typeChar}${vmChar}_${zoneRecord.partition_id}_${existingNicCount + index}`;
     }
-    return `add net; set physical=${nic.physical}; end;`;
+    if (!physical) {
+      physical = `vnic_${zoneName}_${index}`;
+    }
+    let cmd = `add net; set physical=${physical};`;
+    if (nic.global_nic) {
+      cmd += ` set global-nic=${nic.global_nic};`;
+    }
+    if (nic.vlan_id) {
+      cmd += ` set vlan-id=${nic.vlan_id};`;
+    }
+    if (nic.mac_addr) {
+      cmd += ` set mac-addr=${nic.mac_addr};`;
+    }
+    if (nic.allowed_address) {
+      cmd += ` set allowed-address=${nic.allowed_address};`;
+    }
+    cmd += ` end;`;
+    return cmd;
   });
 
   if (cmds.length > 0) {
@@ -502,7 +544,8 @@ const finalizeModification = async (zoneName, task, changes) => {
 const handleNetworkModifications = async (zoneName, metadata, task, changes) => {
   if (metadata.add_nics?.length > 0) {
     await updateTaskProgress(task, 50, { status: 'adding_nics' });
-    await addNics(zoneName, metadata.add_nics);
+    const zoneRecord = await Zones.findOne({ where: { name: zoneName } });
+    await addNics(zoneName, metadata.add_nics, zoneRecord);
     changes.push('add_nics');
     await syncZoneToDatabase(zoneName);
   }

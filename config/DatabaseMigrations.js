@@ -141,6 +141,12 @@ class DatabaseMigrations {
         await this.addColumnIfNotExists('tasks', 'parent_task_id', 'CHAR(36) REFERENCES tasks(id)');
       }
 
+      // Migration for zones table partition_id and vm_type
+      if (await this.tableExists('zones')) {
+        await this.addColumnIfNotExists('zones', 'partition_id', 'VARCHAR(8) UNIQUE');
+        await this.addColumnIfNotExists('zones', 'vm_type', "VARCHAR(255) DEFAULT 'production'");
+      }
+
       log.database.info('All database migrations completed successfully');
       return true;
     } catch (error) {

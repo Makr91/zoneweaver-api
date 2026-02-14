@@ -726,6 +726,16 @@ export const restartZone = async (req, res) => {
  *                 type: string
  *                 description: xHCI USB controller
  *                 example: "on"
+ *               partition_id:
+ *                 type: string
+ *                 description: Numeric partition identifier for VNIC naming (up to 8 digits). Auto-generated if omitted.
+ *                 example: "0001"
+ *               vm_type:
+ *                 type: string
+ *                 description: VM type classification for VNIC naming convention
+ *                 enum: [template, development, production, firewall, other]
+ *                 default: "production"
+ *                 example: "production"
  *               autoboot:
  *                 type: boolean
  *                 description: Auto-boot zone on system startup
@@ -789,12 +799,29 @@ export const restartZone = async (req, res) => {
  *                   properties:
  *                     physical:
  *                       type: string
- *                       description: VNIC name
- *                       example: "vnic0"
+ *                       description: VNIC name. Auto-generated from partition_id if omitted.
+ *                       example: "vnice3_0001_0"
  *                     global_nic:
  *                       type: string
- *                       description: Bridge/physical NIC for on-demand VNIC creation. Omit for pre-created VNICs.
- *                       example: "igb0"
+ *                       description: Bridge/physical NIC for on-demand VNIC creation at zone boot. Omit for pre-created VNICs.
+ *                       example: "ixgbe1"
+ *                     nic_type:
+ *                       type: string
+ *                       description: NIC type for auto-naming convention (e=external, i=internal, etc.)
+ *                       enum: [external, internal, carp, management, host]
+ *                       default: "external"
+ *                     vlan_id:
+ *                       type: integer
+ *                       description: VLAN tag ID
+ *                       example: 11
+ *                     mac_addr:
+ *                       type: string
+ *                       description: MAC address for the VNIC
+ *                       example: "02:08:20:c1:38:e7"
+ *                     allowed_address:
+ *                       type: string
+ *                       description: IP/prefix for cloud-init allowed-address (e.g. "192.168.1.10/24")
+ *                       example: "192.168.1.10/24"
  *               cdroms:
  *                 type: array
  *                 description: ISO images to attach as CD-ROMs

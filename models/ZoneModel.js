@@ -55,6 +55,15 @@ const { DataTypes } = Sequelize;
  *           type: string
  *           format: date-time
  *           description: Zone creation timestamp
+ *         partition_id:
+ *           type: string
+ *           description: Numeric partition identifier for VNIC naming (up to 8 digits)
+ *           example: "00001234"
+ *         vm_type:
+ *           type: string
+ *           description: VM type classification for VNIC naming
+ *           enum: [template, development, production, firewall, other]
+ *           example: "production"
  *         updated_at:
  *           type: string
  *           format: date-time
@@ -109,6 +118,18 @@ const Zones = db.define(
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
       comment: 'Last time zone was detected during system scan',
+    },
+    partition_id: {
+      type: DataTypes.STRING(8),
+      allowNull: true,
+      unique: true,
+      comment: 'Numeric partition identifier for VNIC naming (up to 8 digits)',
+    },
+    vm_type: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: 'production',
+      comment: 'VM type classification (template, development, production, firewall, other)',
     },
     configuration: {
       type: DataTypes.JSON,

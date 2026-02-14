@@ -53,6 +53,7 @@ zones:
   task_timeout: 300
   orphan_retention: 7
   default_pagination_limit: 50
+  partition_id_start: 1              # Starting partition_id for auto-generation (set per-host for HA/distributed)
   orchestration:
     enabled: false                        # Enable zone orchestration by default
     take_control_on_startup: false        # Auto-disable zones service on API startup

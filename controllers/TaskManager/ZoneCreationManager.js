@@ -2,11 +2,34 @@ import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import yj from 'yieldable-json';
 import { syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
+import Zones from '../../models/ZoneModel.js';
+import config from '../../config/ConfigLoader.js';
 
 /**
  * Zone Creation Manager for Zone Lifecycle Operations
  * Handles creating new zones with zonecfg and zoneadm
  */
+
+/**
+ * Generate the next available partition_id
+ * Finds the highest existing partition_id and increments by 1
+ * Uses a configurable starting number for HA/distributed deployments
+ * @returns {Promise<string>} Next available partition_id (zero-padded to 4 digits minimum)
+ */
+const generatePartitionId = async () => {
+  const startingId = config.get('zones.partition_id_start') || 1;
+
+  const highest = await Zones.findOne({
+    where: { partition_id: { [Zones.sequelize.Sequelize.Op.ne]: null } },
+    order: [[Zones.sequelize.literal('CAST(partition_id AS INTEGER)'), 'DESC']],
+    attributes: ['partition_id'],
+  });
+
+  const nextId = highest
+    ? Math.max(parseInt(highest.partition_id, 10) + 1, startingId)
+    : startingId;
+  return String(nextId).padStart(4, '0');
+};
 
 /**
  * Update task progress
@@ -334,16 +357,66 @@ const configureCdroms = async (zoneName, cdroms) => {
 };
 
 /**
+ * Map NIC type string to single-character code for VNIC naming
+ * Matches vagrant-zones convention: e=external, i=internal, c=carp, m=management, h=host
+ * @param {string} nicType - NIC type string
+ * @returns {string} Single character code
+ */
+const nicTypeCode = nicType => {
+  const map = { external: 'e', internal: 'i', carp: 'c', management: 'm', host: 'h' };
+  return map[nicType] || 'e';
+};
+
+/**
+ * Map VM type string to single-digit code for VNIC naming
+ * Matches vagrant-zones convention: 1=template, 2=development, 3=production, 4=firewall, 5=other
+ * @param {string} vmType - VM type string
+ * @returns {string} Single digit code
+ */
+const vmTypeCode = vmType => {
+  const map = { template: '1', development: '2', production: '3', firewall: '4', other: '5' };
+  return map[vmType] || '3';
+};
+
+/**
+ * Generate a VNIC name following the vagrant-zones naming convention
+ * Pattern: vnic{nictype}{vmtype}_{partition_id}_{nic_index}
+ * @param {Object} nic - NIC configuration
+ * @param {number} index - NIC index
+ * @param {Object} metadata - Zone creation metadata
+ * @returns {string} Generated VNIC name
+ */
+const generateVnicName = (nic, index, metadata) => {
+  const typeChar = nicTypeCode(nic.nic_type);
+  const vmChar = vmTypeCode(metadata.vm_type);
+  const partitionId = metadata.partition_id || '0000';
+  return `vnic${typeChar}${vmChar}_${partitionId}_${index}`;
+};
+
+/**
  * Configure NICs in zone
  * @param {string} zoneName - Zone name
  * @param {Array} nics - Array of NIC configurations
+ * @param {Object} metadata - Zone creation metadata (for VNIC name generation)
  */
-const configureNics = async (zoneName, nics) => {
-  const cmds = nics.map(nic => {
+const configureNics = async (zoneName, nics, metadata) => {
+  const cmds = nics.map((nic, index) => {
+    const physical = nic.physical || generateVnicName(nic, index, metadata);
+    let cmd = `add net; set physical=${physical};`;
     if (nic.global_nic) {
-      return `add net; set physical=${nic.physical}; set global-nic=${nic.global_nic}; end;`;
+      cmd += ` set global-nic=${nic.global_nic};`;
     }
-    return `add net; set physical=${nic.physical}; end;`;
+    if (nic.vlan_id) {
+      cmd += ` set vlan-id=${nic.vlan_id};`;
+    }
+    if (nic.mac_addr) {
+      cmd += ` set mac-addr=${nic.mac_addr};`;
+    }
+    if (nic.allowed_address) {
+      cmd += ` set allowed-address=${nic.allowed_address};`;
+    }
+    cmd += ` end;`;
+    return cmd;
   });
 
   if (cmds.length > 0) {
@@ -450,13 +523,107 @@ const validateZoneCreationRequest = async (metadata, zoneName) => {
 };
 
 /**
- * Install zone and create database record
- * @param {string} zoneName - Zone name
- * @param {Object} metadata - Zone metadata
- * @param {Object} task - Task object
- * @returns {Promise<void>}
+ * Resolve partition_id: validate user-provided or auto-generate
+ * @param {Object} metadata - Zone creation metadata
+ * @returns {Promise<{valid: boolean, error?: string}>}
  */
-const installAndRegisterZone = async (zoneName, metadata, task) => {
+const resolvePartitionId = async metadata => {
+  if (metadata.partition_id) {
+    const existing = await Zones.findOne({ where: { partition_id: metadata.partition_id } });
+    if (existing) {
+      return {
+        valid: false,
+        error: `Partition ID ${metadata.partition_id} is already in use by zone ${existing.name}`,
+      };
+    }
+  } else {
+    metadata.partition_id = await generatePartitionId();
+  }
+  log.task.info('Assigned partition_id', {
+    zone_name: metadata.name,
+    partition_id: metadata.partition_id,
+  });
+  return { valid: true };
+};
+
+/**
+ * Prepare storage: boot volume and optional template import
+ * @param {Object} metadata - Zone creation metadata
+ * @param {string} zoneName - Zone name
+ * @param {Array} zfsCreated - Array to track created datasets for rollback
+ * @param {Object} task - Task object for progress updates
+ * @returns {Promise<string|null>} Boot disk path or null
+ */
+const prepareStorage = async (metadata, zoneName, zfsCreated, task) => {
+  await updateTaskProgress(task, 10, { status: 'preparing_storage' });
+  let bootdiskPath = await prepareBootVolume(metadata, zoneName, zfsCreated);
+
+  if (metadata.source?.type === 'template') {
+    await updateTaskProgress(task, 30, { status: 'importing_template' });
+    const templatePath = await importTemplate(metadata, zoneName, zfsCreated);
+    if (templatePath) {
+      bootdiskPath = templatePath;
+    }
+  }
+
+  return bootdiskPath;
+};
+
+/**
+ * Apply all zone configuration: core config, bootdisk, disks, cdroms, nics, cloud-init
+ * @param {string} zoneName - Zone name
+ * @param {Object} metadata - Zone creation metadata
+ * @param {string|null} bootdiskPath - Boot disk path
+ * @param {Array} zfsCreated - Array to track created datasets for rollback
+ * @param {Object} task - Task object for progress updates
+ */
+const applyAllZoneConfig = async (zoneName, metadata, bootdiskPath, zfsCreated, task) => {
+  await updateTaskProgress(task, 40, { status: 'configuring_zone' });
+  await applyZoneConfig(zoneName, metadata);
+
+  if (bootdiskPath) {
+    await updateTaskProgress(task, 50, { status: 'configuring_bootdisk' });
+    await configureBootdisk(zoneName, bootdiskPath);
+  }
+
+  if (metadata.additional_disks?.length > 0) {
+    await updateTaskProgress(task, 60, { status: 'configuring_disks' });
+    await configureAdditionalDisks(zoneName, metadata.additional_disks, zfsCreated, metadata.force);
+  }
+
+  if (metadata.cdroms?.length > 0) {
+    await updateTaskProgress(task, 70, { status: 'configuring_cdroms' });
+    await configureCdroms(zoneName, metadata.cdroms);
+  }
+
+  if (metadata.nics?.length > 0) {
+    await updateTaskProgress(task, 75, { status: 'configuring_network' });
+    await configureNics(zoneName, metadata.nics, metadata);
+  }
+
+  if (metadata.cloud_init) {
+    await updateTaskProgress(task, 80, { status: 'configuring_cloud_init' });
+    await configureCloudInit(zoneName, metadata.cloud_init);
+  }
+};
+
+/**
+ * Sync zone to database and persist partition_id/vm_type, then install
+ * @param {string} zoneName - Zone name
+ * @param {Object} metadata - Zone creation metadata
+ * @param {Object} task - Task object for progress updates
+ */
+const finalizeAndInstallZone = async (zoneName, metadata, task) => {
+  await syncZoneToDatabase(zoneName, 'configured');
+
+  const zoneRecord = await Zones.findOne({ where: { name: zoneName } });
+  if (zoneRecord) {
+    await zoneRecord.update({
+      partition_id: metadata.partition_id,
+      vm_type: metadata.vm_type || 'production',
+    });
+  }
+
   await updateTaskProgress(task, 90, { status: 'installing_zone' });
   const installResult = await executeCommand(`pfexec zoneadm -z ${zoneName} install`, 3600 * 1000);
   if (!installResult.success) {
@@ -473,10 +640,7 @@ const installAndRegisterZone = async (zoneName, metadata, task) => {
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
 export const executeZoneCreateTask = async task => {
-  log.task.debug('Zone creation task starting', {
-    task_id: task.id,
-    zone_name: task.zone_name,
-  });
+  log.task.debug('Zone creation task starting', { task_id: task.id, zone_name: task.zone_name });
 
   const zfsCreated = [];
   let zonecfgApplied = false;
@@ -484,7 +648,6 @@ export const executeZoneCreateTask = async task => {
 
   try {
     await updateTaskProgress(task, 5, { status: 'validating' });
-
     const metadata = await parseMetadata(task.metadata);
     zoneName = metadata.name;
 
@@ -493,64 +656,26 @@ export const executeZoneCreateTask = async task => {
       return { success: false, error: validation.error };
     }
 
-    await updateTaskProgress(task, 10, { status: 'preparing_storage' });
-    let bootdiskPath = await prepareBootVolume(metadata, zoneName, zfsCreated);
-
-    if (metadata.source?.type === 'template') {
-      await updateTaskProgress(task, 30, { status: 'importing_template' });
-      const templatePath = await importTemplate(metadata, zoneName, zfsCreated);
-      if (templatePath) {
-        bootdiskPath = templatePath;
-      }
+    const partitionResult = await resolvePartitionId(metadata);
+    if (!partitionResult.valid) {
+      return { success: false, error: partitionResult.error };
     }
 
-    await updateTaskProgress(task, 40, { status: 'configuring_zone' });
-    await applyZoneConfig(zoneName, metadata);
+    const bootdiskPath = await prepareStorage(metadata, zoneName, zfsCreated, task);
+
+    await applyAllZoneConfig(zoneName, metadata, bootdiskPath, zfsCreated, task);
     zonecfgApplied = true;
 
-    if (bootdiskPath) {
-      await updateTaskProgress(task, 50, { status: 'configuring_bootdisk' });
-      await configureBootdisk(zoneName, bootdiskPath);
-    }
-
-    if (metadata.additional_disks?.length > 0) {
-      await updateTaskProgress(task, 60, { status: 'configuring_disks' });
-      await configureAdditionalDisks(
-        zoneName,
-        metadata.additional_disks,
-        zfsCreated,
-        metadata.force
-      );
-    }
-
-    if (metadata.cdroms?.length > 0) {
-      await updateTaskProgress(task, 70, { status: 'configuring_cdroms' });
-      await configureCdroms(zoneName, metadata.cdroms);
-    }
-
-    if (metadata.nics?.length > 0) {
-      await updateTaskProgress(task, 75, { status: 'configuring_network' });
-      await configureNics(zoneName, metadata.nics);
-    }
-
-    if (metadata.cloud_init) {
-      await updateTaskProgress(task, 80, { status: 'configuring_cloud_init' });
-      await configureCloudInit(zoneName, metadata.cloud_init);
-    }
-
-    // Checkpoint 1: Sync immediately so we have a DB record with ALL disks before install begins
-    await syncZoneToDatabase(zoneName, 'configured');
-
-    await installAndRegisterZone(zoneName, metadata, task);
-
+    await finalizeAndInstallZone(zoneName, metadata, task);
     await updateTaskProgress(task, 100, { status: 'completed' });
 
-    log.task.info('Zone creation completed', { zone_name: zoneName, brand: metadata.brand });
+    log.task.info('Zone creation completed', {
+      zone_name: zoneName,
+      brand: metadata.brand,
+      partition_id: metadata.partition_id,
+    });
 
-    return {
-      success: true,
-      message: `Zone ${zoneName} created successfully`,
-    };
+    return { success: true, message: `Zone ${zoneName} created successfully` };
   } catch (error) {
     log.task.error('Zone creation task exception', {
       error: error.message,
@@ -560,9 +685,6 @@ export const executeZoneCreateTask = async task => {
 
     await rollbackCreation(zoneName, zonecfgApplied, zfsCreated);
 
-    return {
-      success: false,
-      error: `Zone creation failed: ${error.message}`,
-    };
+    return { success: false, error: `Zone creation failed: ${error.message}` };
   }
 };
