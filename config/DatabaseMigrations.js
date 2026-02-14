@@ -143,7 +143,17 @@ class DatabaseMigrations {
 
       // Migration for zones table partition_id and vm_type
       if (await this.tableExists('zones')) {
-        await this.addColumnIfNotExists('zones', 'partition_id', 'VARCHAR(8) UNIQUE');
+        await this.addColumnIfNotExists('zones', 'partition_id', 'VARCHAR(8)');
+        // SQLite doesn't support UNIQUE in ALTER TABLE ADD COLUMN, so create index separately
+        try {
+          await db.query(
+            'CREATE UNIQUE INDEX IF NOT EXISTS zones_partition_id ON zones(partition_id)'
+          );
+        } catch (indexError) {
+          log.database.warn('Failed to create partition_id unique index (may already exist)', {
+            error: indexError.message,
+          });
+        }
         await this.addColumnIfNotExists('zones', 'vm_type', "VARCHAR(255) DEFAULT 'production'");
       }
 

@@ -188,7 +188,15 @@ const importTemplate = async (metadata, zoneName, zfsCreated) => {
   const pool = metadata.boot_volume?.pool || 'rpool';
   const dataset = metadata.boot_volume?.dataset || 'zones';
   const volumeName = metadata.boot_volume?.volume_name || 'root';
-  const targetDataset = `${pool}/${dataset}/${zoneName}/${volumeName}`;
+  const parentDataset = `${pool}/${dataset}/${zoneName}`;
+  const targetDataset = `${parentDataset}/${volumeName}`;
+
+  // Create parent dataset for the zone
+  const parentResult = await executeCommand(`pfexec zfs create -p ${parentDataset}`);
+  if (!parentResult.success) {
+    throw new Error(`Failed to create parent dataset: ${parentResult.error}`);
+  }
+  zfsCreated.push(parentDataset);
 
   if (clone_strategy === 'copy') {
     const sendRecvResult = await executeCommand(
