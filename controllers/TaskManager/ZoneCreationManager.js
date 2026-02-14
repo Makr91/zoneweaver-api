@@ -704,6 +704,13 @@ const finalizeAndInstallZone = async (zoneName, metadata, task) => {
     throw new Error(`Zone installation failed: ${installResult.error}`);
   }
 
+  // Fix zonepath permissions for service user (zoneapi) access to provisioning datasets
+  const pool = metadata.boot_volume?.pool || 'rpool';
+  const dataset = metadata.boot_volume?.dataset || 'zones';
+  const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
+  const zonepath = metadata.zonepath || `/${datasetPath}`;
+  await executeCommand(`pfexec chmod 755 ${zonepath}`);
+
   await updateTaskProgress(task, 97, { status: 'creating_database_record' });
   await syncZoneToDatabase(zoneName, 'installed');
 };

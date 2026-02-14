@@ -545,6 +545,14 @@ export const executeZoneProvisioningExtractTask = async task => {
       };
     }
 
+    // Fix ownership and permissions for service user (zoneapi)
+    await executeCommand(`pfexec chown -R zoneapi:other ${dataset_path}`);
+
+    // Fix SSH private key permissions (600 for security)
+    await executeCommand(
+      `pfexec find ${dataset_path} -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ecdsa' -o -name 'id_ed25519' \\) -exec chmod 600 {} +`
+    );
+
     // Create snapshot
     await executeCommand(`pfexec zfs snapshot ${zfsDataset}@pre-provision`);
 
