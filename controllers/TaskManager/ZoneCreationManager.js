@@ -567,9 +567,10 @@ const validateZoneCreationRequest = async (metadata, zoneName) => {
 /**
  * Resolve partition_id: validate user-provided or auto-generate
  * @param {Object} metadata - Zone creation metadata
+ * @param {string} baseName - Base zone name (without partition prefix)
  * @returns {Promise<{valid: boolean, error?: string}>}
  */
-const resolvePartitionId = async metadata => {
+const resolvePartitionId = async (metadata, baseName) => {
   if (metadata.partition_id) {
     const existing = await Zones.findOne({ where: { partition_id: metadata.partition_id } });
     if (existing) {
@@ -579,10 +580,35 @@ const resolvePartitionId = async metadata => {
       };
     }
   } else {
-    metadata.partition_id = await generatePartitionId();
+    // Check if a zone with this base name exists but was deleted from system
+    // Reuse its partition_id if it's orphaned
+    const zonesConfig = config.getZones();
+    if (zonesConfig.prefix_zone_names) {
+      const pattern = `%--${baseName}`;
+      const orphanedZone = await Zones.findOne({
+        where: {
+          name: { [Zones.sequelize.Sequelize.Op.like]: pattern },
+          is_orphaned: true,
+        },
+        order: [['partition_id', 'ASC']],
+      });
+
+      if (orphanedZone && orphanedZone.partition_id) {
+        metadata.partition_id = orphanedZone.partition_id;
+        log.task.info('Reusing partition_id from orphaned zone', {
+          base_name: baseName,
+          partition_id: metadata.partition_id,
+          orphaned_zone: orphanedZone.name,
+        });
+      } else {
+        metadata.partition_id = await generatePartitionId();
+      }
+    } else {
+      metadata.partition_id = await generatePartitionId();
+    }
   }
   log.task.info('Assigned partition_id', {
-    zone_name: metadata.name,
+    zone_name: baseName,
     partition_id: metadata.partition_id,
   });
   return { valid: true };
@@ -699,7 +725,7 @@ export const executeZoneCreateTask = async task => {
     const metadata = await parseMetadata(task.metadata);
     const baseName = metadata.name;
 
-    const partitionResult = await resolvePartitionId(metadata);
+    const partitionResult = await resolvePartitionId(metadata, baseName);
     if (!partitionResult.valid) {
       return { success: false, error: partitionResult.error };
     }

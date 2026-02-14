@@ -259,13 +259,27 @@ export const executeZoneWaitSSHTask = async task => {
     const timeout = (sshConfig.timeout_seconds || 300) * 1000;
     const interval = (sshConfig.poll_interval_seconds || 10) * 1000;
 
+    // Get provisioning dataset path for relative SSH key resolution
+    const zone = await Zones.findOne({ where: { name: zone_name } });
+    let provisioningBasePath = null;
+    if (zone?.configuration) {
+      const zoneConfig =
+        typeof zone.configuration === 'string'
+          ? JSON.parse(zone.configuration)
+          : zone.configuration;
+      if (zoneConfig.zonepath) {
+        provisioningBasePath = `${zoneConfig.zonepath}/provisioning`;
+      }
+    }
+
     const result = await waitForSSH(
       ip,
       credentials.username || 'root',
       credentials,
       port,
       timeout,
-      interval
+      interval,
+      provisioningBasePath
     );
 
     if (result.success) {
