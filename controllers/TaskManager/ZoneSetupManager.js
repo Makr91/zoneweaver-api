@@ -8,6 +8,8 @@ import { log } from '../../lib/Logger.js';
 import ZloginAutomation from '../../lib/ZloginAutomation.js';
 import Recipes from '../../models/RecipeModel.js';
 import Zones from '../../models/ZoneModel.js';
+import NetworkInterfaces from '../../models/NetworkInterfaceModel.js';
+import NetworkCollector from '../../controllers/NetworkCollectorController/index.js';
 import yj from 'yieldable-json';
 import { getZoneConfig } from '../../lib/ZoneConfigUtils.js';
 
@@ -49,40 +51,84 @@ export const executeZoneSetupTask = async task => {
       return { success: false, error: `Zone '${zone_name}' not found` };
     }
 
-    // Generate vnic_name if not provided in variables
-    if (!variables.vnic_name && zone.partition_id) {
-      const zoneConfig = await getZoneConfig(zone_name);
-      const nics = zoneConfig?.net || [];
+    // Get zone configuration to enumerate all NICs
+    const zoneConfig = await getZoneConfig(zone_name);
+    const nics = zoneConfig?.net || [];
 
-      // Use first provisioning NIC (the one with MAC matching provisioning config)
-      const provisioningNic = nics.find(
-        nic => nic.mac?.toLowerCase() === variables.mac?.toLowerCase()
-      );
-      const nicIndex = provisioningNic ? nics.indexOf(provisioningNic) : 0;
+    // NIC type and VM type mapping (vagrant-zones convention)
+    const nicTypeMap = { external: 'e', internal: 'i', carp: 'c', management: 'm', host: 'h' };
+    const vmTypeMap = {
+      template: '1',
+      development: '2',
+      production: '3',
+      firewall: '4',
+      other: '5',
+    };
 
-      // Generate vnic name: vnic{nictype}{vmtype}_{partition_id}_{nic_index}
-      const nicTypeMap = { external: 'e', internal: 'i', carp: 'c', management: 'm', host: 'h' };
-      const vmTypeMap = {
-        template: '1',
-        development: '2',
-        production: '3',
-        firewall: '4',
-        other: '5',
-      };
-      const nicType = nicTypeMap[variables.nic_type] || 'e';
+    // Generate vnic_name for ALL NICs (deterministic from zone config)
+    const nicData = nics.map((nic, index) => {
+      // Determine nic_type from global-nic
+      let nic_type = 'external'; // Default
+      if (nic['global-nic']?.includes('estub')) {
+        nic_type = 'internal';
+      }
+
+      const nicType = nicTypeMap[nic_type];
       const vmType = vmTypeMap[zone.vm_type] || '3';
       const partitionId = zone.partition_id.padStart(4, '0');
+      const vnic_name = `vnic${nicType}${vmType}_${partitionId}_${index}`;
 
-      variables.vnic_name = `vnic${nicType}${vmType}_${partitionId}_${nicIndex}`;
+      return {
+        index,
+        vnic_name,
+        nic_type,
+        global_nic: nic['global-nic'],
+        vlan_id: nic['vlan-id'],
+        physical: nic.physical,
+      };
+    });
 
-      log.task.info('Generated vnic_name for provisioning', {
-        zone_name,
-        vnic_name: variables.vnic_name,
-        partition_id: zone.partition_id,
-        vm_type: zone.vm_type,
-        nic_index: nicIndex,
-      });
+    // Trigger network scan to populate NetworkInterfaces table with current VNICs and MACs
+    const networkCollector = new NetworkCollector();
+    await networkCollector.collectNetworkConfig();
+
+    // Query database for ALL VNICs belonging to this zone
+    const vnicRecords = await NetworkInterfaces.findAll({
+      where: { zone: zone_name },
+      order: [['scan_timestamp', 'DESC']],
+    });
+
+    // Match MACs from database to our nicData by vnic_name
+    nicData.forEach(nic => {
+      const vnicRecord = vnicRecords.find(v => v.link === nic.vnic_name);
+      nic.mac = vnicRecord?.macaddress || null;
+    });
+
+    // Build indexed variables for all NICs (for recipe to use)
+    nicData.forEach(nic => {
+      const prefix = `nic_${nic.index}_`;
+      variables[`${prefix}vnic_name`] = nic.vnic_name;
+      variables[`${prefix}mac`] = nic.mac;
+      variables[`${prefix}nic_type`] = nic.nic_type;
+      variables[`${prefix}global_nic`] = nic.global_nic;
+      if (nic.vlan_id) {
+        variables[`${prefix}vlan_id`] = nic.vlan_id;
+      }
+    });
+
+    // Backward compatibility: also set vnic_name and mac for first/provisioning NIC
+    if (nicData.length > 0 && !variables.vnic_name) {
+      variables.vnic_name = nicData[0].vnic_name;
     }
+    if (nicData.length > 0 && !variables.mac) {
+      variables.mac = nicData[0].mac;
+    }
+
+    log.task.info('Auto-populated network variables for all NICs', {
+      zone_name,
+      nic_count: nicData.length,
+      nics: nicData.map(n => ({ vnic_name: n.vnic_name, mac: n.mac })),
+    });
 
     log.task.info('Starting zlogin automation', {
       zone_name,
