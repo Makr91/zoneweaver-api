@@ -114,6 +114,37 @@ const buildAttrCommand = (name, value) =>
   `add attr; set name=${name}; set value=\\"${value}\\"; set type=string; end;`;
 
 /**
+ * Build zone name with partition_id prefix if enabled
+ * @param {string} baseName - User-provided zone name
+ * @param {string} partitionId - Partition ID
+ * @returns {string} Full zone name
+ */
+const buildZoneName = (baseName, partitionId) => {
+  const zonesConfig = config.getZones();
+  if (zonesConfig.prefix_zone_names && partitionId) {
+    const paddedId = partitionId.padStart(4, '0');
+    return `${paddedId}--${baseName}`;
+  }
+  return baseName;
+};
+
+/**
+ * Build dataset path with partition_id prefix if enabled
+ * @param {string} basePath - Base dataset path
+ * @param {string} zoneName - Zone name (may already include partition prefix)
+ * @param {string} partitionId - Partition ID
+ * @returns {string} Full dataset path
+ */
+const buildDatasetPath = (basePath, zoneName, partitionId) => {
+  const zonesConfig = config.getZones();
+  if (zonesConfig.prefix_datasets && partitionId && !zoneName.startsWith(partitionId)) {
+    const paddedId = partitionId.padStart(4, '0');
+    return `${basePath}/${paddedId}--${zoneName}`;
+  }
+  return `${basePath}/${zoneName}`;
+};
+
+/**
  * Prepare ZFS boot volume
  * @param {Object} metadata - Zone creation metadata
  * @param {string} zoneName - Zone name
@@ -131,7 +162,7 @@ const prepareBootVolume = async (metadata, zoneName, zfsCreated) => {
     const dataset = boot_volume.dataset || 'zones';
     const volumeName = boot_volume.volume_name || 'root';
     const size = boot_volume.size || '30G';
-    const rootDataset = `${pool}/${dataset}/${zoneName}`;
+    const rootDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
     const bootdiskPath = `${rootDataset}/${volumeName}`;
 
     const parentResult = await executeCommand(`pfexec zfs create -p ${rootDataset}`);
@@ -188,7 +219,7 @@ const importTemplate = async (metadata, zoneName, zfsCreated) => {
   const pool = metadata.boot_volume?.pool || 'rpool';
   const dataset = metadata.boot_volume?.dataset || 'zones';
   const volumeName = metadata.boot_volume?.volume_name || 'root';
-  const parentDataset = `${pool}/${dataset}/${zoneName}`;
+  const parentDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
   const targetDataset = `${parentDataset}/${volumeName}`;
 
   // Create parent dataset for the zone
@@ -228,7 +259,8 @@ const importTemplate = async (metadata, zoneName, zfsCreated) => {
 const applyZoneConfig = async (zoneName, metadata) => {
   const pool = metadata.boot_volume?.pool || 'rpool';
   const dataset = metadata.boot_volume?.dataset || 'zones';
-  const zonepath = metadata.zonepath || `/${pool}/${dataset}/${zoneName}`;
+  const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
+  const zonepath = metadata.zonepath || `/${datasetPath}`;
   const autoboot = metadata.autoboot === true ? 'true' : 'false';
 
   const createResult = await executeCommand(
@@ -284,8 +316,9 @@ const configureBootdisk = async (zoneName, bootdiskPath) => {
  * @param {Array} disks - Array of disk configurations
  * @param {Array} zfsCreated - Array to track created datasets for rollback
  * @param {boolean} force - Whether to force attach in-use datasets
+ * @param {Object} metadata - Zone creation metadata (for partition_id)
  */
-const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force) => {
+const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force, metadata) => {
   const zfsPromises = [];
   const zonecfgCmds = [];
 
@@ -298,7 +331,8 @@ const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force) => {
       const dset = disk.dataset || 'zones';
       const volName = disk.volume_name || `disk${i}`;
       const size = disk.size || '50G';
-      diskPath = `${pool}/${dset}/${zoneName}/${volName}`;
+      const datasetPath = buildDatasetPath(`${pool}/${dset}`, zoneName, metadata.partition_id);
+      diskPath = `${datasetPath}/${volName}`;
 
       const sparseFlag = disk.sparse !== false ? '-s' : '';
       zfsPromises.push(
@@ -596,7 +630,13 @@ const applyAllZoneConfig = async (zoneName, metadata, bootdiskPath, zfsCreated, 
 
   if (metadata.additional_disks?.length > 0) {
     await updateTaskProgress(task, 60, { status: 'configuring_disks' });
-    await configureAdditionalDisks(zoneName, metadata.additional_disks, zfsCreated, metadata.force);
+    await configureAdditionalDisks(
+      zoneName,
+      metadata.additional_disks,
+      zfsCreated,
+      metadata.force,
+      metadata
+    );
   }
 
   if (metadata.cdroms?.length > 0) {
@@ -657,16 +697,19 @@ export const executeZoneCreateTask = async task => {
   try {
     await updateTaskProgress(task, 5, { status: 'validating' });
     const metadata = await parseMetadata(task.metadata);
-    zoneName = metadata.name;
-
-    const validation = await validateZoneCreationRequest(metadata, zoneName);
-    if (!validation.valid) {
-      return { success: false, error: validation.error };
-    }
+    const baseName = metadata.name;
 
     const partitionResult = await resolvePartitionId(metadata);
     if (!partitionResult.valid) {
       return { success: false, error: partitionResult.error };
+    }
+
+    // Build final zone name with partition_id prefix if enabled
+    zoneName = buildZoneName(baseName, metadata.partition_id);
+
+    const validation = await validateZoneCreationRequest(metadata, zoneName);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
     }
 
     const bootdiskPath = await prepareStorage(metadata, zoneName, zfsCreated, task);

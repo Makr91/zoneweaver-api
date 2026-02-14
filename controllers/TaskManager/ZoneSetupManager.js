@@ -7,7 +7,9 @@
 import { log } from '../../lib/Logger.js';
 import ZloginAutomation from '../../lib/ZloginAutomation.js';
 import Recipes from '../../models/RecipeModel.js';
+import Zones from '../../models/ZoneModel.js';
 import yj from 'yieldable-json';
+import { getZoneConfig } from '../../lib/ZoneConfigUtils.js';
 
 /**
  * Execute zone setup task (zlogin recipe execution)
@@ -39,6 +41,47 @@ export const executeZoneSetupTask = async task => {
     const recipe = await Recipes.findByPk(recipe_id);
     if (!recipe) {
       return { success: false, error: `Recipe '${recipe_id}' not found` };
+    }
+
+    // Fetch zone to get partition_id and vm_type for vnic naming
+    const zone = await Zones.findOne({ where: { name: zone_name } });
+    if (!zone) {
+      return { success: false, error: `Zone '${zone_name}' not found` };
+    }
+
+    // Generate vnic_name if not provided in variables
+    if (!variables.vnic_name && zone.partition_id) {
+      const zoneConfig = await getZoneConfig(zone_name);
+      const nics = zoneConfig?.net || [];
+
+      // Use first provisioning NIC (the one with MAC matching provisioning config)
+      const provisioningNic = nics.find(
+        nic => nic.mac?.toLowerCase() === variables.mac?.toLowerCase()
+      );
+      const nicIndex = provisioningNic ? nics.indexOf(provisioningNic) : 0;
+
+      // Generate vnic name: vnic{nictype}{vmtype}_{partition_id}_{nic_index}
+      const nicTypeMap = { external: 'e', internal: 'i', carp: 'c', management: 'm', host: 'h' };
+      const vmTypeMap = {
+        template: '1',
+        development: '2',
+        production: '3',
+        firewall: '4',
+        other: '5',
+      };
+      const nicType = nicTypeMap[variables.nic_type] || 'e';
+      const vmType = vmTypeMap[zone.vm_type] || '3';
+      const partitionId = zone.partition_id.padStart(4, '0');
+
+      variables.vnic_name = `vnic${nicType}${vmType}_${partitionId}_${nicIndex}`;
+
+      log.task.info('Generated vnic_name for provisioning', {
+        zone_name,
+        vnic_name: variables.vnic_name,
+        partition_id: zone.partition_id,
+        vm_type: zone.vm_type,
+        nic_index: nicIndex,
+      });
     }
 
     log.task.info('Starting zlogin automation', {

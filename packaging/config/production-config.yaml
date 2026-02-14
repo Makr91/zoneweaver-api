@@ -54,6 +54,8 @@ zones:
   orphan_retention: 7
   default_pagination_limit: 50
   partition_id_start: 1              # Starting partition_id for auto-generation (set per-host for HA/distributed)
+  prefix_zone_names: true            # Prefix zone names with partition_id (e.g., "0001--my-zone")
+  prefix_datasets: true              # Prefix dataset paths with partition_id (e.g., "rpool/zones/0001--my-zone")
   orchestration:
     enabled: false                        # Enable zone orchestration by default
     take_control_on_startup: false        # Auto-disable zones service on API startup

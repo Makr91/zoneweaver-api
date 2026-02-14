@@ -48,7 +48,7 @@ const defaultRecipes = [
         dest: '/etc/netplan/{{vnic_name}}.yaml',
         method: 'heredoc',
         content:
-          'network:\n  version: 2\n  ethernets:\n    {{vnic_name}}:\n      match:\n        macaddress: "{{mac}}"\n      addresses: [{{ip}}/{{prefix}}]\n      routes:\n        - to: default\n          via: {{gateway}}\n      nameservers:\n        addresses: [{{dns}}]',
+          'network:\n  version: 2\n  ethernets:\n    {{vnic_name}}:\n      match:\n        macaddress: "{{mac}}"\n      set-name: {{vnic_name}}\n      addresses: [{{ip}}/{{prefix}}]\n      routes:\n        - to: default\n          via: {{gateway}}\n      nameservers:\n        addresses: [{{dns}}]',
       },
       { type: 'command', value: 'chmod 600 /etc/netplan/{{vnic_name}}.yaml' },
       { type: 'command', value: 'netplan apply' },
