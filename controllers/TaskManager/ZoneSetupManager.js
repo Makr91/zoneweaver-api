@@ -116,14 +116,6 @@ export const executeZoneSetupTask = async task => {
       }
     });
 
-    // Backward compatibility: also set vnic_name and mac for first/provisioning NIC
-    if (nicData.length > 0 && !variables.vnic_name) {
-      variables.vnic_name = nicData[0].vnic_name;
-    }
-    if (nicData.length > 0 && !variables.mac) {
-      variables.mac = nicData[0].mac;
-    }
-
     log.task.info('Auto-populated network variables for all NICs', {
       zone_name,
       nic_count: nicData.length,
