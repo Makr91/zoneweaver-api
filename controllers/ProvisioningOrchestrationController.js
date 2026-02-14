@@ -155,12 +155,19 @@ const buildProvisioningTaskChain = async params => {
 
   // Step 2: Run zlogin recipe
   if (recipeId && !skipRecipe) {
+    // Merge credentials into variables for recipe execution
+    const recipeVariables = {
+      ...(provisioning.variables || {}),
+      username: provisioning.credentials?.username,
+      password: provisioning.credentials?.password,
+    };
+
     const setupTask = await createTask({
       zone_name: zoneName,
       operation: 'zone_setup',
       metadata: {
         recipe_id: recipeId,
-        variables: provisioning.variables || {},
+        variables: recipeVariables,
       },
       depends_on: previousTaskId,
       parent_task_id: parentTaskId,
