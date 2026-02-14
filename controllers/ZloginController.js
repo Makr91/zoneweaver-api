@@ -1,21 +1,15 @@
-import os from 'os';
-import pty from 'node-pty';
 import ZloginSessions from '../models/ZloginSessionModel.js';
 import Zones from '../models/ZoneModel.js';
 import fs from 'fs';
 import { spawn } from 'child_process';
 import { log } from '../lib/Logger.js';
+import { ptyManager } from '../lib/ZloginPtyManager.js';
 
 /**
  * @fileoverview Zlogin Session Controller for Zoneweaver API
  * @description Manages the lifecycle of zlogin pseudo-terminal sessions for zones.
+ *              Uses shared PTY manager for multiplexing between automation and WebSocket clients.
  */
-
-/**
- * In-memory store for active pty processes.
- * @type {Map<string, import('node-pty').IPty>}
- */
-const activePtyProcesses = new Map();
 
 class ZloginSessionManager {
   constructor() {
@@ -221,125 +215,43 @@ export const startZloginSessionCleanup = () => {
 };
 
 /**
- * Test if zlogin session is healthy by checking PTY process and WebSocket connectivity
- * @param {string} sessionId - The zlogin session ID
- * @returns {Promise<boolean>} True if session is healthy
+ * Create or reuse a zlogin session for a zone
+ * @param {string} zoneName - The name of the zone to connect to
+ * @returns {Promise<import('../models/ZloginSessionModel.js').default>} Session record
  */
-const testZloginSessionHealth = sessionId => {
-  try {
-    // Check if PTY process exists in memory
-    const ptyProcess = activePtyProcesses.get(sessionId);
-    if (!ptyProcess) {
-      return false;
-    }
+const createOrReuseZloginSession = async zoneName => {
+  // Check for existing session by zone name (unique constraint)
+  const existingSession = await ZloginSessions.findOne({
+    where: { zone_name: zoneName, status: 'active' },
+  });
 
-    // Check if process ID still exists and is not killed
-    if (!ptyProcess.pid || ptyProcess.killed) {
-      return false;
-    }
-
-    // Verify process is actually running using system check
-    try {
-      process.kill(ptyProcess.pid, 0); // Signal 0 checks if process exists
-      return true;
-    } catch {
-      // Process doesn't exist
-      activePtyProcesses.delete(sessionId);
-      return false;
-    }
-  } catch (error) {
-    log.websocket.error('Error checking zlogin session health', {
-      session_id: sessionId,
-      error: error.message,
+  if (existingSession && ptyManager.isAlive(zoneName)) {
+    log.websocket.info('Reusing existing zlogin session', {
+      zone_name: zoneName,
+      session_id: existingSession.id,
     });
-    return false;
+    await existingSession.update({ last_accessed: new Date() });
+    return existingSession;
   }
-};
 
-/**
- * Spawns a new pty process for a zlogin session.
- * @param {string} zoneName - The name of the zone to connect to.
- * @returns {{session: import('../models/ZloginSessionModel.js').default, ptyProcess: import('node-pty').IPty}}
- */
-const spawnZloginProcess = async zoneName => {
-  log.websocket.info('[ZLOGIN-SPAWN] Starting PTY spawn process', {
-    zone_name: zoneName,
-  });
+  // Get or create shared PTY
+  const ptySession = ptyManager.getOrCreate(zoneName);
 
-  const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
-  const command = `pfexec zlogin -C ${zoneName}`;
-
-  log.websocket.debug('[ZLOGIN-SPAWN] Shell and command details', {
-    shell,
-    command,
-    pty_options: 'name=xterm-color, cols=80, rows=30',
-  });
-
-  const ptyProcess = pty.spawn(shell, ['-c', command], {
-    name: 'xterm-color',
-    cols: 80,
-    rows: 30,
-    env: process.env,
-  });
-
-  log.websocket.info('[ZLOGIN-SPAWN] PTY process created', {
-    pid: ptyProcess.pid,
-    writable: ptyProcess.writable,
-  });
-
+  // Create DB session record
   const session = await ZloginSessions.create({
     zone_name: zoneName,
-    pid: ptyProcess.pid,
+    pid: ptySession.pid,
     status: 'active',
+    automation_active: ptySession.automationActive,
   });
 
-  log.websocket.info('[ZLOGIN-SPAWN] Database session created', {
+  log.websocket.info('Created new zlogin session', {
+    zone_name: zoneName,
     session_id: session.id,
     pid: session.pid,
-    status: session.status,
   });
 
-  activePtyProcesses.set(session.id, ptyProcess);
-  log.websocket.debug('[ZLOGIN-SPAWN] PTY process stored in activePtyProcesses map', {
-    session_id: session.id,
-    total_active_processes: activePtyProcesses.size,
-  });
-
-  ptyProcess.on('exit', (code, signal) => {
-    log.websocket.info('[ZLOGIN-SPAWN] Zlogin session exited', {
-      session_id: session.id,
-      zone_name: zoneName,
-      exit_code: code,
-      signal,
-    });
-    activePtyProcesses.delete(session.id);
-    session.update({ status: 'closed' });
-    log.websocket.debug('[ZLOGIN-SPAWN] Cleanup completed', {
-      session_id: session.id,
-    });
-  });
-
-  ptyProcess.on('data', data => {
-    log.websocket.debug('[ZLOGIN-SPAWN] Zlogin session data', {
-      session_id: session.id,
-      zone_name: zoneName,
-      data_length: data.length,
-      data_preview: data.substring(0, 200) + (data.length > 200 ? '...' : ''),
-    });
-  });
-
-  ptyProcess.on('error', error => {
-    log.websocket.error('[ZLOGIN-SPAWN] PTY process error', {
-      session_id: session.id,
-      error: error.message,
-      stack: error.stack,
-    });
-  });
-
-  log.websocket.info('[ZLOGIN-SPAWN] PTY process setup completed', {
-    session_id: session.id,
-  });
-  return { session, ptyProcess };
+  return session;
 };
 
 /**
@@ -383,10 +295,6 @@ export const startZloginSession = async (req, res) => {
       return res.status(404).json({ error: 'Zone not found' });
     }
 
-    log.websocket.debug('Zone found', {
-      zone_name: zoneName,
-      status: zone.status,
-    });
     if (zone.status !== 'running') {
       log.websocket.warn('Zone not running', {
         zone_name: zoneName,
@@ -395,79 +303,22 @@ export const startZloginSession = async (req, res) => {
       return res.status(400).json({ error: 'Zone is not running' });
     }
 
-    // CHECK FOR EXISTING HEALTHY SESSION FIRST (PERFORMANCE OPTIMIZATION)
-    log.websocket.debug('Checking for existing healthy session', {
+    // Create or reuse session (ptyManager handles PTY lifecycle)
+    const session = await createOrReuseZloginSession(zoneName);
+
+    // Get automation state from ptyManager
+    const automationActive = ptyManager.isAutomationActive(zoneName);
+
+    log.websocket.info('Session ready', {
       zone_name: zoneName,
-    });
-    const existingSession = await ZloginSessions.findOne({
-      where: {
-        zone_name: zoneName,
-        status: 'active',
-      },
-    });
-
-    if (existingSession) {
-      log.websocket.debug('Found existing session', {
-        zone_name: zoneName,
-        session_id: existingSession.id,
-        pid: existingSession.pid,
-      });
-
-      // Test if the session is healthy before killing it
-      log.websocket.debug('Testing zlogin session health', {
-        session_id: existingSession.id,
-      });
-      const isHealthy = await testZloginSessionHealth(existingSession.id);
-
-      if (isHealthy) {
-        log.websocket.info('HEALTHY SESSION FOUND: Reusing existing zlogin session', {
-          zone_name: zoneName,
-        });
-
-        // Update database last_accessed time for healthy session
-        try {
-          await existingSession.update({
-            updated_at: new Date(),
-          });
-        } catch (dbError) {
-          log.websocket.warn('Failed to update database', {
-            zone_name: zoneName,
-            error: dbError.message,
-          });
-        }
-
-        // Return existing healthy session immediately - NO SESSION KILLING!
-        return res.json({
-          ...existingSession.toJSON(),
-          reused_session: true,
-          message: 'Healthy zlogin session reused - instant access!',
-        });
-      }
-      log.websocket.info('UNHEALTHY SESSION DETECTED: Session exists but not responding', {
-        zone_name: zoneName,
-      });
-    } else {
-      log.websocket.debug('No existing session found, will create new one', {
-        zone_name: zoneName,
-      });
-    }
-
-    // ONLY CLEAN UP IF SESSION IS UNHEALTHY OR MISSING
-    log.websocket.debug('Cleaning up unhealthy/missing sessions', {
-      zone_name: zoneName,
-    });
-    await sessionManager.cleanupStaleZloginProcesses(zoneName);
-
-    log.websocket.info('Creating new zlogin session', {
-      zone_name: zoneName,
-    });
-    const { session } = await spawnZloginProcess(zoneName);
-
-    log.websocket.info('Session created successfully', {
       session_id: session.id,
-      status: session.status,
+      automation_active: automationActive,
     });
-    return res.json(session);
+
+    return res.json({
+      ...session.toJSON(),
+      automation_active: automationActive,
+    });
   } catch (error) {
     log.websocket.error('Error starting zlogin session', {
       error: error.message,
@@ -547,25 +398,33 @@ export const getZloginSessionInfo = async (req, res) => {
 export const stopZloginSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const ptyProcess = activePtyProcesses.get(sessionId);
-
-    if (ptyProcess) {
-      ptyProcess.kill();
-      activePtyProcesses.delete(sessionId);
-    }
-
     const session = await ZloginSessions.findByPk(sessionId);
-    if (session) {
-      await session.update({ status: 'closed' });
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
     }
 
-    res.json({ success: true, message: 'Zlogin session stopped.' });
+    const { zone_name } = session;
+
+    // User wants to stop - kill the PTY (gives user full control)
+    // This will also fail any active automation, but that's the user's choice
+    await ptyManager.destroy(zone_name);
+
+    // Update DB session
+    await session.update({ status: 'closed' });
+
+    log.websocket.info('Zlogin session stopped', {
+      session_id: sessionId,
+      zone_name,
+    });
+
+    return res.json({ success: true, message: 'Zlogin session stopped.' });
   } catch (error) {
     log.websocket.error('Error stopping zlogin session', {
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ error: 'Failed to stop zlogin session' });
+    return res.status(500).json({ error: 'Failed to stop zlogin session' });
   }
 };
 
@@ -604,148 +463,117 @@ export const listZloginSessions = async (req, res) => {
 };
 
 /**
- * Retrieves an active pty process by session ID.
- * @param {string} sessionId - The UUID of the zlogin session.
- * @returns {import('node-pty').IPty | undefined} The pty process or undefined if not found.
- */
-export const getZloginPtyProcess = sessionId => activePtyProcesses.get(sessionId);
-
-/**
  * Handles a new WebSocket connection for an existing zlogin session.
  * @param {import('ws').WebSocket} ws - The WebSocket connection object.
  * @param {string} sessionId - The ID of the zlogin session.
  */
-export const handleZloginConnection = (ws, sessionId) => {
-  let stateName = 'OTHER';
-  if (ws.readyState === ws.OPEN) {
-    stateName = 'OPEN';
-  } else if (ws.readyState === ws.CONNECTING) {
-    stateName = 'CONNECTING';
-  }
-
-  log.websocket.debug('[ZLOGIN-WS] handleZloginConnection called', {
-    session_id: sessionId,
-    websocket_state: ws.readyState,
-    state_name: stateName,
-  });
-
-  const ptyProcess = getZloginPtyProcess(sessionId);
-  log.websocket.debug('[ZLOGIN-WS] PTY process lookup', {
-    session_id: sessionId,
-    found: !!ptyProcess,
-  });
-
-  if (ptyProcess) {
-    log.websocket.debug('[ZLOGIN-WS] PTY process details', {
-      pid: ptyProcess.pid,
-      writable: ptyProcess.writable,
-      killed: ptyProcess.killed,
-    });
-  }
-
-  if (!ptyProcess) {
-    log.websocket.error('[ZLOGIN-WS] Zlogin session not found', {
-      session_id: sessionId,
-      available_sessions: Array.from(activePtyProcesses.keys()),
-    });
-    try {
+export const handleZloginConnection = async (ws, sessionId) => {
+  try {
+    // Get session and zone name
+    const session = await ZloginSessions.findByPk(sessionId);
+    if (!session) {
       ws.send('Zlogin session not found.\r\n');
       ws.close();
-    } catch (error) {
-      log.websocket.error('[ZLOGIN-WS] Error closing WebSocket', {
-        error: error.message,
-      });
+      return;
     }
-    return;
-  }
 
-  log.websocket.info('[ZLOGIN-WS] WebSocket connected to zlogin session', {
-    session_id: sessionId,
-  });
+    const { zone_name } = session;
 
-  const onPtyData = data => {
-    try {
-      log.websocket.debug('[ZLOGIN-WS] PTY data received', {
-        session_id: sessionId,
-        data_length: data.length,
-        data_preview: data.substring(0, 100) + (data.length > 100 ? '...' : ''),
-      });
+    // Check if PTY exists
+    if (!ptyManager.isAlive(zone_name)) {
+      ws.send('Zlogin PTY not available.\r\n');
+      ws.close();
+      return;
+    }
+
+    log.websocket.info('[ZLOGIN-WS] WebSocket connected to zlogin session', {
+      session_id: sessionId,
+      zone_name,
+    });
+
+    // Send reconnection context (last 50 lines from buffer)
+    if (session.session_buffer) {
+      const bufferLines = session.session_buffer.split('\n');
+      const contextLines = bufferLines.slice(-50);
+      if (contextLines.length > 0) {
+        ws.send('\r\n=== Session Reconnected - Last 50 lines ===\r\n');
+        ws.send(contextLines.join('\r\n'));
+        ws.send('\r\n=== Live Console ===\r\n');
+      }
+    }
+
+    // Send automation state
+    const automationActive = ptyManager.isAutomationActive(zone_name);
+    if (automationActive) {
+      ws.send('\r\n[⚠️  Automation is active on this console]\r\n\r\n');
+    }
+
+    // Update session access time
+    await session.update({ last_accessed: new Date(), last_activity: new Date() });
+
+    // Subscribe to PTY output
+    const unsubscribe = ptyManager.subscribe(zone_name, async data => {
       if (ws.readyState === ws.OPEN) {
         ws.send(data);
-        log.websocket.debug('[ZLOGIN-WS] Data sent to WebSocket successfully');
-      } else {
-        log.websocket.warn('[ZLOGIN-WS] Cannot send data - WebSocket not open', {
-          websocket_state: ws.readyState,
-        });
+
+        // Append to session buffer (keep last 1000 lines)
+        try {
+          const currentBuffer = session.session_buffer || '';
+          const newBuffer = (currentBuffer + data).split('\n').slice(-1000).join('\n');
+          await session.update({ session_buffer: newBuffer, last_activity: new Date() });
+        } catch (error) {
+          log.websocket.error('Error updating session buffer', {
+            session_id: sessionId,
+            error: error.message,
+          });
+        }
       }
-    } catch (error) {
-      log.websocket.error('[ZLOGIN-WS] Error sending data to WebSocket', {
-        session_id: sessionId,
-        error: error.message,
-      });
-    }
-  };
-
-  log.websocket.debug('[ZLOGIN-WS] Setting up PTY data listener', {
-    session_id: sessionId,
-  });
-  ptyProcess.on('data', onPtyData);
-
-  ws.on('message', command => {
-    try {
-      log.websocket.debug('[ZLOGIN-WS] WebSocket message received', {
-        session_id: sessionId,
-        command_length: command.length,
-        command_preview: command.toString().substring(0, 100) + (command.length > 100 ? '...' : ''),
-      });
-      log.websocket.debug('[ZLOGIN-WS] PTY state check', {
-        exists: !!ptyProcess,
-        pid: ptyProcess?.pid,
-        killed: ptyProcess?.killed,
-      });
-
-      // Check if PTY exists and has a valid PID (more reliable than writable property)
-      if (ptyProcess && ptyProcess.pid && !ptyProcess.killed) {
-        ptyProcess.write(command.toString());
-        log.websocket.debug('[ZLOGIN-WS] Command written to PTY successfully');
-      } else {
-        log.websocket.warn('[ZLOGIN-WS] Cannot write to PTY', {
-          exists: !!ptyProcess,
-          pid: ptyProcess?.pid,
-          killed: ptyProcess?.killed,
-        });
-      }
-    } catch (error) {
-      log.websocket.error('[ZLOGIN-WS] Error writing to PTY', {
-        session_id: sessionId,
-        error: error.message,
-      });
-    }
-  });
-
-  ws.on('close', (code, reason) => {
-    log.websocket.info('[ZLOGIN-WS] WebSocket closed', {
-      session_id: sessionId,
-      code,
-      reason: reason || 'none',
     });
-    if (ptyProcess && onPtyData) {
-      ptyProcess.removeListener('data', onPtyData);
-      log.websocket.debug('[ZLOGIN-WS] Removed PTY data listener', {
-        session_id: sessionId,
-      });
-    }
-  });
 
-  ws.on('error', error => {
-    log.websocket.error('[ZLOGIN-WS] WebSocket error', {
+    // Handle user input from WebSocket
+    ws.on('message', async command => {
+      try {
+        ptyManager.write(zone_name, command.toString());
+        await session.update({ last_activity: new Date() });
+      } catch (error) {
+        log.websocket.error('[ZLOGIN-WS] Error writing to PTY', {
+          session_id: sessionId,
+          zone_name,
+          error: error.message,
+        });
+      }
+    });
+
+    // Handle WebSocket close
+    ws.on('close', (code, reason) => {
+      log.websocket.info('[ZLOGIN-WS] WebSocket closed', {
+        session_id: sessionId,
+        zone_name,
+        code,
+        reason: reason || 'none',
+      });
+      unsubscribe();
+    });
+
+    ws.on('error', error => {
+      log.websocket.error('[ZLOGIN-WS] WebSocket error', {
+        session_id: sessionId,
+        zone_name,
+        error: error.message,
+      });
+      unsubscribe();
+    });
+  } catch (error) {
+    log.websocket.error('[ZLOGIN-WS] Error handling zlogin connection', {
       session_id: sessionId,
       error: error.message,
       stack: error.stack,
     });
-  });
-
-  log.websocket.debug('[ZLOGIN-WS] WebSocket event handlers set up', {
-    session_id: sessionId,
-  });
+    try {
+      ws.send(`Error: ${error.message}\r\n`);
+      ws.close();
+    } catch {
+      // Ignore WebSocket send/close errors
+    }
+  }
 };

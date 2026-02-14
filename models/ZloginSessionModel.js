@@ -51,7 +51,8 @@ const ZloginSessions = db.define(
     zone_name: {
       type: DataTypes.STRING,
       allowNull: false,
-      comment: 'Zone name for this zlogin session',
+      unique: true,
+      comment: 'Zone name for this zlogin session (one session per zone)',
     },
     pid: {
       type: DataTypes.INTEGER,
@@ -72,6 +73,21 @@ const ZloginSessions = db.define(
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
       comment: 'Timestamp when session was last accessed',
+    },
+    session_buffer: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Last 1000 lines of terminal output for reconnection context',
+    },
+    automation_active: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Whether recipe automation is currently running on this console',
+    },
+    last_activity: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Timestamp of last activity (input/output)',
     },
   },
   {
