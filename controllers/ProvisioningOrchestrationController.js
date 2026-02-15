@@ -193,15 +193,8 @@ const buildProvisioningTaskChain = async params => {
   taskChain.push({ step: 'wait_ssh', task_id: sshTask.id });
   previousTaskId = sshTask.id;
 
-  // Step 4: Sync files
+  // Step 4: Sync files (only sync folders explicitly configured in provisioning.sync_folders)
   const effectiveSyncFolders = [...(provisioning.sync_folders || [])];
-  if (provisioningDatasetPath) {
-    effectiveSyncFolders.push({
-      source: provisioningDatasetPath,
-      dest: '/vagrant',
-      exclude: [],
-    });
-  }
 
   if (effectiveSyncFolders.length > 0) {
     const syncTask = await createTask({
