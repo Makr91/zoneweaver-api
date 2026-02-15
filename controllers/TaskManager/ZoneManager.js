@@ -5,7 +5,11 @@
  */
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import { getAllZoneConfigs, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
+import {
+  getAllZoneConfigs,
+  syncZoneToDatabase,
+  preserveUserConfig,
+} from '../../lib/ZoneConfigUtils.js';
 import yj from 'yieldable-json';
 import Tasks from '../../models/TaskModel.js';
 import Zones from '../../models/ZoneModel.js';
@@ -719,30 +723,8 @@ export const executeDiscoverTask = async () => {
           status = parts[2] || dbZone.status;
         }
 
-        // Preserve API metadata fields (provisioning, etc.)
-        // Pattern from syncZoneToDatabase() in ZoneConfigUtils.js
-        let existingConfig = dbZone.configuration;
-        if (typeof existingConfig === 'string') {
-          try {
-            existingConfig = JSON.parse(existingConfig);
-          } catch (e) {
-            log.monitoring.warn('Failed to parse existing zone configuration during discovery', {
-              zone_name: dbZone.name,
-              error: e.message,
-            });
-            existingConfig = {};
-          }
-        }
-
-        // Merge: preserve provisioning if it exists in DB but not in system config
-        if (existingConfig?.provisioning && !zoneConfig.provisioning) {
-          zoneConfig.provisioning = existingConfig.provisioning;
-        }
-
-        // Preserve metadata (networks, etc.)
-        if (existingConfig?.metadata && !zoneConfig.metadata) {
-          zoneConfig.metadata = existingConfig.metadata;
-        }
+        // Preserve user-defined config sections (settings, zones, networks, disks, provisioner)
+        preserveUserConfig(dbZone, zoneConfig, dbZone.name);
 
         return dbZone.update({
           status,
