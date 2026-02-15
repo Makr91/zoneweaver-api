@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Zone Lifecycle Manager for Zoneweaver API
+ * @description Executes zone lifecycle operations: start, stop, restart, delete, discover with dataset cleanup.
+ * CRITICAL: NO BACKWARD COMPATIBILITY - Hosts.yml structure ONLY (settings/zones/networks/disks/provisioner)
+ */
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 import { getAllZoneConfigs, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
@@ -456,12 +461,12 @@ const parseDeleteMetadata = async metadataJson => {
  * Process single dataset for deletion with safety checks
  * @param {string} dataset - Dataset to destroy
  * @param {string} zoneName - Zone name
- * @param {Array} protectedDatasets - Protected datasets
+ * @param {Set} protectedDatasets - Protected datasets (Set)
  * @returns {Promise<string|null>} Error message or null if successful
  */
 const processSingleDataset = async (dataset, zoneName, protectedDatasets) => {
   // Safety Check: Intersection with protected datasets
-  const isProtected = protectedDatasets.some(
+  const isProtected = Array.from(protectedDatasets).some(
     protectedDs =>
       dataset === protectedDs ||
       protectedDs.startsWith(`${dataset}/`) ||
