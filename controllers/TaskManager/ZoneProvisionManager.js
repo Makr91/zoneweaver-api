@@ -226,51 +226,6 @@ const getProvisioningBasePath = async zoneName => {
 };
 
 /**
- * Apply ownership changes to synced files
- * @param {string} ip - Zone IP
- * @param {Object} credentials - SSH credentials
- * @param {number} port - SSH port
- * @param {Object} folder - Folder config
- * @param {string} dest - Destination path
- * @param {string} zoneName - Zone name
- * @param {string} provisioningBasePath - Provisioning base path
- */
-const applySyncOwnership = async (
-  ip,
-  credentials,
-  port,
-  folder,
-  dest,
-  zoneName,
-  provisioningBasePath
-) => {
-  if (folder.owner || folder.group) {
-    const chownUser = folder.owner || credentials.username;
-    const chownGroup = folder.group || chownUser;
-    const chownCmd = `sudo chown -R ${chownUser}:${chownGroup} ${dest}`;
-
-    const chownResult = await executeSSHCommand(
-      ip,
-      credentials.username || 'root',
-      credentials,
-      chownCmd,
-      port,
-      { provisioningBasePath }
-    );
-
-    if (!chownResult.success) {
-      log.task.warn('Failed to set ownership on synced files', {
-        zone_name: zoneName,
-        dest,
-        owner: chownUser,
-        group: chownGroup,
-        error: chownResult.stderr,
-      });
-    }
-  }
-};
-
-/**
  * Execute zone file sync task (GRANULAR: handles ONE folder)
  * Syncs a single provisioning folder from host to zone via rsync
  * @param {Object} task - Task object from TaskQueue
@@ -342,7 +297,27 @@ export const executeZoneSyncTask = async task => {
       return { success: false, error: `${source} → ${dest}: ${result.error}` };
     }
 
-    await applySyncOwnership(ip, credentials, port, folder, dest, zone_name, provisioningBasePath);
+    // Always chown synced files to SSH user (matching vagrant-zones behavior)
+    const syncOwner = folder.owner || credentials.username || 'root';
+    const syncGroup = folder.group || syncOwner;
+    const chownCmd = `sudo chown -R ${syncOwner}:${syncGroup} ${dest}`;
+    const chownResult = await executeSSHCommand(
+      ip,
+      credentials.username || 'root',
+      credentials,
+      chownCmd,
+      port,
+      { provisioningBasePath }
+    );
+
+    if (!chownResult.success) {
+      log.task.warn('Failed to set ownership on synced files', {
+        zone_name,
+        dest,
+        owner: syncOwner,
+        error: chownResult.stderr,
+      });
+    }
 
     return {
       success: true,
