@@ -370,6 +370,25 @@ export const executeZoneSyncTask = async task => {
 
       log.task.info('Syncing folder to zone', { zone_name, source: resolvedSource, dest });
 
+      // Pre-create destination directory with sudo (Vagrant rsync_pre pattern)
+      const mkdirCmd = `sudo mkdir -p ${dest}`;
+      const mkdirResult = await executeSSHCommand(
+        ip,
+        credentials.username || 'root',
+        credentials,
+        mkdirCmd,
+        port,
+        { provisioningBasePath }
+      );
+
+      if (!mkdirResult.success) {
+        log.task.warn('Failed to pre-create sync destination directory', {
+          zone_name,
+          dest,
+          error: mkdirResult.stderr,
+        });
+      }
+
       const result = await syncFiles(
         ip,
         credentials.username || 'root',
