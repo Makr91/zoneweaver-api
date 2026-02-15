@@ -350,7 +350,14 @@ export const executeZoneSyncTask = async task => {
         return;
       }
       const folder = sync_folders[index];
-      const { source, dest } = folder;
+      const { source, dest, disabled = false } = folder;
+
+      // Skip disabled folders
+      if (disabled) {
+        log.task.debug('Skipping disabled sync folder', { zone_name, source, dest });
+        await processSyncFolders(index + 1);
+        return;
+      }
 
       if (!source || !dest) {
         errors.push(`Invalid sync folder: missing source or dest`);
@@ -360,15 +367,6 @@ export const executeZoneSyncTask = async task => {
 
       log.task.info('Syncing folder to zone', { zone_name, source, dest });
 
-      // Ensure destination directory exists
-      await executeSSHCommand(
-        ip,
-        credentials.username || 'root',
-        credentials,
-        `mkdir -p ${dest}`,
-        port
-      );
-
       const result = await syncFiles(
         ip,
         credentials.username || 'root',
@@ -376,10 +374,41 @@ export const executeZoneSyncTask = async task => {
         source,
         dest,
         port,
-        { exclude: folder.exclude, provisioningBasePath }
+        {
+          exclude: folder.exclude,
+          args: folder.args,
+          delete: folder.delete,
+          provisioningBasePath,
+        }
       );
 
       if (result.success) {
+        // Handle ownership changes if specified
+        if (folder.owner || folder.group) {
+          const chownUser = folder.owner || credentials.username;
+          const chownGroup = folder.group || chownUser;
+          const chownCmd = `sudo chown -R ${chownUser}:${chownGroup} ${dest}`;
+
+          const chownResult = await executeSSHCommand(
+            ip,
+            credentials.username || 'root',
+            credentials,
+            chownCmd,
+            port,
+            { provisioningBasePath }
+          );
+
+          if (!chownResult.success) {
+            log.task.warn('Failed to set ownership on synced files', {
+              zone_name,
+              dest,
+              owner: chownUser,
+              group: chownGroup,
+              error: chownResult.stderr,
+            });
+          }
+        }
+
         synced.push(`${source} → ${dest}`);
       } else {
         errors.push(`${source} → ${dest}: ${result.error}`);
