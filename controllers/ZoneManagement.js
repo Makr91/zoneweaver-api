@@ -977,13 +977,14 @@ export const createZone = async (req, res) => {
     // NEW HOSTS.YML STRUCTURE ONLY
     const { settings, zones, start_after_create } = req.body;
 
-    if (!settings?.hostname || !zones?.brand) {
+    if (!settings?.hostname || !settings?.domain || !zones?.brand) {
       return res.status(400).json({
-        error: 'Missing required parameters: settings.hostname and zones.brand are required',
+        error: 'Missing required parameters: settings.hostname, settings.domain, and zones.brand are required',
       });
     }
 
-    const name = settings.hostname;
+    // Build FQDN: hostname.domain (e.g., "test-debian13.startcloud.com" or "nginx.s1.nht.gov.jm")
+    const name = `${settings.hostname}.${settings.domain}`;
 
     if (!validateZoneName(name)) {
       return res.status(400).json({ error: 'Invalid zone name' });
