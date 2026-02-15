@@ -98,7 +98,7 @@ const runAnsibleLocalProvisioner = async (
   provisioner,
   provisioningBasePath
 ) => {
-  const { playbook, extra_vars = {}, collections = [], install_mode } = provisioner;
+  const { playbook, extra_vars = {}, collections = [], install_mode, config_file } = provisioner;
   const username = credentials.username || 'root';
 
   if (!playbook) {
@@ -122,8 +122,11 @@ const runAnsibleLocalProvisioner = async (
     extraVarsArg = `--extra-vars '${varsJson}'`;
   }
 
+  // Build command matching Vagrant's ansible_local provisioner behavior:
+  // cd to provisioning_path, set ANSIBLE_CONFIG if config_file specified
   const provisioningPath = provisioner.provisioning_path || '/vagrant';
-  const cmd = `cd ${provisioningPath} && ansible-playbook -i 'localhost,' -c local ${playbook} ${extraVarsArg}`;
+  const ansibleConfigEnv = config_file ? `ANSIBLE_CONFIG=${config_file} ` : '';
+  const cmd = `cd ${provisioningPath} && ${ansibleConfigEnv}ansible-playbook -i 'localhost,' -c local ${playbook} ${extraVarsArg}`;
 
   const result = await executeSSHCommand(ip, username, credentials, cmd, port, {
     timeout: 1800000,
