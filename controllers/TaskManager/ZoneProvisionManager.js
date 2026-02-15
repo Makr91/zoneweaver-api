@@ -365,13 +365,16 @@ export const executeZoneSyncTask = async task => {
         return;
       }
 
-      log.task.info('Syncing folder to zone', { zone_name, source, dest });
+      // Resolve relative source paths against provisioning dataset
+      const resolvedSource = source.startsWith('/') ? source : `${provisioningBasePath}/${source}`;
+
+      log.task.info('Syncing folder to zone', { zone_name, source: resolvedSource, dest });
 
       const result = await syncFiles(
         ip,
         credentials.username || 'root',
         credentials,
-        source,
+        resolvedSource,
         dest,
         port,
         {

@@ -10,6 +10,7 @@ import ProvisioningProfiles from '../models/ProvisioningProfileModel.js';
 import Recipes from '../models/RecipeModel.js';
 import { log } from '../lib/Logger.js';
 import { validateZoneName } from '../lib/ZoneValidation.js';
+import { waitForSSH } from '../lib/SSHManager.js';
 
 /**
  * Validate provisioning request and zone state
@@ -83,6 +84,52 @@ const createTask = params =>
   });
 
 /**
+ * Check if SSH is accessible and zone_setup can be skipped
+ * @param {Object} zone - Zone database record
+ * @param {string} zoneIP - Zone IP address
+ * @param {Object} provisioning - Provisioning config
+ * @returns {Promise<boolean>} True if should skip zone_setup
+ */
+const shouldSkipZoneSetup = async (zone, zoneIP, provisioning) => {
+  if (zone.status !== 'running') {
+    return false;
+  }
+
+  try {
+    const zoneConfig =
+      typeof zone.configuration === 'string' ? JSON.parse(zone.configuration) : zone.configuration;
+    const provisioningBasePath = zoneConfig.zonepath
+      ? `${zoneConfig.zonepath.replace('/path', '')}/provisioning`
+      : null;
+
+    const sshCheck = await waitForSSH(
+      zoneIP,
+      provisioning.credentials?.username || 'root',
+      provisioning.credentials,
+      provisioning.ssh_port || 22,
+      5000,
+      2000,
+      provisioningBasePath
+    );
+
+    if (sshCheck.success) {
+      log.api.info('SSH already accessible, skipping zone_setup', {
+        zone_name: zone.name,
+        ip: zoneIP,
+      });
+      return true;
+    }
+  } catch (error) {
+    log.api.debug('SSH check failed, will run zone_setup', {
+      zone_name: zone.name,
+      error: error.message,
+    });
+  }
+
+  return false;
+};
+
+/**
  * Build provisioning task chain
  * @param {Object} params - Parameters
  * @returns {Promise<Array>} Task chain
@@ -153,8 +200,16 @@ const buildProvisioningTaskChain = async params => {
     previousTaskId = bootTask.id;
   }
 
-  // Step 2: Run zlogin recipe
-  if (recipeId && !skipRecipe) {
+  // Step 2: Run zlogin recipe (skip if SSH is already accessible)
+  let shouldRunSetup = recipeId && !skipRecipe;
+  if (shouldRunSetup) {
+    const skipDueToSSH = await shouldSkipZoneSetup(zone, zoneIP, provisioning);
+    if (skipDueToSSH) {
+      shouldRunSetup = false;
+    }
+  }
+
+  if (shouldRunSetup) {
     // Merge credentials into variables for recipe execution
     const recipeVariables = {
       ...(provisioning.variables || {}),
