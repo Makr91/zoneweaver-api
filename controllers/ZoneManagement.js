@@ -974,11 +974,16 @@ export const restartZone = async (req, res) => {
  */
 export const createZone = async (req, res) => {
   try {
-    const { name, brand, start_after_create } = req.body;
+    // NEW HOSTS.YML STRUCTURE ONLY
+    const { settings, zones, start_after_create } = req.body;
 
-    if (!name || !brand) {
-      return res.status(400).json({ error: 'Missing required parameters: name and brand' });
+    if (!settings?.hostname || !zones?.brand) {
+      return res.status(400).json({
+        error: 'Missing required parameters: settings.hostname and zones.brand are required',
+      });
     }
+
+    const name = settings.hostname;
 
     if (!validateZoneName(name)) {
       return res.status(400).json({ error: 'Invalid zone name' });
@@ -998,6 +1003,9 @@ export const createZone = async (req, res) => {
         system_status: systemStatus,
       });
     }
+
+    // Ensure metadata.name is set for task executor
+    req.body.name = name;
 
     // Create the zone_create task
     const createTask = await Tasks.create({
