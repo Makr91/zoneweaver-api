@@ -108,7 +108,18 @@ export const executeZoneSetupTask = async task => {
     nicData.forEach(nic => {
       const prefix = `nic_${nic.index}_`;
       variables[`${prefix}vnic_name`] = nic.vnic_name;
-      variables[`${prefix}mac`] = nic.mac;
+
+      // Normalize MAC address format (pad octets to 2 digits for netplan compatibility)
+      if (nic.mac) {
+        const normalizedMac = nic.mac
+          .split(':')
+          .map(octet => octet.padStart(2, '0'))
+          .join(':');
+        variables[`${prefix}mac`] = normalizedMac;
+      } else {
+        variables[`${prefix}mac`] = null;
+      }
+
       variables[`${prefix}nic_type`] = nic.nic_type;
       variables[`${prefix}global_nic`] = nic.global_nic;
       if (nic.vlan_id) {
