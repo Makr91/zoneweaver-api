@@ -116,6 +116,53 @@ export const executeZoneSetupTask = async task => {
       }
     });
 
+    // Merge network metadata (IP, gateway, DNS) from zone.configuration.metadata
+    let zoneConfigFromDB = zone.configuration;
+    if (typeof zoneConfigFromDB === 'string') {
+      try {
+        zoneConfigFromDB = JSON.parse(zoneConfigFromDB);
+      } catch (e) {
+        log.task.warn('Failed to parse zone configuration from DB', { error: e.message });
+        zoneConfigFromDB = {};
+      }
+    }
+
+    const storedMetadata = zoneConfigFromDB?.metadata;
+    if (storedMetadata?.networks && Array.isArray(storedMetadata.networks)) {
+      storedMetadata.networks.forEach((networkMeta, index) => {
+        const prefix = `nic_${index}_`;
+        if (networkMeta.address) {
+          variables[`${prefix}ip`] = networkMeta.address;
+        }
+        if (networkMeta.netmask) {
+          // Convert netmask to prefix (e.g., 255.255.255.0 → 24)
+          const prefix_bits =
+            networkMeta.netmask
+              .split('.')
+              .map(octet => parseInt(octet).toString(2).padStart(8, '0'))
+              .join('')
+              .split('1').length - 1;
+          variables[`${prefix}prefix`] = prefix_bits.toString();
+        }
+        if (networkMeta.gateway) {
+          variables[`${prefix}gateway`] = networkMeta.gateway;
+        }
+        if (networkMeta.dns) {
+          variables[`${prefix}dns`] = Array.isArray(networkMeta.dns)
+            ? networkMeta.dns.join(',')
+            : networkMeta.dns;
+        }
+        if (networkMeta.provisional !== undefined) {
+          variables[`${prefix}provisional`] = networkMeta.provisional;
+        }
+      });
+
+      log.task.info('Merged network metadata from zone configuration', {
+        zone_name,
+        network_count: storedMetadata.networks.length,
+      });
+    }
+
     log.task.info('Auto-populated network variables for all NICs', {
       zone_name,
       nic_count: nicData.length,

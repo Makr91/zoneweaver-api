@@ -753,6 +753,11 @@ export const executeDiscoverTask = async () => {
           zoneConfig.provisioning = existingConfig.provisioning;
         }
 
+        // Preserve metadata (networks, etc.)
+        if (existingConfig?.metadata && !zoneConfig.metadata) {
+          zoneConfig.metadata = existingConfig.metadata;
+        }
+
         return dbZone.update({
           status,
           brand: zoneConfig.brand || dbZone.brand,

@@ -679,6 +679,29 @@ const applyAllZoneConfig = async (zoneName, metadata, bootdiskPath, zfsCreated, 
     await updateTaskProgress(task, 80, { status: 'configuring_cloud_init' });
     await configureCloudInit(zoneName, metadata.cloud_init);
   }
+
+  // Store custom metadata (networks, etc.) in zone configuration for provisioning
+  if (metadata.metadata) {
+    await updateTaskProgress(task, 85, { status: 'storing_metadata' });
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (zone) {
+      let zoneConfig = zone.configuration || {};
+      if (typeof zoneConfig === 'string') {
+        try {
+          zoneConfig = JSON.parse(zoneConfig);
+        } catch (e) {
+          log.task.warn('Failed to parse zone configuration', { error: e.message });
+          zoneConfig = {};
+        }
+      }
+      zoneConfig.metadata = metadata.metadata;
+      await zone.update({ configuration: zoneConfig });
+      log.task.info('Stored custom metadata in zone configuration', {
+        zone_name: zoneName,
+        has_networks: !!metadata.metadata.networks,
+      });
+    }
+  }
 };
 
 /**
