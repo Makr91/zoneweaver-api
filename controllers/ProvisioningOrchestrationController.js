@@ -14,10 +14,11 @@ import { waitForSSH } from '../lib/SSHManager.js';
 
 /**
  * Validate provisioning request and zone state
+ * Supports both old structure (provisioning) and new Hosts.yml structure (provisioner + settings/networks)
  * @param {string} zoneName - Zone name
  * @param {Object} zone - Zone database record
  * @param {boolean} skipRecipe - Whether to skip recipe
- * @returns {Promise<{valid: boolean, error?: string, provisioning?: Object, recipeId?: string}>}
+ * @returns {Promise<{valid: boolean, error?: string, provisioning?: Object, recipeId?: string, zoneIP?: string, credentials?: Object}>}
  */
 const validateProvisioningRequest = async (zoneName, zone, skipRecipe) => {
   if (!validateZoneName(zoneName)) {
@@ -37,34 +38,78 @@ const validateProvisioningRequest = async (zoneName, zone, skipRecipe) => {
       zoneConfig = {};
     }
   }
-  const provisioning = zoneConfig?.provisioning;
-  if (!provisioning) {
+
+  // NEW STRUCTURE: Read provisioner instead of provisioning
+  const provisioner = zoneConfig?.provisioner;
+  const provisioning = zoneConfig?.provisioning; // Fallback for old structure
+
+  const config = provisioner || provisioning;
+  if (!config) {
     return {
       valid: false,
       error:
-        'No provisioning configuration found. Set provisioning config via PUT /zones/:name first.',
+        'No provisioner configuration found. Set provisioner config via PUT /zones/:name first.',
     };
   }
 
-  const { recipe_id, credentials } = provisioning;
+  // NEW STRUCTURE: Extract credentials from settings
+  const { extractCredentialsFromSettings, extractControlIP } =
+    await import('../lib/ProvisionerConfigBuilder.js');
 
-  if (!credentials || !credentials.username) {
-    return { valid: false, error: 'Provisioning credentials are required (at minimum: username)' };
-  }
+  let credentials;
+  let zoneIP;
 
-  if (recipe_id && !skipRecipe) {
-    const recipe = await Recipes.findByPk(recipe_id);
-    if (!recipe) {
-      return { valid: false, error: `Recipe '${recipe_id}' not found` };
+  if (zoneConfig.settings) {
+    // New Hosts.yml structure
+    credentials = extractCredentialsFromSettings(zoneConfig.settings);
+    if (!credentials.username) {
+      return {
+        valid: false,
+        error: 'Credentials missing: settings.vagrant_user is required',
+      };
+    }
+
+    // Extract IP from networks array
+    zoneIP = extractControlIP(zoneConfig.networks);
+    if (!zoneIP) {
+      return {
+        valid: false,
+        error: 'Zone IP address not found in networks array (set is_control: true on one network)',
+      };
+    }
+  } else {
+    // OLD STRUCTURE: Fallback to provisioning.credentials and provisioning.ip
+    const { credentials: configCredentials, ip: configIP, variables } = config;
+    credentials = configCredentials;
+    if (!credentials || !credentials.username) {
+      return {
+        valid: false,
+        error: 'Provisioning credentials are required (at minimum: username)',
+      };
+    }
+
+    zoneIP = configIP || variables?.ip;
+    if (!zoneIP) {
+      return { valid: false, error: 'Zone IP address not configured in provisioning metadata' };
     }
   }
 
-  const zoneIP = provisioning.ip || provisioning.variables?.ip;
-  if (!zoneIP) {
-    return { valid: false, error: 'Zone IP address not configured in provisioning metadata' };
+  // Validate recipe if specified
+  const recipeId = config.recipe_id;
+  if (recipeId && !skipRecipe) {
+    const recipe = await Recipes.findByPk(recipeId);
+    if (!recipe) {
+      return { valid: false, error: `Recipe '${recipeId}' not found` };
+    }
   }
 
-  return { valid: true, provisioning, recipeId: recipe_id, zoneIP };
+  return {
+    valid: true,
+    provisioning: config,
+    recipeId,
+    zoneIP,
+    credentials,
+  };
 };
 
 /**
@@ -82,6 +127,86 @@ const createTask = params =>
     parent_task_id: params.parent_task_id,
     created_by: params.created_by,
   });
+
+/**
+ * Create sequential folder sync tasks
+ * @param {Array} folders - Folders to sync
+ * @param {string} zoneName - Zone name
+ * @param {string} zoneIP - Zone IP address
+ * @param {Object} credentials - SSH credentials
+ * @param {Object} provisioning - Provisioning config
+ * @param {string} syncParentTaskId - Parent task ID
+ * @param {string} createdBy - Task creator
+ * @returns {Promise<void>}
+ */
+const createSequentialFolderTasks = (
+  folders,
+  zoneName,
+  zoneIP,
+  credentials,
+  provisioning,
+  syncParentTaskId,
+  createdBy
+) =>
+  folders.reduce(
+    (promise, folder) =>
+      promise.then(prevTaskId =>
+        createTask({
+          zone_name: zoneName,
+          operation: 'zone_sync',
+          metadata: {
+            ip: zoneIP,
+            port: provisioning.ssh_port || 22,
+            credentials,
+            folder,
+          },
+          depends_on: prevTaskId,
+          parent_task_id: syncParentTaskId,
+          created_by: createdBy,
+        }).then(task => task.id)
+      ),
+    Promise.resolve(syncParentTaskId)
+  );
+
+/**
+ * Create sequential playbook provision tasks
+ * @param {Array} playbooks - Playbooks to execute
+ * @param {string} zoneName - Zone name
+ * @param {string} zoneIP - Zone IP address
+ * @param {Object} credentials - SSH credentials
+ * @param {Object} provisioning - Provisioning config
+ * @param {string} provisionParentTaskId - Parent task ID
+ * @param {string} createdBy - Task creator
+ * @returns {Promise<void>}
+ */
+const createSequentialPlaybookTasks = (
+  playbooks,
+  zoneName,
+  zoneIP,
+  credentials,
+  provisioning,
+  provisionParentTaskId,
+  createdBy
+) =>
+  playbooks.reduce(
+    (promise, playbook) =>
+      promise.then(prevTaskId =>
+        createTask({
+          zone_name: zoneName,
+          operation: 'zone_provision',
+          metadata: {
+            ip: zoneIP,
+            port: provisioning.ssh_port || 22,
+            credentials,
+            playbook,
+          },
+          depends_on: prevTaskId,
+          parent_task_id: provisionParentTaskId,
+          created_by: createdBy,
+        }).then(task => task.id)
+      ),
+    Promise.resolve(provisionParentTaskId)
+  );
 
 /**
  * Check if SSH is accessible and zone_setup can be skipped
@@ -130,7 +255,8 @@ const shouldSkipZoneSetup = async (zone, zoneIP, provisioning) => {
 };
 
 /**
- * Build provisioning task chain
+ * Build provisioning task chain with granular folder/playbook tasks
+ * Creates parent tasks for sync and provision steps with individual child tasks
  * @param {Object} params - Parameters
  * @returns {Promise<Array>} Task chain
  */
@@ -143,6 +269,7 @@ const buildProvisioningTaskChain = async params => {
     recipeId,
     provisioning,
     zoneIP,
+    credentials,
     artifactId,
     parentTaskId,
     createdBy,
@@ -152,7 +279,7 @@ const buildProvisioningTaskChain = async params => {
   let previousTaskId = null;
   let provisioningDatasetPath = null;
 
-  // Step 0: Extract artifact (if provided), this should be done after the initial zone stub has been created so reference the zone creation sequence in the Zone Manager files
+  // Step 0: Extract artifact (if provided)
   if (artifactId) {
     let zoneConfig = zone.configuration || {};
     if (typeof zoneConfig === 'string') {
@@ -167,7 +294,6 @@ const buildProvisioningTaskChain = async params => {
       ? zoneConfig.zonepath.replace('/path', '')
       : `/rpool/zones/${zoneName}`;
 
-    // Ensure clean path construction
     const cleanZoneDataset = zoneDataset.startsWith('/') ? zoneDataset.substring(1) : zoneDataset;
     const provisioningDataset = `${cleanZoneDataset}/provisioning`;
     provisioningDatasetPath = `/${provisioningDataset}`;
@@ -203,18 +329,20 @@ const buildProvisioningTaskChain = async params => {
   // Step 2: Run zlogin recipe (skip if SSH is already accessible)
   let shouldRunSetup = recipeId && !skipRecipe;
   if (shouldRunSetup) {
-    const skipDueToSSH = await shouldSkipZoneSetup(zone, zoneIP, provisioning);
+    const skipDueToSSH = await shouldSkipZoneSetup(zone, zoneIP, {
+      credentials,
+      ssh_port: provisioning.ssh_port,
+    });
     if (skipDueToSSH) {
       shouldRunSetup = false;
     }
   }
 
   if (shouldRunSetup) {
-    // Merge credentials into variables for recipe execution
     const recipeVariables = {
       ...(provisioning.variables || {}),
-      username: provisioning.credentials?.username,
-      password: provisioning.credentials?.password,
+      username: credentials.username,
+      password: credentials.password,
     };
 
     const setupTask = await createTask({
@@ -239,7 +367,7 @@ const buildProvisioningTaskChain = async params => {
     metadata: {
       ip: zoneIP,
       port: provisioning.ssh_port || 22,
-      credentials: provisioning.credentials,
+      credentials,
     },
     depends_on: previousTaskId,
     parent_task_id: parentTaskId,
@@ -248,43 +376,68 @@ const buildProvisioningTaskChain = async params => {
   taskChain.push({ step: 'wait_ssh', task_id: sshTask.id });
   previousTaskId = sshTask.id;
 
-  // Step 4: Sync files (only sync folders explicitly configured in provisioning.sync_folders)
-  const effectiveSyncFolders = [...(provisioning.sync_folders || [])];
+  // Step 4: Sync files with GRANULAR TASKS (one task per folder)
+  const folders = provisioning.folders || provisioning.sync_folders || [];
 
-  if (effectiveSyncFolders.length > 0) {
-    const syncTask = await createTask({
+  if (folders.length > 0) {
+    // Create parent task for folder sync
+    const syncParentTask = await createTask({
       zone_name: zoneName,
-      operation: 'zone_sync',
-      metadata: {
-        ip: zoneIP,
-        port: provisioning.ssh_port || 22,
-        credentials: provisioning.credentials,
-        sync_folders: effectiveSyncFolders,
-      },
+      operation: 'zone_sync_parent',
+      metadata: { total_folders: folders.length },
       depends_on: previousTaskId,
       parent_task_id: parentTaskId,
       created_by: createdBy,
     });
-    taskChain.push({ step: 'sync', task_id: syncTask.id });
-    previousTaskId = syncTask.id;
+    taskChain.push({
+      step: 'sync_parent',
+      task_id: syncParentTask.id,
+      folder_count: folders.length,
+    });
+
+    // Create individual sync tasks sequentially (each depends on previous)
+    await createSequentialFolderTasks(
+      folders,
+      zoneName,
+      zoneIP,
+      credentials,
+      provisioning,
+      syncParentTask.id,
+      createdBy
+    );
+    previousTaskId = syncParentTask.id;
   }
 
-  // Step 5: Execute provisioners
-  if (provisioning.provisioners && provisioning.provisioners.length > 0) {
-    const provisionTask = await createTask({
+  // Step 5: Execute provisioners with GRANULAR TASKS (one task per playbook)
+  const playbooks =
+    provisioning.provisioning?.ansible?.playbooks?.local || provisioning.provisioners || [];
+
+  if (playbooks.length > 0) {
+    // Create parent task for provisioning
+    const provisionParentTask = await createTask({
       zone_name: zoneName,
-      operation: 'zone_provision',
-      metadata: {
-        ip: zoneIP,
-        port: provisioning.ssh_port || 22,
-        credentials: provisioning.credentials,
-        provisioners: provisioning.provisioners,
-      },
+      operation: 'zone_provision_parent',
+      metadata: { total_playbooks: playbooks.length },
       depends_on: previousTaskId,
       parent_task_id: parentTaskId,
       created_by: createdBy,
     });
-    taskChain.push({ step: 'provision', task_id: provisionTask.id });
+    taskChain.push({
+      step: 'provision_parent',
+      task_id: provisionParentTask.id,
+      playbook_count: playbooks.length,
+    });
+
+    // Create individual provision tasks sequentially (each depends on previous)
+    await createSequentialPlaybookTasks(
+      playbooks,
+      zoneName,
+      zoneIP,
+      credentials,
+      provisioning,
+      provisionParentTask.id,
+      createdBy
+    );
   }
 
   return taskChain;
@@ -352,7 +505,7 @@ export const provisionZone = async (req, res) => {
         .json({ error: validation.error });
     }
 
-    const { provisioning, recipeId, zoneIP } = validation;
+    const { provisioning, recipeId, zoneIP, credentials } = validation;
 
     // Create Parent Task
     const parentTask = await Tasks.create({
@@ -361,7 +514,7 @@ export const provisionZone = async (req, res) => {
       priority: TaskPriority.NORMAL,
       created_by: req.entity.name,
       status: 'running', // Start immediately as a container
-      metadata: JSON.stringify({ provisioning, recipeId, zoneIP }),
+      metadata: JSON.stringify({ provisioning, recipeId, zoneIP, credentials }),
     });
 
     // Build task chain
@@ -373,6 +526,7 @@ export const provisionZone = async (req, res) => {
       recipeId,
       provisioning,
       zoneIP,
+      credentials,
       artifactId: provisioning.artifact_id,
       parentTaskId: parentTask.id,
       createdBy: req.entity.name,
@@ -779,42 +933,49 @@ export const syncZone = async (req, res) => {
         .json({ error: validation.error });
     }
 
-    const { provisioning, zoneIP } = validation;
+    const { provisioning, zoneIP, credentials } = validation;
 
-    // Check if there are sync folders configured
-    if (!provisioning.sync_folders || provisioning.sync_folders.length === 0) {
+    // Check if there are folders configured
+    const folders = provisioning.folders || provisioning.sync_folders || [];
+    if (folders.length === 0) {
       return res.status(400).json({
-        error: 'No sync_folders configured in provisioning metadata',
+        error: 'No folders configured in provisioner metadata',
       });
     }
 
-    // Create zone_sync task
-    const syncTask = await createTask({
+    // Create parent task for folder sync
+    const syncParentTask = await createTask({
       zone_name: zoneName,
-      operation: 'zone_sync',
-      metadata: {
-        ip: zoneIP,
-        port: provisioning.ssh_port || 22,
-        credentials: provisioning.credentials,
-        sync_folders: provisioning.sync_folders,
-      },
+      operation: 'zone_sync_parent',
+      metadata: { total_folders: folders.length },
       depends_on: null,
       parent_task_id: null,
       created_by: req.entity.name,
     });
 
-    log.api.info('Zone sync task created', {
+    // Create individual sync tasks sequentially (each depends on previous)
+    await createSequentialFolderTasks(
+      folders,
+      zoneName,
+      zoneIP,
+      credentials,
+      provisioning,
+      syncParentTask.id,
+      req.entity.name
+    );
+
+    log.api.info('Zone sync task chain created', {
       zone_name: zoneName,
-      task_id: syncTask.id,
-      sync_folders_count: provisioning.sync_folders.length,
+      parent_task_id: syncParentTask.id,
+      folder_count: folders.length,
     });
 
     return res.json({
       success: true,
-      message: `Zone sync task created for ${zoneName}`,
+      message: `Zone sync task chain created for ${zoneName}`,
       zone_name: zoneName,
-      task_id: syncTask.id,
-      sync_folders_count: provisioning.sync_folders.length,
+      parent_task_id: syncParentTask.id,
+      folder_count: folders.length,
     });
   } catch (error) {
     log.api.error('Failed to create zone sync task', { error: error.message });
@@ -871,42 +1032,51 @@ export const runProvisioners = async (req, res) => {
         .json({ error: validation.error });
     }
 
-    const { provisioning, zoneIP } = validation;
+    const { provisioning, zoneIP, credentials } = validation;
 
-    // Check if there are provisioners configured
-    if (!provisioning.provisioners || provisioning.provisioners.length === 0) {
+    // Check if there are playbooks configured
+    const playbooks =
+      provisioning.provisioning?.ansible?.playbooks?.local || provisioning.provisioners || [];
+
+    if (playbooks.length === 0) {
       return res.status(400).json({
-        error: 'No provisioners configured in provisioning metadata',
+        error: 'No playbooks configured in provisioner metadata',
       });
     }
 
-    // Create zone_provision task
-    const provisionTask = await createTask({
+    // Create parent task for provisioning
+    const provisionParentTask = await createTask({
       zone_name: zoneName,
-      operation: 'zone_provision',
-      metadata: {
-        ip: zoneIP,
-        port: provisioning.ssh_port || 22,
-        credentials: provisioning.credentials,
-        provisioners: provisioning.provisioners,
-      },
+      operation: 'zone_provision_parent',
+      metadata: { total_playbooks: playbooks.length },
       depends_on: null,
       parent_task_id: null,
       created_by: req.entity.name,
     });
 
-    log.api.info('Zone provision task created', {
+    // Create individual provision tasks sequentially (each depends on previous)
+    await createSequentialPlaybookTasks(
+      playbooks,
+      zoneName,
+      zoneIP,
+      credentials,
+      provisioning,
+      provisionParentTask.id,
+      req.entity.name
+    );
+
+    log.api.info('Zone provision task chain created', {
       zone_name: zoneName,
-      task_id: provisionTask.id,
-      provisioners_count: provisioning.provisioners.length,
+      parent_task_id: provisionParentTask.id,
+      playbook_count: playbooks.length,
     });
 
     return res.json({
       success: true,
-      message: `Zone provisioners task created for ${zoneName}`,
+      message: `Zone provisioners task chain created for ${zoneName}`,
       zone_name: zoneName,
-      task_id: provisionTask.id,
-      provisioners_count: provisioning.provisioners.length,
+      parent_task_id: provisionParentTask.id,
+      playbook_count: playbooks.length,
     });
   } catch (error) {
     log.api.error('Failed to create zone provisioners task', { error: error.message });

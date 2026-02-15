@@ -309,7 +309,9 @@ const OPERATION_CATEGORIES = {
   zone_setup: 'zone_lifecycle',
   zone_wait_ssh: 'zone_lifecycle',
   zone_sync: 'zone_lifecycle',
+  zone_sync_parent: 'zone_lifecycle',
   zone_provision: 'zone_lifecycle',
+  zone_provision_parent: 'zone_lifecycle',
   zone_provision_orchestration: 'zone_lifecycle',
 };
 
@@ -785,6 +787,28 @@ const executeVncStartTask = async zoneName => {
   }
 };
 /**
+ * Map of operations that pass full task object (need progress tracking)
+ */
+const TASK_OBJECT_OPERATIONS = {
+  zone_create: executeZoneCreateTask,
+  zone_modify: executeZoneModifyTask,
+  zone_setup: executeZoneSetupTask,
+  zone_provisioning_extract: executeZoneProvisioningExtractTask,
+  zone_wait_ssh: executeZoneWaitSSHTask,
+  zone_sync: executeZoneSyncTask,
+  zone_provision: executeZoneProvisionTask,
+};
+
+/**
+ * Parent task operations that track subtasks
+ */
+const PARENT_OPERATIONS = [
+  'zone_provision_orchestration',
+  'zone_sync_parent',
+  'zone_provision_parent',
+];
+
+/**
  * Execute a specific task
  * @param {Object} task - Task object from database
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -793,33 +817,16 @@ const executeTask = async task => {
   const { operation, zone_name } = task;
 
   try {
-    // Zone creation/modification operations (pass full task for progress tracking)
-    if (operation === 'zone_create') {
-      return await executeZoneCreateTask(task);
-    }
-    if (operation === 'zone_modify') {
-      return await executeZoneModifyTask(task);
-    }
-    if (operation === 'zone_setup') {
-      return await executeZoneSetupTask(task);
-    }
-    if (operation === 'zone_provisioning_extract') {
-      return await executeZoneProvisioningExtractTask(task);
-    }
-    if (operation === 'zone_wait_ssh') {
-      return await executeZoneWaitSSHTask(task);
-    }
-    if (operation === 'zone_sync') {
-      return await executeZoneSyncTask(task);
-    }
-    if (operation === 'zone_provision') {
-      return await executeZoneProvisionTask(task);
+    // Task object operations (need progress tracking)
+    if (TASK_OBJECT_OPERATIONS[operation]) {
+      return await TASK_OBJECT_OPERATIONS[operation](task);
     }
 
-    if (operation === 'zone_provision_orchestration') {
+    // Parent task operations (track subtasks)
+    if (PARENT_OPERATIONS.includes(operation)) {
       return {
         success: true,
-        message: 'Zone provisioning orchestration in progress',
+        message: `${operation.replace(/_/g, ' ')} tracking subtasks`,
         keep_running: true,
       };
     }
@@ -834,129 +841,106 @@ const executeTask = async task => {
       return await executeServiceTask(operation, zone_name);
     }
 
-    // System operations
-    if (
-      [
-        'set_hostname',
-        'update_time_sync_config',
-        'force_time_sync',
-        'set_timezone',
-        'switch_time_sync_system',
-      ].includes(operation)
-    ) {
+    // Categorized operations
+    const systemOps = [
+      'set_hostname',
+      'update_time_sync_config',
+      'force_time_sync',
+      'set_timezone',
+      'switch_time_sync_system',
+    ];
+    const networkOps = [
+      'create_ip_address',
+      'delete_ip_address',
+      'enable_ip_address',
+      'disable_ip_address',
+      'create_vnic',
+      'delete_vnic',
+      'set_vnic_properties',
+      'create_aggregate',
+      'delete_aggregate',
+      'modify_aggregate_links',
+      'create_etherstub',
+      'delete_etherstub',
+      'create_vlan',
+      'delete_vlan',
+      'create_bridge',
+      'delete_bridge',
+      'modify_bridge_links',
+      'create_nat_rule',
+      'delete_nat_rule',
+      'configure_forwarding',
+      'dhcp_update_config',
+      'dhcp_add_host',
+      'dhcp_remove_host',
+      'dhcp_service_control',
+    ];
+    const packageOps = [
+      'pkg_install',
+      'pkg_uninstall',
+      'pkg_update',
+      'pkg_refresh',
+      'beadm_create',
+      'beadm_delete',
+      'beadm_activate',
+      'beadm_mount',
+      'beadm_unmount',
+      'repository_add',
+      'repository_remove',
+      'repository_modify',
+      'repository_enable',
+      'repository_disable',
+    ];
+    const userOps = [
+      'user_create',
+      'user_modify',
+      'user_delete',
+      'user_set_password',
+      'user_lock',
+      'user_unlock',
+      'group_create',
+      'group_modify',
+      'group_delete',
+      'role_create',
+      'role_modify',
+      'role_delete',
+    ];
+
+    if (systemOps.includes(operation)) {
       return await executeSystemTask(operation, task.metadata);
     }
-
-    // Network operations
-    if (
-      [
-        'create_ip_address',
-        'delete_ip_address',
-        'enable_ip_address',
-        'disable_ip_address',
-        'create_vnic',
-        'delete_vnic',
-        'set_vnic_properties',
-        'create_aggregate',
-        'delete_aggregate',
-        'modify_aggregate_links',
-        'create_etherstub',
-        'delete_etherstub',
-        'create_vlan',
-        'delete_vlan',
-        'create_bridge',
-        'delete_bridge',
-        'modify_bridge_links',
-        'create_nat_rule',
-        'delete_nat_rule',
-        'configure_forwarding',
-        'dhcp_update_config',
-        'dhcp_add_host',
-        'dhcp_remove_host',
-        'dhcp_service_control',
-      ].includes(operation)
-    ) {
+    if (networkOps.includes(operation)) {
       return await executeNetworkTask(operation, task.metadata);
     }
-
-    // Package operations
-    if (
-      [
-        'pkg_install',
-        'pkg_uninstall',
-        'pkg_update',
-        'pkg_refresh',
-        'beadm_create',
-        'beadm_delete',
-        'beadm_activate',
-        'beadm_mount',
-        'beadm_unmount',
-        'repository_add',
-        'repository_remove',
-        'repository_modify',
-        'repository_enable',
-        'repository_disable',
-      ].includes(operation)
-    ) {
+    if (packageOps.includes(operation)) {
       return await executePackageTask(operation, task.metadata);
     }
-
-    // User management operations
-    if (
-      [
-        'user_create',
-        'user_modify',
-        'user_delete',
-        'user_set_password',
-        'user_lock',
-        'user_unlock',
-        'group_create',
-        'group_modify',
-        'group_delete',
-        'role_create',
-        'role_modify',
-        'role_delete',
-      ].includes(operation)
-    ) {
+    if (userOps.includes(operation)) {
       return await executeUserTask(operation, task.metadata);
     }
 
-    // ZFS dataset and snapshot operations
+    // Prefix-based operations
     if (operation.startsWith('zfs_')) {
       return await executeZFSTask(operation, task.metadata);
     }
-
-    // ZFS pool operations
     if (operation.startsWith('zpool_')) {
       return await executeZPoolTask(operation, task.metadata);
     }
-
-    // File operations
     if (operation.startsWith('file_')) {
       return await executeFileTask(operation, task.metadata);
     }
-
-    // Artifact operations
     if (operation.startsWith('artifact_')) {
       return await executeArtifactTask(operation, task.metadata);
     }
-
-    // Template operations
     if (operation.startsWith('template_')) {
       return await executeTemplateTask(operation, task.metadata);
     }
-
-    // System host operations
     if (operation.startsWith('system_host_')) {
       return await executeSystemHostTask(operation, task.metadata);
     }
-
-    // Process operations
     if (operation === 'process_trace') {
       return await executeProcessTraceTask(task.metadata);
     }
-
-    // VNC operations
     if (operation === 'vnc_start') {
       return await executeVncStartTask(zone_name);
     }

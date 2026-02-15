@@ -127,7 +127,7 @@ export const executeZoneSetupTask = async task => {
       }
     });
 
-    // Merge network metadata (IP, gateway, DNS) from zone.configuration.metadata
+    // Merge network metadata (IP, gateway, DNS) from zone configuration
     let zoneConfigFromDB = zone.configuration;
     if (typeof zoneConfigFromDB === 'string') {
       try {
@@ -138,22 +138,25 @@ export const executeZoneSetupTask = async task => {
       }
     }
 
-    const storedMetadata = zoneConfigFromDB?.metadata;
-    if (storedMetadata?.networks && Array.isArray(storedMetadata.networks)) {
-      storedMetadata.networks.forEach((networkMeta, index) => {
+    // NEW STRUCTURE: Read from zone.configuration.networks (Hosts.yml structure)
+    // OLD STRUCTURE: Read from zone.configuration.metadata.networks (legacy)
+    const networksArray = zoneConfigFromDB?.networks || zoneConfigFromDB?.metadata?.networks;
+
+    if (networksArray && Array.isArray(networksArray)) {
+      networksArray.forEach((networkMeta, index) => {
         const prefix = `nic_${index}_`;
         if (networkMeta.address) {
           variables[`${prefix}ip`] = networkMeta.address;
         }
         if (networkMeta.netmask) {
           // Convert netmask to prefix (e.g., 255.255.255.0 → 24)
-          const prefix_bits =
+          const prefixBits =
             networkMeta.netmask
               .split('.')
               .map(octet => parseInt(octet).toString(2).padStart(8, '0'))
               .join('')
               .split('1').length - 1;
-          variables[`${prefix}prefix`] = prefix_bits.toString();
+          variables[`${prefix}prefix`] = prefixBits.toString();
         }
         if (networkMeta.gateway) {
           variables[`${prefix}gateway`] = networkMeta.gateway;
@@ -170,7 +173,8 @@ export const executeZoneSetupTask = async task => {
 
       log.task.info('Merged network metadata from zone configuration', {
         zone_name,
-        network_count: storedMetadata.networks.length,
+        network_count: networksArray.length,
+        source: zoneConfigFromDB?.networks ? 'networks' : 'metadata.networks',
       });
     }
 

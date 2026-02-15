@@ -453,72 +453,53 @@ const parseDeleteMetadata = async metadataJson => {
 };
 
 /**
+ * Process single dataset for deletion with safety checks
+ * @param {string} dataset - Dataset to destroy
+ * @param {string} zoneName - Zone name
+ * @param {Array} protectedDatasets - Protected datasets
+ * @returns {Promise<string|null>} Error message or null if successful
+ */
+const processSingleDataset = async (dataset, zoneName, protectedDatasets) => {
+  // Safety Check: Intersection with protected datasets
+  const isProtected = protectedDatasets.some(
+    protectedDs =>
+      dataset === protectedDs ||
+      protectedDs.startsWith(`${dataset}/`) ||
+      protectedDs.startsWith(`/${dataset}/`)
+  );
+
+  if (isProtected) {
+    log.task.warn('Skipping protected dataset', { zone_name: zoneName, dataset });
+    return null;
+  }
+
+  // Execute Safe Destroy
+  const check = await executeCommand(`pfexec zfs list -H -o name "${dataset}" 2>/dev/null`);
+  if (check.success) {
+    const destroyResult = await executeCommand(`pfexec zfs destroy -r "${dataset}"`);
+    if (!destroyResult.success) {
+      return `Failed to destroy ${dataset}: ${destroyResult.error}`;
+    }
+    log.task.info('Destroyed ZFS dataset', { dataset });
+  }
+  return null;
+};
+
+/**
  * Clean up ZFS datasets for a zone
  * @param {string} zoneName - Name of the zone
  * @param {Object} zoneDatasets - Datasets to clean up
  * @returns {Promise<string[]>} Array of error messages
  */
 const cleanupZoneDatasets = async (zoneName, zoneDatasets) => {
-  const datasetErrors = [];
-  // 1. Inventory & Protect: Get datasets used by other zones
   const protectedDatasets = await getProtectedDatasets(zoneName);
-
-  // 2. Sort candidates by length (shortest first) to try deleting parents first
   const sortedDatasets = [...zoneDatasets.datasets].sort((a, b) => a.length - b.length);
 
-  for (const dataset of sortedDatasets) {
-    // 3. Safety Check: Intersection with protected datasets
-    let isSafe = true;
-    for (const protectedDs of protectedDatasets) {
-      // Check 1: Is this dataset explicitly protected?
-      if (dataset === protectedDs) {
-        isSafe = false;
-        log.task.warn('Skipping dataset deletion: Dataset is used by another zone', {
-          zone_name: zoneName,
-          dataset,
-          used_by: protectedDs,
-        });
-        break;
-      }
-      // Check 2: Is this dataset a parent of a protected dataset? (Prevent recursive destroy of shared parents)
-      if (protectedDs.startsWith(`${dataset}/`) || protectedDs.startsWith(`/${dataset}/`)) {
-        isSafe = false;
-        log.task.warn(
-          'Skipping dataset deletion: Dataset contains resources used by another zone',
-          {
-            zone_name: zoneName,
-            dataset,
-            protected_child: protectedDs,
-          }
-        );
-        break;
-      }
-    }
+  const errors = await Promise.all(
+    sortedDatasets.map(dataset => processSingleDataset(dataset, zoneName, protectedDatasets))
+  );
 
-    if (!isSafe) {
-      continue;
-    }
-
-    // 4. Execute Safe Destroy
-    // Check if dataset exists first to avoid noise from children already deleted by parent
-    // eslint-disable-next-line no-await-in-loop
-    const check = await executeCommand(`pfexec zfs list -H -o name "${dataset}" 2>/dev/null`);
-    if (check.success) {
-      // eslint-disable-next-line no-await-in-loop
-      const destroyResult = await executeCommand(`pfexec zfs destroy -r "${dataset}"`);
-      if (!destroyResult.success) {
-        datasetErrors.push(`Failed to destroy ${dataset}: ${destroyResult.error}`);
-      } else {
-        log.task.info('Destroyed ZFS dataset', { dataset });
-      }
-    } else {
-      log.task.info('Skipping dataset (not found or already deleted)', {
-        zone_name: zoneName,
-        dataset,
-      });
-    }
-  }
-  return datasetErrors;
+  return errors.filter(Boolean);
 };
 
 /**

@@ -1284,7 +1284,7 @@ export const modifyZone = async (req, res) => {
       'add_cdroms',
       'remove_cdroms',
       'cloud_init',
-      'provisioning',
+      'provisioner',
     ];
     const hasChanges = changeFields.some(field => req.body[field] !== undefined);
 
@@ -1292,9 +1292,9 @@ export const modifyZone = async (req, res) => {
       return res.status(400).json({ error: 'No modification fields specified' });
     }
 
-    // Handle provisioning config update immediately (DB only)
+    // Handle provisioner config update immediately (DB only)
     // This ensures the config is available for the provision endpoint without waiting for the task
-    if (req.body.provisioning) {
+    if (req.body.provisioner) {
       let currentConfig = zone.configuration || {};
       if (typeof currentConfig === 'string') {
         try {
@@ -1304,12 +1304,12 @@ export const modifyZone = async (req, res) => {
           currentConfig = {};
         }
       }
-      const newConfig = { ...currentConfig, provisioning: req.body.provisioning };
+      const newConfig = { ...currentConfig, provisioner: req.body.provisioner };
       await zone.update({ configuration: newConfig });
 
       // If this is the only change, we can return early without queuing a task
       const otherChanges = changeFields
-        .filter(f => f !== 'provisioning')
+        .filter(f => f !== 'provisioner')
         .some(field => req.body[field] !== undefined);
       if (!otherChanges) {
         return res.json({
@@ -1317,7 +1317,7 @@ export const modifyZone = async (req, res) => {
           zone_name: zoneName,
           operation: 'zone_modify',
           status: 'completed',
-          message: 'Provisioning configuration updated successfully.',
+          message: 'Provisioner configuration updated successfully.',
           requires_restart: false,
         });
       }

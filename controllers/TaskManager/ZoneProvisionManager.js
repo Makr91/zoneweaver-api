@@ -13,163 +13,73 @@ import config from '../../config/ConfigLoader.js';
 import yj from 'yieldable-json';
 
 /**
- * Execute scripts sequentially (scripts must run in order)
- * @param {string} ip
- * @param {string} username
- * @param {Object} credentials
- * @param {number} port
- * @param {string[]} scripts
- * @param {string} envPrefix
- * @param {string} runAs
- * @param {string} provisioningBasePath
- * @returns {Promise<{success: boolean, error?: string}>}
+ * Install Ansible inside zone via SSH
+ * @param {string} ip - Zone IP
+ * @param {string} username - SSH username
+ * @param {Object} credentials - SSH credentials
+ * @param {number} port - SSH port
+ * @param {string} installMode - Installation method (pip or pkg)
+ * @param {string} provisioningBasePath - Base path for provisioning
  */
-const executeScriptsSequentially = (
+const installAnsibleInZone = async (
   ip,
   username,
   credentials,
   port,
-  scripts,
-  envPrefix,
-  runAs,
+  installMode,
   provisioningBasePath
 ) => {
-  const runScript = async index => {
-    if (index >= scripts.length) {
-      return { success: true };
-    }
-    const script = scripts[index];
-    let cmd = '';
-
-    if (runAs && runAs !== username) {
-      cmd = `${envPrefix ? `${envPrefix} ` : ''}sudo -u ${runAs} bash ${script}`;
-    } else if (runAs === 'root' && username !== 'root') {
-      cmd = `${envPrefix ? `${envPrefix} ` : ''}sudo bash ${script}`;
-    } else {
-      cmd = `${envPrefix ? `${envPrefix} ` : ''}bash ${script}`;
-    }
-
-    const result = await executeSSHCommand(ip, username, credentials, cmd, port, {
-      timeout: 600000,
-      provisioningBasePath,
-    });
-
-    if (!result.success) {
-      return {
-        success: false,
-        error: `Script ${script} failed: ${result.stderr || result.stdout}`,
-      };
-    }
-
-    log.task.info('Shell script executed', { script, exitCode: result.exitCode });
-    return runScript(index + 1);
-  };
-
-  return runScript(0);
+  if (installMode === 'pip') {
+    await executeSSHCommand(
+      ip,
+      username,
+      credentials,
+      'pip3 install ansible 2>/dev/null || pip install ansible 2>/dev/null',
+      port,
+      { timeout: 300000, provisioningBasePath }
+    );
+  } else if (installMode === 'pkg') {
+    await executeSSHCommand(
+      ip,
+      username,
+      credentials,
+      'pkg install ansible 2>/dev/null || apt-get install -y ansible 2>/dev/null || yum install -y ansible 2>/dev/null',
+      port,
+      { timeout: 300000, provisioningBasePath }
+    );
+  }
 };
 
 /**
- * Run shell script provisioner via SSH
- * @param {string} ip
- * @param {number} port
- * @param {Object} credentials
- * @param {Object} provisioner - { scripts: string[], run_as?: string, env?: Object }
- * @param {string} provisioningBasePath
- * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ * Install Ansible collections inside zone
+ * @param {string} ip - Zone IP
+ * @param {string} username - SSH username
+ * @param {Object} credentials - SSH credentials
+ * @param {number} port - SSH port
+ * @param {Array} collections - Collection names
+ * @param {string} provisioningBasePath - Base path for provisioning
  */
-const runShellProvisioner = async (ip, port, credentials, provisioner, provisioningBasePath) => {
-  const { scripts = [], run_as, env = {} } = provisioner;
-  const username = credentials.username || 'root';
-
-  // Build environment variable prefix
-  const envPrefix = Object.entries(env)
-    .map(([k, v]) => `${k}='${v}'`)
-    .join(' ');
-
-  const result = await executeScriptsSequentially(
-    ip,
-    username,
-    credentials,
-    port,
-    scripts,
-    envPrefix,
-    run_as,
-    provisioningBasePath
-  );
-
-  if (!result.success) {
-    return result;
-  }
-
-  return { success: true, message: `${scripts.length} shell script(s) executed` };
-};
-
-/**
- * Run ansible provisioner from HOST targeting zone
- * @param {string} ip
- * @param {number} port
- * @param {Object} credentials
- * @param {Object} provisioner - { playbook, extra_vars, collections, inventory }
- * @param {string} provisioningBasePath
- * @returns {Promise<{success: boolean, message?: string, error?: string}>}
- */
-const runAnsibleProvisioner = async (ip, port, credentials, provisioner, provisioningBasePath) => {
-  void provisioningBasePath; // Not used for ansible from host, but accept for consistency
-  const { playbook, extra_vars = {}, collections = [], inventory } = provisioner;
-  const username = credentials.username || 'root';
-  const keyPath =
-    credentials.ssh_key_path ||
-    config.get('provisioning.ssh.key_path') ||
-    '/etc/zoneweaver-api/ssh/provision_key';
-
-  if (!playbook) {
-    return { success: false, error: 'playbook is required for ansible provisioner' };
-  }
-
-  // Install collections if specified (parallel)
+const installAnsibleCollections = async (
+  ip,
+  username,
+  credentials,
+  port,
+  collections,
+  provisioningBasePath
+) => {
   if (collections.length > 0) {
     const collectionInstalls = collections.map(collection =>
-      executeCommand(`ansible-galaxy collection install ${collection} --force`, {
-        timeout: 300000,
-      }).then(result => {
-        if (!result.success) {
-          log.task.warn('Collection install may have failed', { collection, error: result.error });
-        }
-        return result;
-      })
+      executeSSHCommand(
+        ip,
+        username,
+        credentials,
+        `ansible-galaxy collection install ${collection} --force`,
+        port,
+        { timeout: 300000, provisioningBasePath }
+      )
     );
     await Promise.all(collectionInstalls);
   }
-
-  // Build inventory or use provided
-  const inventoryArg = inventory || `${ip},`;
-
-  // Build extra-vars string
-  let extraVarsArg = '';
-  if (Object.keys(extra_vars).length > 0) {
-    const varsJson = JSON.stringify(extra_vars).replace(/'/g, "'\\''");
-    extraVarsArg = `--extra-vars '${varsJson}'`;
-  }
-
-  const cmd = [
-    'ansible-playbook',
-    `-i '${inventoryArg}'`,
-    playbook,
-    `--user=${username}`,
-    `--private-key=${keyPath}`,
-    `-e 'ansible_port=${port}'`,
-    `-e 'ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"'`,
-    extraVarsArg,
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  const result = await executeCommand(cmd, 1800000); // 30 min timeout
-
-  if (result.success) {
-    return { success: true, message: `Ansible playbook completed: ${playbook}` };
-  }
-  return { success: false, error: `Ansible playbook failed: ${result.error}` };
 };
 
 /**
@@ -195,41 +105,15 @@ const runAnsibleLocalProvisioner = async (
     return { success: false, error: 'playbook is required for ansible_local provisioner' };
   }
 
-  // Install ansible inside zone if install_mode specified
-  if (install_mode === 'pip') {
-    await executeSSHCommand(
-      ip,
-      username,
-      credentials,
-      'pip3 install ansible 2>/dev/null || pip install ansible 2>/dev/null',
-      port,
-      { timeout: 300000, provisioningBasePath }
-    );
-  } else if (install_mode === 'pkg') {
-    await executeSSHCommand(
-      ip,
-      username,
-      credentials,
-      'pkg install ansible 2>/dev/null || apt-get install -y ansible 2>/dev/null || yum install -y ansible 2>/dev/null',
-      port,
-      { timeout: 300000, provisioningBasePath }
-    );
-  }
-
-  // Install collections inside zone (parallel)
-  if (collections.length > 0) {
-    const collectionInstalls = collections.map(collection =>
-      executeSSHCommand(
-        ip,
-        username,
-        credentials,
-        `ansible-galaxy collection install ${collection} --force`,
-        port,
-        { timeout: 300000, provisioningBasePath }
-      )
-    );
-    await Promise.all(collectionInstalls);
-  }
+  await installAnsibleInZone(ip, username, credentials, port, install_mode, provisioningBasePath);
+  await installAnsibleCollections(
+    ip,
+    username,
+    credentials,
+    port,
+    collections,
+    provisioningBasePath
+  );
 
   // Build extra-vars
   let extraVarsArg = '';
@@ -248,7 +132,8 @@ const runAnsibleLocalProvisioner = async (
   if (result.success) {
     return { success: true, message: `Ansible-local playbook completed: ${playbook}` };
   }
-  return { success: false, error: `Ansible-local failed: ${result.stderr || result.stdout}` };
+  const errorOutput = [result.stdout, result.stderr].filter(Boolean).join('\n---STDERR---\n');
+  return { success: false, error: `Ansible-local failed:\n${errorOutput}` };
 };
 
 /**
@@ -321,8 +206,72 @@ export const executeZoneWaitSSHTask = async task => {
 };
 
 /**
- * Execute zone file sync task
- * Syncs provisioning files from host to zone via rsync
+ * Get provisioning base path from zone configuration
+ * @param {string} zoneName - Zone name
+ * @returns {Promise<string|null>} Provisioning base path
+ */
+const getProvisioningBasePath = async zoneName => {
+  const zone = await Zones.findOne({ where: { name: zoneName } });
+  if (!zone?.configuration) {
+    return null;
+  }
+  const zoneConfig =
+    typeof zone.configuration === 'string' ? JSON.parse(zone.configuration) : zone.configuration;
+  if (zoneConfig.zonepath) {
+    const zoneDataset = zoneConfig.zonepath.replace('/path', '');
+    return `${zoneDataset}/provisioning`;
+  }
+  return null;
+};
+
+/**
+ * Apply ownership changes to synced files
+ * @param {string} ip - Zone IP
+ * @param {Object} credentials - SSH credentials
+ * @param {number} port - SSH port
+ * @param {Object} folder - Folder config
+ * @param {string} dest - Destination path
+ * @param {string} zoneName - Zone name
+ * @param {string} provisioningBasePath - Provisioning base path
+ */
+const applySyncOwnership = async (
+  ip,
+  credentials,
+  port,
+  folder,
+  dest,
+  zoneName,
+  provisioningBasePath
+) => {
+  if (folder.owner || folder.group) {
+    const chownUser = folder.owner || credentials.username;
+    const chownGroup = folder.group || chownUser;
+    const chownCmd = `sudo chown -R ${chownUser}:${chownGroup} ${dest}`;
+
+    const chownResult = await executeSSHCommand(
+      ip,
+      credentials.username || 'root',
+      credentials,
+      chownCmd,
+      port,
+      { provisioningBasePath }
+    );
+
+    if (!chownResult.success) {
+      log.task.warn('Failed to set ownership on synced files', {
+        zone_name: zoneName,
+        dest,
+        owner: chownUser,
+        group: chownGroup,
+        error: chownResult.stderr,
+      });
+    }
+  }
+};
+
+/**
+ * Execute zone file sync task (GRANULAR: handles ONE folder)
+ * Syncs a single provisioning folder from host to zone via rsync
  * @param {Object} task - Task object from TaskQueue
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
@@ -340,141 +289,63 @@ export const executeZoneSyncTask = async task => {
       });
     });
 
-    const { ip, port = 22, credentials = {}, sync_folders = [] } = metadata;
+    const { ip, port = 22, credentials = {}, folder } = metadata;
 
-    if (!ip) {
-      return { success: false, error: 'ip is required in task metadata' };
+    if (!ip || !folder) {
+      return { success: false, error: 'ip and folder are required in task metadata' };
     }
 
-    if (sync_folders.length === 0) {
-      return { success: true, message: 'No sync folders configured, skipping' };
+    const { map, to, disabled = false } = folder;
+    const source = map || folder.source;
+    const dest = to || folder.dest;
+
+    if (disabled) {
+      return { success: true, message: 'Folder sync skipped (disabled)' };
     }
 
-    // Get provisioning dataset path for relative SSH key resolution
-    const zone = await Zones.findOne({ where: { name: zone_name } });
-    let provisioningBasePath = null;
-    if (zone?.configuration) {
-      const zoneConfig =
-        typeof zone.configuration === 'string'
-          ? JSON.parse(zone.configuration)
-          : zone.configuration;
-      if (zoneConfig.zonepath) {
-        const zoneDataset = zoneConfig.zonepath.replace('/path', '');
-        provisioningBasePath = `${zoneDataset}/provisioning`;
-      }
+    if (!source || !dest) {
+      return { success: false, error: 'Folder missing source (map) or destination (to)' };
     }
 
-    const errors = [];
-    const synced = [];
+    const provisioningBasePath = await getProvisioningBasePath(zone_name);
+    const resolvedSource = source.startsWith('/') ? source : `${provisioningBasePath}/${source}`;
 
-    // Process sync folders sequentially (dependencies may exist between folders)
-    const processSyncFolders = async (index = 0) => {
-      if (index >= sync_folders.length) {
-        return;
+    log.task.info('Syncing folder to zone', { zone_name, source: resolvedSource, dest });
+
+    // Pre-create destination directory
+    await executeSSHCommand(
+      ip,
+      credentials.username || 'root',
+      credentials,
+      `sudo mkdir -p ${dest}`,
+      port,
+      { provisioningBasePath }
+    );
+
+    const result = await syncFiles(
+      ip,
+      credentials.username || 'root',
+      credentials,
+      resolvedSource,
+      dest,
+      port,
+      {
+        exclude: folder.exclude,
+        args: folder.args,
+        delete: folder.delete,
+        provisioningBasePath,
       }
-      const folder = sync_folders[index];
-      const { source, dest, disabled = false } = folder;
+    );
 
-      // Skip disabled folders
-      if (disabled) {
-        log.task.debug('Skipping disabled sync folder', { zone_name, source, dest });
-        await processSyncFolders(index + 1);
-        return;
-      }
-
-      if (!source || !dest) {
-        errors.push(`Invalid sync folder: missing source or dest`);
-        await processSyncFolders(index + 1);
-        return;
-      }
-
-      // Resolve relative source paths against provisioning dataset
-      const resolvedSource = source.startsWith('/') ? source : `${provisioningBasePath}/${source}`;
-
-      log.task.info('Syncing folder to zone', { zone_name, source: resolvedSource, dest });
-
-      // Pre-create destination directory with sudo (Vagrant rsync_pre pattern)
-      const mkdirCmd = `sudo mkdir -p ${dest}`;
-      const mkdirResult = await executeSSHCommand(
-        ip,
-        credentials.username || 'root',
-        credentials,
-        mkdirCmd,
-        port,
-        { provisioningBasePath }
-      );
-
-      if (!mkdirResult.success) {
-        log.task.warn('Failed to pre-create sync destination directory', {
-          zone_name,
-          dest,
-          error: mkdirResult.stderr,
-        });
-      }
-
-      const result = await syncFiles(
-        ip,
-        credentials.username || 'root',
-        credentials,
-        resolvedSource,
-        dest,
-        port,
-        {
-          exclude: folder.exclude,
-          args: folder.args,
-          delete: folder.delete,
-          provisioningBasePath,
-        }
-      );
-
-      if (result.success) {
-        // Handle ownership changes if specified
-        if (folder.owner || folder.group) {
-          const chownUser = folder.owner || credentials.username;
-          const chownGroup = folder.group || chownUser;
-          const chownCmd = `sudo chown -R ${chownUser}:${chownGroup} ${dest}`;
-
-          const chownResult = await executeSSHCommand(
-            ip,
-            credentials.username || 'root',
-            credentials,
-            chownCmd,
-            port,
-            { provisioningBasePath }
-          );
-
-          if (!chownResult.success) {
-            log.task.warn('Failed to set ownership on synced files', {
-              zone_name,
-              dest,
-              owner: chownUser,
-              group: chownGroup,
-              error: chownResult.stderr,
-            });
-          }
-        }
-
-        synced.push(`${source} → ${dest}`);
-      } else {
-        errors.push(`${source} → ${dest}: ${result.error}`);
-      }
-      await processSyncFolders(index + 1);
-    };
-
-    await processSyncFolders();
-
-    if (errors.length > 0) {
-      return {
-        success: false,
-        error: `File sync had ${errors.length} error(s): ${errors.join('; ')}`,
-        synced,
-      };
+    if (!result.success) {
+      return { success: false, error: `${source} → ${dest}: ${result.error}` };
     }
+
+    await applySyncOwnership(ip, credentials, port, folder, dest, zone_name, provisioningBasePath);
 
     return {
       success: true,
-      message: `Synced ${synced.length} folder(s) to ${zone_name}`,
-      synced,
+      message: `Synced folder: ${source} → ${dest}`,
     };
   } catch (error) {
     log.task.error('Zone file sync failed', { zone_name, error: error.message });
@@ -483,8 +354,8 @@ export const executeZoneSyncTask = async task => {
 };
 
 /**
- * Execute zone provisioner task
- * Runs shell scripts or ansible playbooks against the zone
+ * Execute zone provisioner task (GRANULAR: handles ONE playbook)
+ * Runs a single Ansible playbook against the zone with complete extra_vars
  * @param {Object} task - Task object from TaskQueue
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
@@ -502,100 +373,71 @@ export const executeZoneProvisionTask = async task => {
       });
     });
 
-    const { ip, port = 22, credentials = {}, provisioners = [] } = metadata;
+    const { ip, port = 22, credentials = {}, playbook } = metadata;
 
     if (!ip) {
       return { success: false, error: 'ip is required in task metadata' };
     }
 
-    if (provisioners.length === 0) {
-      return { success: true, message: 'No provisioners configured, skipping' };
+    if (!playbook) {
+      return { success: false, error: 'playbook is required in task metadata' };
     }
 
-    // Get provisioning dataset path for relative SSH key resolution
+    // Get zone record and provisioning dataset path
     const zone = await Zones.findOne({ where: { name: zone_name } });
-    let provisioningBasePath = null;
-    if (zone?.configuration) {
-      const zoneConfig =
-        typeof zone.configuration === 'string'
-          ? JSON.parse(zone.configuration)
-          : zone.configuration;
-      if (zoneConfig.zonepath) {
-        const zoneDataset = zoneConfig.zonepath.replace('/path', '');
-        provisioningBasePath = `${zoneDataset}/provisioning`;
+    if (!zone) {
+      return { success: false, error: `Zone '${zone_name}' not found` };
+    }
+
+    let zoneConfig = zone.configuration;
+    if (typeof zoneConfig === 'string') {
+      try {
+        zoneConfig = JSON.parse(zoneConfig);
+      } catch (e) {
+        log.task.warn('Failed to parse zone configuration', { error: e.message });
+        zoneConfig = {};
       }
     }
 
-    const results = [];
-    const errors = [];
+    let provisioningBasePath = null;
+    if (zoneConfig.zonepath) {
+      const zoneDataset = zoneConfig.zonepath.replace('/path', '');
+      provisioningBasePath = `${zoneDataset}/provisioning`;
+    }
 
-    // Execute provisioners sequentially (order matters, later provisioners may depend on earlier ones)
-    const executeProvisionersSequentially = async (index = 0) => {
-      if (index >= provisioners.length) {
-        return;
-      }
-      const provisioner = provisioners[index];
-      log.task.info('Running provisioner', { zone_name, type: provisioner.type, index });
+    // Build complete extra_vars from zone configuration
+    const { buildExtraVarsFromZone, buildPlaybookExtraVars } =
+      await import('../../lib/ProvisionerConfigBuilder.js');
 
-      let result;
-      switch (provisioner.type) {
-        case 'shell':
-          result = await runShellProvisioner(
-            ip,
-            port,
-            credentials,
-            provisioner,
-            provisioningBasePath
-          );
-          break;
-        case 'ansible':
-          result = await runAnsibleProvisioner(
-            ip,
-            port,
-            credentials,
-            provisioner,
-            provisioningBasePath
-          );
-          break;
-        case 'ansible_local':
-          result = await runAnsibleLocalProvisioner(
-            ip,
-            port,
-            credentials,
-            provisioner,
-            provisioningBasePath
-          );
-          break;
-        default:
-          result = { success: false, error: `Unknown provisioner type: ${provisioner.type}` };
-      }
+    const provisioner = zoneConfig.provisioner || {};
+    const baseExtraVars = buildExtraVarsFromZone(zone, provisioner);
+    const extraVars = buildPlaybookExtraVars(baseExtraVars, playbook);
 
-      results.push({ type: provisioner.type, index, ...result });
+    log.task.info('Running ansible-local playbook', {
+      zone_name,
+      playbook: playbook.playbook,
+      collections: playbook.collections,
+    });
 
-      if (!result.success) {
-        errors.push(`Provisioner ${index} (${provisioner.type}): ${result.error}`);
-        return; // Stop on first failure
-      }
-      await executeProvisionersSequentially(index + 1);
-    };
-
-    await executeProvisionersSequentially();
+    // Execute ansible-local provisioner
+    const result = await runAnsibleLocalProvisioner(
+      ip,
+      port,
+      credentials,
+      { ...playbook, extra_vars: extraVars },
+      provisioningBasePath
+    );
 
     // Update zone provisioning status
     await Zones.update({ last_seen: new Date() }, { where: { name: zone_name } });
 
-    if (errors.length > 0) {
-      return {
-        success: false,
-        error: errors.join('; '),
-        results,
-      };
+    if (!result.success) {
+      return { success: false, error: result.error };
     }
 
     return {
       success: true,
-      message: `All ${provisioners.length} provisioner(s) completed successfully`,
-      results,
+      message: `Playbook completed: ${playbook.playbook}`,
     };
   } catch (error) {
     log.task.error('Zone provisioning failed', { zone_name, error: error.message });

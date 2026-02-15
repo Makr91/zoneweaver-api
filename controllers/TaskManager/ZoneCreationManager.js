@@ -252,38 +252,50 @@ const importTemplate = async (metadata, zoneName, zfsCreated) => {
 };
 
 /**
+ * Build zone attribute map from metadata (supports both old and new structures)
+ * @param {Object} metadata - Zone creation metadata
+ * @returns {Object} Attribute map
+ */
+const buildZoneAttributeMap = metadata => {
+  const zones = metadata.zones || {};
+  const settings = metadata.settings || {};
+  return {
+    ram: settings.memory || metadata.ram,
+    vcpus: settings.vcpus || metadata.vcpus,
+    bootrom: zones.bootrom || metadata.bootrom,
+    hostbridge: zones.hostbridge || metadata.hostbridge,
+    diskif: zones.diskif || metadata.diskif,
+    netif: zones.netif || metadata.netif,
+    type: settings.os_type || metadata.os_type,
+    vnc: zones.vnc || metadata.vnc,
+    acpi: zones.acpi || metadata.acpi,
+    xhci: zones.xhci || metadata.xhci,
+  };
+};
+
+/**
  * Apply core zone configuration via zonecfg
+ * Supports both old structure and new Hosts.yml structure (settings/zones sections)
  * @param {string} zoneName - Zone name
  * @param {Object} metadata - Zone creation metadata
  */
 const applyZoneConfig = async (zoneName, metadata) => {
-  const pool = metadata.boot_volume?.pool || 'rpool';
-  const dataset = metadata.boot_volume?.dataset || 'zones';
+  const pool = metadata.boot_volume?.pool || metadata.disks?.boot?.array || 'rpool';
+  const dataset = metadata.boot_volume?.dataset || metadata.disks?.boot?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
   const zonepath = metadata.zonepath || `/${datasetPath}/path`;
-  const autoboot = metadata.autoboot === true ? 'true' : 'false';
+  const autoboot =
+    metadata.autoboot === true || metadata.zones?.autostart === true ? 'true' : 'false';
+  const brand = metadata.zones?.brand || metadata.brand;
 
   const createResult = await executeCommand(
-    `pfexec zonecfg -z ${zoneName} "create; set zonepath=${zonepath}; set brand=${metadata.brand}; set autoboot=${autoboot}; set ip-type=exclusive"`
+    `pfexec zonecfg -z ${zoneName} "create; set zonepath=${zonepath}; set brand=${brand}; set autoboot=${autoboot}; set ip-type=exclusive"`
   );
   if (!createResult.success) {
     throw new Error(`Zone configuration failed: ${createResult.error}`);
   }
 
-  // Optional bhyve attributes
-  const attrMap = {
-    ram: metadata.ram,
-    vcpus: metadata.vcpus,
-    bootrom: metadata.bootrom,
-    hostbridge: metadata.hostbridge,
-    diskif: metadata.diskif,
-    netif: metadata.netif,
-    type: metadata.os_type,
-    vnc: metadata.vnc,
-    acpi: metadata.acpi,
-    xhci: metadata.xhci,
-  };
-
+  const attrMap = buildZoneAttributeMap(metadata);
   const attrs = Object.entries(attrMap)
     .filter(([, value]) => value !== undefined && value !== null)
     .map(([name, value]) => buildAttrCommand(name, value))
@@ -544,12 +556,15 @@ const rollbackCreation = async (zoneName, zonecfgApplied, zfsCreated) => {
 
 /**
  * Validate zone creation request
+ * Supports both old structure (metadata.brand) and new Hosts.yml structure (metadata.zones.brand)
  * @param {Object} metadata - Parsed metadata
  * @param {string} zoneName - Zone name
  * @returns {Promise<{valid: boolean, error?: string}>}
  */
 const validateZoneCreationRequest = async (metadata, zoneName) => {
-  if (!zoneName || !metadata.brand) {
+  const brand = metadata.zones?.brand || metadata.brand;
+
+  if (!zoneName || !brand) {
     return {
       valid: false,
       error: 'Missing required parameters: name and brand are required',
@@ -566,11 +581,30 @@ const validateZoneCreationRequest = async (metadata, zoneName) => {
 
 /**
  * Resolve partition_id: validate user-provided or auto-generate
+ * Supports both old structure (metadata.partition_id) and new Hosts.yml structure (metadata.settings.server_id)
  * @param {Object} metadata - Zone creation metadata
  * @param {string} baseName - Base zone name (without partition prefix)
  * @returns {Promise<{valid: boolean, error?: string}>}
  */
 const resolvePartitionId = async (metadata, baseName) => {
+  // Check for Hosts.yml structure first (settings.server_id)
+  if (metadata.settings?.server_id) {
+    metadata.partition_id = String(metadata.settings.server_id).padStart(4, '0');
+    const existing = await Zones.findOne({ where: { partition_id: metadata.partition_id } });
+    if (existing) {
+      return {
+        valid: false,
+        error: `Server ID ${metadata.partition_id} is already in use by zone ${existing.name}`,
+      };
+    }
+    log.task.info('Using server_id from settings as partition_id', {
+      base_name: baseName,
+      partition_id: metadata.partition_id,
+    });
+    return { valid: true };
+  }
+
+  // Fallback to old structure (metadata.partition_id)
   if (metadata.partition_id) {
     const existing = await Zones.findOne({ where: { partition_id: metadata.partition_id } });
     if (existing) {
@@ -682,6 +716,50 @@ const applyAllZoneConfig = async (zoneName, metadata, bootdiskPath, zfsCreated, 
 };
 
 /**
+ * Store infrastructure configuration in zone record
+ * @param {Object} zone - Zone database record
+ * @param {Object} metadata - Zone creation metadata
+ * @param {string} zoneName - Zone name
+ */
+const storeInfrastructureConfig = async (zone, metadata, zoneName) => {
+  let zoneConfig = zone.configuration || {};
+  if (typeof zoneConfig === 'string') {
+    try {
+      zoneConfig = JSON.parse(zoneConfig);
+    } catch (e) {
+      log.task.warn('Failed to parse zone configuration for storage', { error: e.message });
+      zoneConfig = {};
+    }
+  }
+
+  // Store Hosts.yml infrastructure sections if present
+  if (metadata.settings) {
+    zoneConfig.settings = metadata.settings;
+  }
+  if (metadata.zones) {
+    zoneConfig.zones = metadata.zones;
+  }
+  if (metadata.networks) {
+    zoneConfig.networks = metadata.networks;
+  }
+  if (metadata.disks) {
+    zoneConfig.disks = metadata.disks;
+  }
+  if (metadata.metadata) {
+    zoneConfig.metadata = metadata.metadata;
+  }
+
+  await zone.update({ configuration: zoneConfig });
+  log.task.info('Stored infrastructure configuration in zone record', {
+    zone_name: zoneName,
+    has_settings: !!metadata.settings,
+    has_zones: !!metadata.zones,
+    has_networks: !!metadata.networks,
+    has_disks: !!metadata.disks,
+  });
+};
+
+/**
  * Sync zone to database and persist partition_id/vm_type, then install
  * @param {string} zoneName - Zone name
  * @param {Object} metadata - Zone creation metadata
@@ -694,7 +772,7 @@ const finalizeAndInstallZone = async (zoneName, metadata, task) => {
   if (zoneRecord) {
     await zoneRecord.update({
       partition_id: metadata.partition_id,
-      vm_type: metadata.vm_type || 'production',
+      vm_type: metadata.zones?.vmtype || metadata.vm_type || 'production',
     });
   }
 
@@ -705,8 +783,8 @@ const finalizeAndInstallZone = async (zoneName, metadata, task) => {
   }
 
   // Fix zonepath permissions for service user (zoneapi) access to provisioning datasets
-  const pool = metadata.boot_volume?.pool || 'rpool';
-  const dataset = metadata.boot_volume?.dataset || 'zones';
+  const pool = metadata.boot_volume?.pool || metadata.disks?.boot?.array || 'rpool';
+  const dataset = metadata.boot_volume?.dataset || metadata.disks?.boot?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
   const zonepath = metadata.zonepath || `/${datasetPath}/path`;
   const chmodResult = await executeCommand(`pfexec chmod 755 ${zonepath}`);
@@ -717,29 +795,11 @@ const finalizeAndInstallZone = async (zoneName, metadata, task) => {
   await updateTaskProgress(task, 97, { status: 'creating_database_record' });
   await syncZoneToDatabase(zoneName, 'installed');
 
-  // Store custom metadata AFTER final sync to prevent it being overwritten
-  if (metadata.metadata) {
-    await updateTaskProgress(task, 98, { status: 'storing_metadata' });
-    const zone = await Zones.findOne({ where: { name: zoneName } });
-    if (zone) {
-      let zoneConfig = zone.configuration || {};
-      if (typeof zoneConfig === 'string') {
-        try {
-          zoneConfig = JSON.parse(zoneConfig);
-        } catch (e) {
-          log.task.warn('Failed to parse zone configuration for metadata storage', {
-            error: e.message,
-          });
-          zoneConfig = {};
-        }
-      }
-      zoneConfig.metadata = metadata.metadata;
-      await zone.update({ configuration: zoneConfig });
-      log.task.info('Stored custom metadata in zone configuration', {
-        zone_name: zoneName,
-        has_networks: !!metadata.metadata.networks,
-      });
-    }
+  // Store infrastructure sections in zone.configuration (Hosts.yml structure)
+  await updateTaskProgress(task, 98, { status: 'storing_configuration' });
+  const zone = await Zones.findOne({ where: { name: zoneName } });
+  if (zone) {
+    await storeInfrastructureConfig(zone, metadata, zoneName);
   }
 };
 
