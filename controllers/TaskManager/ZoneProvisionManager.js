@@ -327,6 +327,20 @@ export const executeZoneSyncTask = async task => {
       return { success: true, message: 'No sync folders configured, skipping' };
     }
 
+    // Get provisioning dataset path for relative SSH key resolution
+    const zone = await Zones.findOne({ where: { name: zone_name } });
+    let provisioningBasePath = null;
+    if (zone?.configuration) {
+      const zoneConfig =
+        typeof zone.configuration === 'string'
+          ? JSON.parse(zone.configuration)
+          : zone.configuration;
+      if (zoneConfig.zonepath) {
+        const zoneDataset = zoneConfig.zonepath.replace('/path', '');
+        provisioningBasePath = `${zoneDataset}/provisioning`;
+      }
+    }
+
     const errors = [];
     const synced = [];
 
@@ -362,7 +376,7 @@ export const executeZoneSyncTask = async task => {
         source,
         dest,
         port,
-        { exclude: folder.exclude }
+        { exclude: folder.exclude, provisioningBasePath }
       );
 
       if (result.success) {
