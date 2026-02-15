@@ -137,8 +137,8 @@ const buildZoneName = (baseName, partitionId) => {
  */
 const buildDatasetPath = (basePath, zoneName, partitionId) => {
   const zonesConfig = config.getZones();
-  if (zonesConfig.prefix_datasets && partitionId && !zoneName.startsWith(partitionId)) {
-    const paddedId = partitionId.padStart(4, '0');
+  const paddedId = partitionId.padStart(4, '0');
+  if (zonesConfig.prefix_datasets && partitionId && !zoneName.startsWith(paddedId)) {
     return `${basePath}/${paddedId}--${zoneName}`;
   }
   return `${basePath}/${zoneName}`;
