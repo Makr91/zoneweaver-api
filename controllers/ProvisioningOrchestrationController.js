@@ -732,3 +732,187 @@ export const deleteProvisioningProfile = async (req, res) => {
     });
   }
 };
+
+/**
+ * @swagger
+ * /zones/{name}/sync:
+ *   post:
+ *     summary: Sync zone files ad-hoc
+ *     description: |
+ *       Creates a zone_sync task to sync provisioning files to the zone.
+ *       This is independent of the full provisioning pipeline and can be called
+ *       anytime after SSH is accessible.
+ *
+ *       Prerequisites:
+ *       - Zone must be running
+ *       - Zone must have provisioning config with sync_folders
+ *       - SSH must be accessible
+ *     tags: [Provisioning Tasks]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Sync task created
+ *       400:
+ *         description: Invalid request or missing provisioning config
+ *       404:
+ *         description: Zone not found
+ *       500:
+ *         description: Failed to create sync task
+ */
+export const syncZone = async (req, res) => {
+  try {
+    const zoneName = req.params.name;
+
+    // Validate request
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    const validation = await validateProvisioningRequest(zoneName, zone, true);
+    if (!validation.valid) {
+      return res
+        .status(validation.error.includes('not found') ? 404 : 400)
+        .json({ error: validation.error });
+    }
+
+    const { provisioning, zoneIP } = validation;
+
+    // Check if there are sync folders configured
+    if (!provisioning.sync_folders || provisioning.sync_folders.length === 0) {
+      return res.status(400).json({
+        error: 'No sync_folders configured in provisioning metadata',
+      });
+    }
+
+    // Create zone_sync task
+    const syncTask = await createTask({
+      zone_name: zoneName,
+      operation: 'zone_sync',
+      metadata: {
+        ip: zoneIP,
+        port: provisioning.ssh_port || 22,
+        credentials: provisioning.credentials,
+        sync_folders: provisioning.sync_folders,
+      },
+      depends_on: null,
+      parent_task_id: null,
+      created_by: req.entity.name,
+    });
+
+    log.api.info('Zone sync task created', {
+      zone_name: zoneName,
+      task_id: syncTask.id,
+      sync_folders_count: provisioning.sync_folders.length,
+    });
+
+    return res.json({
+      success: true,
+      message: `Zone sync task created for ${zoneName}`,
+      zone_name: zoneName,
+      task_id: syncTask.id,
+      sync_folders_count: provisioning.sync_folders.length,
+    });
+  } catch (error) {
+    log.api.error('Failed to create zone sync task', { error: error.message });
+    return res.status(500).json({
+      error: 'Failed to create zone sync task',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /zones/{name}/run-provisioners:
+ *   post:
+ *     summary: Run zone provisioners ad-hoc
+ *     description: |
+ *       Creates a zone_provision task to execute provisioners (shell scripts, ansible, etc.)
+ *       against the zone. This is independent of the full provisioning pipeline and can be
+ *       called anytime after SSH is accessible.
+ *
+ *       Prerequisites:
+ *       - Zone must be running
+ *       - Zone must have provisioning config with provisioners
+ *       - SSH must be accessible
+ *     tags: [Provisioning Tasks]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Provisioning task created
+ *       400:
+ *         description: Invalid request or missing provisioning config
+ *       404:
+ *         description: Zone not found
+ *       500:
+ *         description: Failed to create provisioning task
+ */
+export const runProvisioners = async (req, res) => {
+  try {
+    const zoneName = req.params.name;
+
+    // Validate request
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    const validation = await validateProvisioningRequest(zoneName, zone, true);
+    if (!validation.valid) {
+      return res
+        .status(validation.error.includes('not found') ? 404 : 400)
+        .json({ error: validation.error });
+    }
+
+    const { provisioning, zoneIP } = validation;
+
+    // Check if there are provisioners configured
+    if (!provisioning.provisioners || provisioning.provisioners.length === 0) {
+      return res.status(400).json({
+        error: 'No provisioners configured in provisioning metadata',
+      });
+    }
+
+    // Create zone_provision task
+    const provisionTask = await createTask({
+      zone_name: zoneName,
+      operation: 'zone_provision',
+      metadata: {
+        ip: zoneIP,
+        port: provisioning.ssh_port || 22,
+        credentials: provisioning.credentials,
+        provisioners: provisioning.provisioners,
+      },
+      depends_on: null,
+      parent_task_id: null,
+      created_by: req.entity.name,
+    });
+
+    log.api.info('Zone provision task created', {
+      zone_name: zoneName,
+      task_id: provisionTask.id,
+      provisioners_count: provisioning.provisioners.length,
+    });
+
+    return res.json({
+      success: true,
+      message: `Zone provisioners task created for ${zoneName}`,
+      zone_name: zoneName,
+      task_id: provisionTask.id,
+      provisioners_count: provisioning.provisioners.length,
+    });
+  } catch (error) {
+    log.api.error('Failed to create zone provisioners task', { error: error.message });
+    return res.status(500).json({
+      error: 'Failed to create zone provisioners task',
+      details: error.message,
+    });
+  }
+};

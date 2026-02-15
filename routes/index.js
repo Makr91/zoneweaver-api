@@ -96,6 +96,8 @@ import {
   getProvisioningProfile,
   updateProvisioningProfile,
   deleteProvisioningProfile,
+  syncZone,
+  runProvisioners,
 } from '../controllers/ProvisioningOrchestrationController.js';
 import {
   startTerminalSession,
@@ -463,6 +465,8 @@ router.delete('/zones/:zoneName', verifyApiKey, deleteZone); // Delete zone
 // Zone Provisioning Routes
 router.post('/zones/:name/provision', verifyApiKey, provisionZone); // Start provisioning pipeline
 router.get('/zones/:name/provision/status', verifyApiKey, getZoneProvisioningStatus); // Get provisioning status
+router.post('/zones/:name/sync', verifyApiKey, syncZone); // Sync provisioning files ad-hoc
+router.post('/zones/:name/run-provisioners', verifyApiKey, runProvisioners); // Run provisioners ad-hoc
 
 // Task Management Routes
 router.get('/tasks', verifyApiKey, listTasks); // List tasks

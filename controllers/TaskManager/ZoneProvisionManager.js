@@ -21,9 +21,19 @@ import yj from 'yieldable-json';
  * @param {string[]} scripts
  * @param {string} envPrefix
  * @param {string} runAs
+ * @param {string} provisioningBasePath
  * @returns {Promise<{success: boolean, error?: string}>}
  */
-const executeScriptsSequentially = (ip, username, credentials, port, scripts, envPrefix, runAs) => {
+const executeScriptsSequentially = (
+  ip,
+  username,
+  credentials,
+  port,
+  scripts,
+  envPrefix,
+  runAs,
+  provisioningBasePath
+) => {
   const runScript = async index => {
     if (index >= scripts.length) {
       return { success: true };
@@ -41,6 +51,7 @@ const executeScriptsSequentially = (ip, username, credentials, port, scripts, en
 
     const result = await executeSSHCommand(ip, username, credentials, cmd, port, {
       timeout: 600000,
+      provisioningBasePath,
     });
 
     if (!result.success) {
@@ -63,9 +74,10 @@ const executeScriptsSequentially = (ip, username, credentials, port, scripts, en
  * @param {number} port
  * @param {Object} credentials
  * @param {Object} provisioner - { scripts: string[], run_as?: string, env?: Object }
+ * @param {string} provisioningBasePath
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const runShellProvisioner = async (ip, port, credentials, provisioner) => {
+const runShellProvisioner = async (ip, port, credentials, provisioner, provisioningBasePath) => {
   const { scripts = [], run_as, env = {} } = provisioner;
   const username = credentials.username || 'root';
 
@@ -81,7 +93,8 @@ const runShellProvisioner = async (ip, port, credentials, provisioner) => {
     port,
     scripts,
     envPrefix,
-    run_as
+    run_as,
+    provisioningBasePath
   );
 
   if (!result.success) {
@@ -97,9 +110,11 @@ const runShellProvisioner = async (ip, port, credentials, provisioner) => {
  * @param {number} port
  * @param {Object} credentials
  * @param {Object} provisioner - { playbook, extra_vars, collections, inventory }
+ * @param {string} provisioningBasePath
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const runAnsibleProvisioner = async (ip, port, credentials, provisioner) => {
+const runAnsibleProvisioner = async (ip, port, credentials, provisioner, provisioningBasePath) => {
+  void provisioningBasePath; // Not used for ansible from host, but accept for consistency
   const { playbook, extra_vars = {}, collections = [], inventory } = provisioner;
   const username = credentials.username || 'root';
   const keyPath =
@@ -163,9 +178,16 @@ const runAnsibleProvisioner = async (ip, port, credentials, provisioner) => {
  * @param {number} port
  * @param {Object} credentials
  * @param {Object} provisioner - { playbook, extra_vars, collections, install_mode }
+ * @param {string} provisioningBasePath
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-const runAnsibleLocalProvisioner = async (ip, port, credentials, provisioner) => {
+const runAnsibleLocalProvisioner = async (
+  ip,
+  port,
+  credentials,
+  provisioner,
+  provisioningBasePath
+) => {
   const { playbook, extra_vars = {}, collections = [], install_mode } = provisioner;
   const username = credentials.username || 'root';
 
@@ -181,7 +203,7 @@ const runAnsibleLocalProvisioner = async (ip, port, credentials, provisioner) =>
       credentials,
       'pip3 install ansible 2>/dev/null || pip install ansible 2>/dev/null',
       port,
-      { timeout: 300000 }
+      { timeout: 300000, provisioningBasePath }
     );
   } else if (install_mode === 'pkg') {
     await executeSSHCommand(
@@ -190,7 +212,7 @@ const runAnsibleLocalProvisioner = async (ip, port, credentials, provisioner) =>
       credentials,
       'pkg install ansible 2>/dev/null || apt-get install -y ansible 2>/dev/null || yum install -y ansible 2>/dev/null',
       port,
-      { timeout: 300000 }
+      { timeout: 300000, provisioningBasePath }
     );
   }
 
@@ -203,7 +225,7 @@ const runAnsibleLocalProvisioner = async (ip, port, credentials, provisioner) =>
         credentials,
         `ansible-galaxy collection install ${collection} --force`,
         port,
-        { timeout: 300000 }
+        { timeout: 300000, provisioningBasePath }
       )
     );
     await Promise.all(collectionInstalls);
@@ -220,6 +242,7 @@ const runAnsibleLocalProvisioner = async (ip, port, credentials, provisioner) =>
 
   const result = await executeSSHCommand(ip, username, credentials, cmd, port, {
     timeout: 1800000,
+    provisioningBasePath,
   });
 
   if (result.success) {
@@ -489,6 +512,20 @@ export const executeZoneProvisionTask = async task => {
       return { success: true, message: 'No provisioners configured, skipping' };
     }
 
+    // Get provisioning dataset path for relative SSH key resolution
+    const zone = await Zones.findOne({ where: { name: zone_name } });
+    let provisioningBasePath = null;
+    if (zone?.configuration) {
+      const zoneConfig =
+        typeof zone.configuration === 'string'
+          ? JSON.parse(zone.configuration)
+          : zone.configuration;
+      if (zoneConfig.zonepath) {
+        const zoneDataset = zoneConfig.zonepath.replace('/path', '');
+        provisioningBasePath = `${zoneDataset}/provisioning`;
+      }
+    }
+
     const results = [];
     const errors = [];
 
@@ -503,13 +540,31 @@ export const executeZoneProvisionTask = async task => {
       let result;
       switch (provisioner.type) {
         case 'shell':
-          result = await runShellProvisioner(ip, port, credentials, provisioner);
+          result = await runShellProvisioner(
+            ip,
+            port,
+            credentials,
+            provisioner,
+            provisioningBasePath
+          );
           break;
         case 'ansible':
-          result = await runAnsibleProvisioner(ip, port, credentials, provisioner);
+          result = await runAnsibleProvisioner(
+            ip,
+            port,
+            credentials,
+            provisioner,
+            provisioningBasePath
+          );
           break;
         case 'ansible_local':
-          result = await runAnsibleLocalProvisioner(ip, port, credentials, provisioner);
+          result = await runAnsibleLocalProvisioner(
+            ip,
+            port,
+            credentials,
+            provisioner,
+            provisioningBasePath
+          );
           break;
         default:
           result = { success: false, error: `Unknown provisioner type: ${provisioner.type}` };
