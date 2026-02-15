@@ -122,7 +122,8 @@ const runAnsibleLocalProvisioner = async (
     extraVarsArg = `--extra-vars '${varsJson}'`;
   }
 
-  const cmd = `ansible-playbook -i 'localhost,' -c local ${playbook} ${extraVarsArg}`;
+  const provisioningPath = provisioner.provisioning_path || '/vagrant';
+  const cmd = `cd ${provisioningPath} && ansible-playbook -i 'localhost,' -c local ${playbook} ${extraVarsArg}`;
 
   const result = await executeSSHCommand(ip, username, credentials, cmd, port, {
     timeout: 1800000,
