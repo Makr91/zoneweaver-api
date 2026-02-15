@@ -268,7 +268,8 @@ export const executeZoneWaitSSHTask = async task => {
           ? JSON.parse(zone.configuration)
           : zone.configuration;
       if (zoneConfig.zonepath) {
-        provisioningBasePath = `${zoneConfig.zonepath}/provisioning`;
+        const zoneDataset = zoneConfig.zonepath.replace('/path', '');
+        provisioningBasePath = `${zoneDataset}/provisioning`;
       }
     }
 
