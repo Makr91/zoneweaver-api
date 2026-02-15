@@ -979,7 +979,8 @@ export const createZone = async (req, res) => {
 
     if (!settings?.hostname || !settings?.domain || !zones?.brand) {
       return res.status(400).json({
-        error: 'Missing required parameters: settings.hostname, settings.domain, and zones.brand are required',
+        error:
+          'Missing required parameters: settings.hostname, settings.domain, and zones.brand are required',
       });
     }
 
