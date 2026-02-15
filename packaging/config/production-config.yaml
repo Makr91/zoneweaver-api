@@ -1,4 +1,4 @@
-version: 0.1.14
+version: 0.2.0
 server:
   http_port: 5000
   https_port: 5001
@@ -18,27 +18,24 @@ database:
   storage: /var/lib/zoneweaver-api/database/database.sqlite
   logging: false
   sqlite_options:
-    # SQLite-specific performance and reliability settings
-    journal_mode: WAL              # Write-Ahead Logging for concurrent reads (WAL, DELETE, TRUNCATE, PERSIST, MEMORY, OFF)
-    synchronous: NORMAL            # Synchronization level (OFF, NORMAL, FULL, EXTRA)
-    cache_size_mb: 128             # Cache size in MB (will be converted to negative KB value for SQLite)
-    temp_store: MEMORY             # Temporary table storage (MEMORY, FILE, DEFAULT)
-    mmap_size_mb: 512              # Memory-mapped I/O size in MB
-    busy_timeout_ms: 30000         # Timeout for locked database in milliseconds
-    wal_autocheckpoint: 1000       # Checkpoint WAL after N pages
-    optimize: true                 # Run PRAGMA optimize on connection
-    # Connection pool settings for SQLite
+    journal_mode: WAL
+    synchronous: NORMAL
+    cache_size_mb: 128
+    temp_store: MEMORY
+    mmap_size_mb: 512
+    busy_timeout_ms: 30000
+    wal_autocheckpoint: 1000
+    optimize: true
     pool:
-      max: 10                      # Maximum connections (multiple readers allowed with WAL)
-      min: 2                       # Minimum connections to keep ready
-      acquire_timeout_ms: 60000    # Timeout to acquire connection
-      idle_timeout_ms: 30000       # Idle connection timeout
-      evict_interval_ms: 5000      # Check for idle connections interval
-    # Retry configuration for busy database
+      max: 10
+      min: 2
+      acquire_timeout_ms: 60000
+      idle_timeout_ms: 30000
+      evict_interval_ms: 5000
     retry:
-      max_retries: 5               # Maximum retry attempts for SQLITE_BUSY/LOCKED
-      backoff_base_ms: 100         # Initial retry delay
-      backoff_exponent: 1.5        # Exponential backoff multiplier
+      max_retries: 5
+      backoff_base_ms: 100
+      backoff_exponent: 1.5
 api_keys:
   bootstrap_enabled: true
   bootstrap_auto_disable: true
@@ -53,39 +50,39 @@ zones:
   task_timeout: 300
   orphan_retention: 7
   default_pagination_limit: 50
-  partition_id_start: 1              # Starting partition_id for auto-generation (set per-host for HA/distributed)
-  prefix_zone_names: true            # Prefix zone names with partition_id (e.g., "0001--my-zone")
-  prefix_datasets: true              # Prefix dataset paths with partition_id (e.g., "rpool/zones/0001--my-zone")
+  partition_id_start: 1
+  prefix_zone_names: true
+  prefix_datasets: true
   orchestration:
-    enabled: false                        # Enable zone orchestration by default
-    take_control_on_startup: false        # Auto-disable zones service on API startup
-    return_control_on_shutdown: true      # Auto-enable zones service on API shutdown
-    default_strategy: "parallel_by_priority"  # sequential, parallel_by_priority, staggered
+    enabled: false
+    take_control_on_startup: false
+    return_control_on_shutdown: true
+    default_strategy: parallel_by_priority
     timeouts:
-      zone_shutdown: 120                  # Per-zone shutdown timeout (seconds)
-      total_orchestration: 900            # Total orchestration timeout (seconds)
-      priority_group_delay: 30            # Delay between priority groups (seconds)
+      zone_shutdown: 120
+      total_orchestration: 900
+      priority_group_delay: 30
     priorities:
-      default_priority: 95                # For zones without boot_priority attribute (1-100 scale)
+      default_priority: 95
     failure_handling:
-      default_action: "abort"             # abort, force_stuck, skip_stuck
-      allow_emergency_override: true      # Allow bypassing orchestration entirely
+      default_action: abort
+      allow_emergency_override: true
 provisioning:
   install_tools: true
-  staging_path: "/var/lib/zoneweaver-api/provisioning"
+  staging_path: /var/lib/zoneweaver-api/provisioning
   ssh:
-    key_path: "/etc/zoneweaver-api/ssh/provision_key"
+    key_path: /etc/zoneweaver-api/ssh/provision_key
     timeout_seconds: 300
     poll_interval_seconds: 10
   network:
     enabled: true
-    etherstub_name: "estub_provision"
-    host_vnic_name: "provision_interconnect0"
-    subnet: "10.190.190.0/24"
-    host_ip: "10.190.190.1"
-    netmask: "255.255.255.0"
-    dhcp_range_start: "10.190.190.10"
-    dhcp_range_end: "10.190.190.254"
+    etherstub_name: estub_provision
+    host_vnic_name: provision_interconnect0
+    subnet: 10.190.190.0/24
+    host_ip: 10.190.190.1
+    netmask: 255.255.255.0
+    dhcp_range_start: 10.190.190.10
+    dhcp_range_end: 10.190.190.254
   zlogin:
     enabled: true
     default_timeout_seconds: 300
@@ -129,24 +126,24 @@ host_monitoring:
     command_timeout: 30
     batch_size: 100
 logging:
-  level: warn  # Production log level - errors and warnings only
-  console_enabled: false  # Disable console output in production
-  log_directory: /var/log/zoneweaver-api  # Configurable log directory
+  level: warn
+  console_enabled: false
+  log_directory: /var/log/zoneweaver-api
   file_rotation:
-    max_size: 50m  # Max size per file (can use k, m, g units)
-    max_files: 14d  # Keep 14 days of logs
-    compress: true  # Compress archived logs with gzip
-    date_pattern: YYYY-MM-DD  # Daily rotation pattern
-  performance_threshold_ms: 1000  # Only log operations slower than this
+    max_size: 50m
+    max_files: 14d
+    compress: true
+    date_pattern: YYYY-MM-DD
+  performance_threshold_ms: 1000
   categories:
-    monitoring: info  # More verbose for monitoring
-    database: warn    # Only errors and warnings
-    tasks: info       # Task execution info
-    performance: warn # Only slow operations
-    api_requests: info # API request tracking
-    filesystem: warn  # File operations warnings
-    auth: info        # Authentication events
-    websocket: warn   # WebSocket connection issues
+    monitoring: info
+    database: warn
+    tasks: info
+    performance: warn
+    api_requests: info
+    filesystem: warn
+    auth: info
+    websocket: warn
 reconciliation:
   enabled: true
   interval: 3600
@@ -155,101 +152,114 @@ api_docs:
   enabled: true
 fault_management:
   enabled: true
-  cache_interval: 3600  # 1 hour cache for fmadm faulty results
+  cache_interval: 3600
   timeout: 30
   max_faults_displayed: 50
 system_logs:
   enabled: true
-  max_lines: 1000  # Default log read limit
+  max_lines: 1000
   default_tail_lines: 100
   timeout: 30
-  max_concurrent_streams: 10  # Maximum concurrent WebSocket log streams
-  stream_session_timeout: 3600  # Log stream session timeout in seconds
+  max_concurrent_streams: 10
+  stream_session_timeout: 3600
   allowed_paths:
-    - "/var/log"
-    - "/var/adm"
-    - "/var/fm/fmd"
+    - /var/log
+    - /var/adm
+    - /var/fm/fmd
   security:
-    max_file_size_mb: 100  # Prevent reading huge files
+    max_file_size_mb: 100
     forbidden_patterns:
-      - "*.pid"
-      - "*.lock"
-      - "*/private/*"
+      - '*.pid'
+      - '*.lock'
+      - '*/private/*'
 file_browser:
   enabled: true
-  upload_size_limit_gb: 50  # Maximum file upload size
+  upload_size_limit_gb: 50
   security:
-    max_file_size_mb: 51200  # 50GB for uploads
-    max_edit_size_mb: 100    # 100MB for text editing
-    max_directory_entries: 1000  # Prevent huge directory listings
+    max_file_size_mb: 51200
+    max_edit_size_mb: 100
+    max_directory_entries: 1000
     prevent_traversal: true
     forbidden_paths:
-      - "/dev"
-      - "/devices" 
-      - "/system"
-      - "/platform"
-      - "/kernel"
-      - "/proc"              # Virtual filesystem - confusing in browser
+      - /dev
+      - /devices
+      - /system
+      - /platform
+      - /kernel
+      - /proc
     forbidden_patterns:
-      - "*/dev/*"
-      - "*/devices/*"
-      - "/system/*"
-      - "*/platform/*"
-      - "*/kernel/*"
-      - "*/proc/*"
+      - '*/dev/*'
+      - '*/devices/*'
+      - /system/*
+      - '*/platform/*'
+      - '*/kernel/*'
+      - '*/proc/*'
   archive:
     enabled: true
-    max_archive_size_mb: 10240  # 10GB max archive size
-    supported_formats: ["zip", "tar", "tar.gz", "tar.bz2", "gz"]
+    max_archive_size_mb: 10240
+    supported_formats:
+      - zip
+      - tar
+      - tar.gz
+      - tar.bz2
+      - gz
 artifact_storage:
   enabled: true
   download:
-    timeout_seconds: 1500          # Download timeout (5 minutes for your high-speed connection)
-    progress_update_seconds: 10   # Progress updates every 10 seconds
+    timeout_seconds: 1500
+    progress_update_seconds: 10
   checksums:
     enabled: true
-    algorithm: "sha256"  # md5, sha1, sha256
+    algorithm: sha256
     detect_duplicates: true
-    skip_duplicate_uploads: false  # warn vs reject duplicates
+    skip_duplicate_uploads: false
   scanning:
     auto_scan_after_upload: true
-    auto_scan_after_download: true  
-    periodic_scan_interval: 300  # seconds (5 minutes)
+    auto_scan_after_download: true
+    periodic_scan_interval: 300
     supported_extensions:
-      iso: [".iso"]
-      image: [".vmdk", ".raw", ".vdi", ".qcow2", ".img", ".ova", ".ovf"]
+      iso:
+        - .iso
+      image:
+        - .vmdk
+        - .raw
+        - .vdi
+        - .qcow2
+        - .img
+        - .ova
+        - .ovf
   paths:
-    - name: "Primary ISO Storage"
-      path: "/data/isos"
+    - name: Primary ISO Storage
+      path: /data/isos
       type: iso
       enabled: true
-    - name: "Image Storage"
-      path: "/data/images" 
+    - name: Image Storage
+      path: /data/images
       type: image
       enabled: true
   security:
-    max_download_size_gb: 50  # Maximum URL download size
+    max_download_size_gb: 50
     download_timeout_minutes: 60
-    max_upload_size_gb: 50  # Maximum file upload size
-    upload_timeout_minutes: 120  # Timeout for large uploads
-    max_form_field_size_mb: 10  # Maximum form field size in MB
-    max_files_per_upload: 1  # Maximum number of files per upload
-    max_form_fields: 10  # Maximum number of form fields
-    upload_session_timeout_hours: 2  # Upload session expiration time
+    max_upload_size_gb: 50
+    upload_timeout_minutes: 120
+    max_form_field_size_mb: 10
+    max_files_per_upload: 1
+    max_form_fields: 10
+    upload_session_timeout_hours: 2
   cleanup:
     enabled: true
     orphaned_files_retention_days: 30
     failed_downloads_cleanup: true
 template_sources:
   enabled: true
-  local_storage_path: "rpool/templates"
+  local_storage_path: rpool/templates
   sources:
-    - name: "Default Registry"
+    - name: Default Registry
       type: vagrant
-      url: "https://boxvault.startcloud.com"
-      username: ""
-      api_key: ""
-      organization: ""
+      url: https://boxvault.startcloud.com
+      username: ''
+      api_key: ''
+      organization: ''
       enabled: true
       verify_ssl: true
   download:
@@ -257,5 +267,5 @@ template_sources:
     progress_update_seconds: 10
     max_download_size_gb: 100
   upload:
-    timeout_seconds: 7200  # 2 hours default (increase for slow connections)
-    chunk_size_mb: 100  # Chunk size for uploads (default 100MB)
+    timeout_seconds: 7200
+    chunk_size_mb: 100
