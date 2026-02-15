@@ -389,7 +389,7 @@ export const executeZoneProvisionTask = async task => {
       await import('../../lib/ProvisionerConfigBuilder.js');
 
     const provisioner = zoneConfig.provisioner || {};
-    const baseExtraVars = buildExtraVarsFromZone(zone, provisioner);
+    const baseExtraVars = buildExtraVarsFromZone(zone, provisioner, { provisioningBasePath });
     const extraVars = buildPlaybookExtraVars(baseExtraVars, playbook);
 
     log.task.info('Running ansible-local playbook', {
