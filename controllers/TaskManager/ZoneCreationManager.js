@@ -431,7 +431,7 @@ const vmTypeCode = vmType => {
 const generateVnicName = (nic, index, metadata) => {
   const typeChar = nicTypeCode(nic.nic_type);
   const vmChar = vmTypeCode(metadata.vm_type);
-  const partitionId = metadata.partition_id || '0000';
+  const partitionId = (metadata.partition_id || '0').padStart(4, '0');
   return `vnic${typeChar}${vmChar}_${partitionId}_${index}`;
 };
 

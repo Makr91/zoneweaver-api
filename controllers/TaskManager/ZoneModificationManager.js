@@ -210,7 +210,8 @@ const addNics = async (zoneName, nics, zoneRecord) => {
       const vmChar = vmTypeCode(zoneRecord.vm_type);
       // Count existing NICs to offset the index
       const existingNicCount = zoneRecord.configuration?.net?.length || 0;
-      physical = `vnic${typeChar}${vmChar}_${zoneRecord.partition_id}_${existingNicCount + index}`;
+      const paddedPartitionId = zoneRecord.partition_id.padStart(4, '0');
+      physical = `vnic${typeChar}${vmChar}_${paddedPartitionId}_${existingNicCount + index}`;
     }
     if (!physical) {
       physical = `vnic_${zoneName}_${index}`;

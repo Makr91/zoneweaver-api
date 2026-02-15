@@ -60,6 +60,7 @@
     "prettier": "^3.6.2"
   },
   "overrides": {
-    "tar": "^7.5.3"
+    "tar": "^7.5.3",
+    "cpu-features": false
   }
 }
