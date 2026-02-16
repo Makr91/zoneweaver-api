@@ -73,6 +73,8 @@ zones:
 provisioning:
   install_tools: true
   staging_path: "/var/lib/zoneweaver-api/provisioning"
+  playbook_timeout_seconds: 21600       # Max time for a single ansible-playbook run (6 hours)
+  ansible_install_timeout_seconds: 300  # Max time for ansible/collection installation
   ssh:
     key_path: "/etc/zoneweaver-api/ssh/provision_key"
     timeout_seconds: 300

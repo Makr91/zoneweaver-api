@@ -27,7 +27,8 @@ const installAnsibleInZone = async (
   credentials,
   port,
   installMode,
-  provisioningBasePath
+  provisioningBasePath,
+  timeout = 300000
 ) => {
   if (installMode === 'pip') {
     await executeSSHCommand(
@@ -36,7 +37,7 @@ const installAnsibleInZone = async (
       credentials,
       'pip3 install ansible 2>/dev/null || pip install ansible 2>/dev/null',
       port,
-      { timeout: 300000, provisioningBasePath }
+      { timeout, provisioningBasePath }
     );
   } else if (installMode === 'pkg') {
     await executeSSHCommand(
@@ -45,7 +46,7 @@ const installAnsibleInZone = async (
       credentials,
       'pkg install ansible 2>/dev/null || apt-get install -y ansible 2>/dev/null || yum install -y ansible 2>/dev/null',
       port,
-      { timeout: 300000, provisioningBasePath }
+      { timeout, provisioningBasePath }
     );
   }
 };
@@ -65,7 +66,8 @@ const installAnsibleCollections = async (
   credentials,
   port,
   collections,
-  provisioningBasePath
+  provisioningBasePath,
+  timeout = 300000
 ) => {
   if (collections.length > 0) {
     const collectionInstalls = collections.map(collection =>
@@ -75,7 +77,7 @@ const installAnsibleCollections = async (
         credentials,
         `ansible-galaxy collection install ${collection} --force`,
         port,
-        { timeout: 300000, provisioningBasePath }
+        { timeout, provisioningBasePath }
       )
     );
     await Promise.all(collectionInstalls);
@@ -105,14 +107,27 @@ const runAnsibleLocalProvisioner = async (
     return { success: false, error: 'playbook is required for ansible_local provisioner' };
   }
 
-  await installAnsibleInZone(ip, username, credentials, port, install_mode, provisioningBasePath);
+  const provConfig = config.get('provisioning') || {};
+  const installTimeout = (provConfig.ansible_install_timeout_seconds || 300) * 1000;
+  const playbookTimeout = (provConfig.playbook_timeout_seconds || 21600) * 1000;
+
+  await installAnsibleInZone(
+    ip,
+    username,
+    credentials,
+    port,
+    install_mode,
+    provisioningBasePath,
+    installTimeout
+  );
   await installAnsibleCollections(
     ip,
     username,
     credentials,
     port,
     collections,
-    provisioningBasePath
+    provisioningBasePath,
+    installTimeout
   );
 
   // Build extra-vars
@@ -129,7 +144,7 @@ const runAnsibleLocalProvisioner = async (
   const cmd = `cd ${provisioningPath} && ${ansibleConfigEnv}ansible-playbook -i 'localhost,' -c local ${playbook} ${extraVarsArg}`;
 
   const result = await executeSSHCommand(ip, username, credentials, cmd, port, {
-    timeout: 1800000,
+    timeout: playbookTimeout,
     provisioningBasePath,
   });
 
