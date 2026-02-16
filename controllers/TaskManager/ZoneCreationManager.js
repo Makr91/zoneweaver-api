@@ -140,7 +140,12 @@ const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData = null) 
     return existingDataset;
   }
 
-  // Scenario 2: Creating new volume (scratch or template will override)
+  // Scenario 2: Template source - let importTemplate() handle everything
+  if (bootDisk.source?.type === 'template') {
+    return null; // importTemplate() will create and return the path
+  }
+
+  // Scenario 3: Creating new blank volume (scratch)
   const pool = bootDisk.pool || 'rpool';
   const dataset = bootDisk.dataset || 'zones';
   const volumeName = bootDisk.volume_name || 'boot';
