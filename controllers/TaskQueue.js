@@ -1407,6 +1407,8 @@ export const listTasks = async (req, res) => {
       operation_ne,
       since,
       include_count,
+      min_priority,
+      parent_task_id,
     } = req.query;
     const whereClause = {};
 
@@ -1421,6 +1423,12 @@ export const listTasks = async (req, res) => {
     }
     if (operation_ne) {
       whereClause.operation = { [Op.ne]: operation_ne };
+    }
+    if (min_priority) {
+      whereClause.priority = { [Op.gte]: parseInt(min_priority) };
+    }
+    if (parent_task_id) {
+      whereClause.parent_task_id = parent_task_id;
     }
     if (since) {
       // Fix: Use updatedAt instead of created_at for incremental updates
