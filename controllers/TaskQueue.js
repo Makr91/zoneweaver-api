@@ -173,6 +173,7 @@ import {
 } from '../lib/ServiceManager.js';
 import { log, createTimer } from '../lib/Logger.js';
 import { taskOutputManager } from '../lib/TaskOutputManager.js';
+import { getHostMonitoringService } from './HostMonitoringService.js';
 
 /**
  * @fileoverview Task Queue controller for Zoneweaver API
@@ -332,9 +333,15 @@ const runningTasks = new Map();
 let taskProcessor = null;
 
 /**
- * Discovery interval ID for periodic zone discovery
+ * Discovery interval IDs for periodic discovery tasks
  */
 let discoveryProcessor = null;
+let networkConfigProcessor = null;
+let networkUsageProcessor = null;
+let storageProcessor = null;
+let storageFrequentProcessor = null;
+let deviceProcessor = null;
+let systemMetricsProcessor = null;
 
 /**
  * Track running operation categories to prevent conflicts
@@ -717,6 +724,65 @@ const executeSystemHostTask = (operation, metadata) => {
 };
 
 /**
+ * Execute host monitoring discovery tasks
+ * @param {string} operation - Operation type
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+const executeDiscoveryTask = async operation => {
+  const hostMonitoringService = getHostMonitoringService();
+
+  try {
+    let success = false;
+    let message = '';
+
+    switch (operation) {
+      case 'network_config_discovery':
+        success = await hostMonitoringService.networkCollector.collectNetworkConfig();
+        message = 'Network configuration collected';
+        break;
+
+      case 'network_usage_discovery':
+        success = await hostMonitoringService.networkCollector.collectNetworkUsage();
+        message = 'Network usage collected';
+        break;
+
+      case 'storage_discovery':
+        success = await hostMonitoringService.storageCollector.collectStorageData();
+        message = 'Storage data collected';
+        break;
+
+      case 'storage_frequent_discovery':
+        success = await hostMonitoringService.storageCollector.collectFrequentStorageMetrics();
+        message = 'Storage metrics collected';
+        break;
+
+      case 'device_discovery':
+        success = await hostMonitoringService.deviceCollector.collectPCIDevices();
+        message = 'PCI devices collected';
+        break;
+
+      case 'system_metrics_discovery':
+        success = await hostMonitoringService.systemMetricsCollector.collectSystemMetrics();
+        message = 'System metrics collected';
+        break;
+
+      default:
+        return { success: false, error: `Unknown discovery operation: ${operation}` };
+    }
+
+    return {
+      success: success !== false,
+      message,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+/**
  * Execute VNC start task for auto-VNC functionality
  * @param {string} zoneName - Zone name
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -957,6 +1023,19 @@ const executeTask = async task => {
     }
     if (operation === 'vnc_start') {
       return await executeVncStartTask(zone_name);
+    }
+
+    // Discovery operations
+    const discoveryOps = [
+      'network_config_discovery',
+      'network_usage_discovery',
+      'storage_discovery',
+      'storage_frequent_discovery',
+      'device_discovery',
+      'system_metrics_discovery',
+    ];
+    if (discoveryOps.includes(operation)) {
+      return await executeDiscoveryTask(operation);
     }
 
     return { success: false, error: `Unknown operation: ${operation}` };
@@ -1315,6 +1394,88 @@ export const startTaskProcessor = () => {
       status: 'pending',
     });
   }, 5000);
+
+  // Get host monitoring configuration for discovery intervals
+  const hostMonitoringConfig = config.getHostMonitoring();
+
+  if (hostMonitoringConfig.enabled && hostMonitoringConfig.intervals) {
+    const { intervals } = hostMonitoringConfig;
+
+    log.task.info('Starting periodic host monitoring discovery tasks', {
+      network_config_interval: intervals.network_config,
+      network_usage_interval: intervals.network_usage,
+      storage_interval: intervals.storage,
+      storage_frequent_interval: intervals.storage_frequent,
+      device_discovery_interval: intervals.device_discovery,
+      system_metrics_interval: intervals.system_metrics,
+    });
+
+    // Network config discovery
+    networkConfigProcessor = setInterval(async () => {
+      await Tasks.create({
+        zone_name: 'system',
+        operation: 'network_config_discovery',
+        priority: TaskPriority.BACKGROUND,
+        created_by: 'system_periodic',
+        status: 'pending',
+      });
+    }, intervals.network_config * 1000);
+
+    // Network usage discovery
+    networkUsageProcessor = setInterval(async () => {
+      await Tasks.create({
+        zone_name: 'system',
+        operation: 'network_usage_discovery',
+        priority: TaskPriority.BACKGROUND,
+        created_by: 'system_periodic',
+        status: 'pending',
+      });
+    }, intervals.network_usage * 1000);
+
+    // Storage discovery
+    storageProcessor = setInterval(async () => {
+      await Tasks.create({
+        zone_name: 'system',
+        operation: 'storage_discovery',
+        priority: TaskPriority.BACKGROUND,
+        created_by: 'system_periodic',
+        status: 'pending',
+      });
+    }, intervals.storage * 1000);
+
+    // Storage frequent metrics discovery
+    storageFrequentProcessor = setInterval(async () => {
+      await Tasks.create({
+        zone_name: 'system',
+        operation: 'storage_frequent_discovery',
+        priority: TaskPriority.BACKGROUND,
+        created_by: 'system_periodic',
+        status: 'pending',
+      });
+    }, intervals.storage_frequent * 1000);
+
+    // Device discovery
+    deviceProcessor = setInterval(async () => {
+      await Tasks.create({
+        zone_name: 'system',
+        operation: 'device_discovery',
+        priority: TaskPriority.BACKGROUND,
+        created_by: 'system_periodic',
+        status: 'pending',
+      });
+    }, intervals.device_discovery * 1000);
+
+    // System metrics discovery
+    systemMetricsProcessor = setInterval(async () => {
+      await Tasks.create({
+        zone_name: 'system',
+        operation: 'system_metrics_discovery',
+        priority: TaskPriority.BACKGROUND,
+        created_by: 'system_periodic',
+        status: 'pending',
+      });
+    }, intervals.system_metrics * 1000);
+  }
 };
 
 /**
@@ -1330,7 +1491,48 @@ export const stopTaskProcessor = () => {
   if (discoveryProcessor) {
     clearInterval(discoveryProcessor);
     discoveryProcessor = null;
-    log.task.info('Periodic discovery stopped');
+    log.task.info('Periodic zone discovery stopped');
+  }
+
+  if (networkConfigProcessor) {
+    clearInterval(networkConfigProcessor);
+    networkConfigProcessor = null;
+  }
+
+  if (networkUsageProcessor) {
+    clearInterval(networkUsageProcessor);
+    networkUsageProcessor = null;
+  }
+
+  if (storageProcessor) {
+    clearInterval(storageProcessor);
+    storageProcessor = null;
+  }
+
+  if (storageFrequentProcessor) {
+    clearInterval(storageFrequentProcessor);
+    storageFrequentProcessor = null;
+  }
+
+  if (deviceProcessor) {
+    clearInterval(deviceProcessor);
+    deviceProcessor = null;
+  }
+
+  if (systemMetricsProcessor) {
+    clearInterval(systemMetricsProcessor);
+    systemMetricsProcessor = null;
+  }
+
+  if (
+    networkConfigProcessor ||
+    networkUsageProcessor ||
+    storageProcessor ||
+    storageFrequentProcessor ||
+    deviceProcessor ||
+    systemMetricsProcessor
+  ) {
+    log.task.info('Periodic host monitoring discovery stopped');
   }
 };
 

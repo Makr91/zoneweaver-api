@@ -17,7 +17,7 @@ import db from '../config/Database.js';
 import DatabaseMigrations from '../config/DatabaseMigrations.js';
 import { getRebootStatus, checkAndClearAfterReboot } from '../lib/RebootManager.js';
 import { getFaultStatusForHealth } from './FaultManagementController.js';
-import { log, createTimer } from '../lib/Logger.js';
+import { log } from '../lib/Logger.js';
 import os from 'os';
 
 /**
@@ -33,21 +33,10 @@ class HostMonitoringService {
     this.deviceCollector = new DeviceCollector();
     this.systemMetricsCollector = new SystemMetricsCollector();
 
-    // Interval IDs for cleanup
-    this.intervals = {
-      networkConfig: null,
-      networkUsage: null,
-      storage: null,
-      storageFrequent: null,
-      deviceDiscovery: null,
-      systemMetrics: null,
-      cleanup: null,
-    };
-
     this.isRunning = false;
     this.isInitialized = false;
 
-    // Performance tracking
+    // Performance tracking (updated by collectors, not by intervals)
     this.stats = {
       networkConfigRuns: 0,
       networkUsageRuns: 0,
@@ -249,8 +238,8 @@ class HostMonitoringService {
   }
 
   /**
-   * Start all monitoring intervals
-   * @description Begins scheduled data collection based on configured intervals
+   * Start host monitoring service
+   * @description Marks service as running - actual data collection is handled by TaskQueue
    */
   async start() {
     if (!this.isInitialized) {
@@ -268,174 +257,10 @@ class HostMonitoringService {
     }
 
     try {
-      const { intervals } = this.hostMonitoringConfig;
-
-      // Network configuration collection (1 minute default)
-      this.intervals.networkConfig = setInterval(async () => {
-        try {
-          this.stats.networkConfigRuns++;
-          const timer = createTimer('network_config_collection');
-          const success = await this.networkCollector.collectNetworkConfig();
-          const duration = timer.end();
-
-          if (success) {
-            this.stats.lastNetworkConfigSuccess = new Date();
-            if (duration > 5000) {
-              // Log slow collections
-              log.performance.warn('Slow network config collection', {
-                duration_ms: duration,
-                hostname: this.hostname,
-              });
-            }
-          }
-        } catch (error) {
-          this.stats.totalErrors++;
-          log.monitoring.error('Scheduled network config collection failed', {
-            error: error.message,
-            hostname: this.hostname,
-            run_count: this.stats.networkConfigRuns,
-          });
-        }
-      }, intervals.network_config * 1000);
-
-      // Network usage collection (10 seconds default)
-      this.intervals.networkUsage = setInterval(async () => {
-        try {
-          this.stats.networkUsageRuns++;
-          const timer = createTimer('network_usage_collection');
-          const success = await this.networkCollector.collectNetworkUsage();
-          const duration = timer.end();
-
-          if (success) {
-            this.stats.lastNetworkUsageSuccess = new Date();
-            if (duration > 3000) {
-              // Log slow collections (this runs frequently)
-              log.performance.warn('Slow network usage collection', {
-                duration_ms: duration,
-                hostname: this.hostname,
-              });
-            }
-          }
-        } catch (error) {
-          this.stats.totalErrors++;
-          log.monitoring.error('Scheduled network usage collection failed', {
-            error: error.message,
-            hostname: this.hostname,
-            run_count: this.stats.networkUsageRuns,
-          });
-        }
-      }, intervals.network_usage * 1000);
-
-      // Storage collection (5 minutes default)
-      this.intervals.storage = setInterval(async () => {
-        try {
-          this.stats.storageRuns++;
-          const timer = createTimer('storage_collection');
-          const success = await this.storageCollector.collectStorageData();
-          const duration = timer.end();
-
-          if (success) {
-            this.stats.lastStorageSuccess = new Date();
-            if (duration > 10000) {
-              // Log slow collections
-              log.performance.warn('Slow storage collection', {
-                duration_ms: duration,
-                hostname: this.hostname,
-              });
-            }
-          }
-        } catch (error) {
-          this.stats.totalErrors++;
-          log.monitoring.error('Scheduled storage collection failed', {
-            error: error.message,
-            hostname: this.hostname,
-            run_count: this.stats.storageRuns,
-          });
-        }
-      }, intervals.storage * 1000);
-
-      // Frequent storage metrics collection (10 seconds for disk I/O, 60 seconds for ARC)
-      this.intervals.storageFrequent = setInterval(async () => {
-        try {
-          const timer = createTimer('frequent_storage_collection');
-          const success = await this.storageCollector.collectFrequentStorageMetrics();
-          const duration = timer.end();
-
-          if (!success) {
-            this.stats.totalErrors++;
-          } else if (duration > 2000) {
-            // Log slow frequent collections
-            log.performance.warn('Slow frequent storage collection', {
-              duration_ms: duration,
-              hostname: this.hostname,
-            });
-          }
-        } catch (error) {
-          this.stats.totalErrors++;
-          log.monitoring.error('Scheduled frequent storage collection failed', {
-            error: error.message,
-            hostname: this.hostname,
-          });
-        }
-      }, intervals.storage_frequent * 1000);
-
-      // Device discovery collection (1 minute default)
-      this.intervals.deviceDiscovery = setInterval(async () => {
-        try {
-          this.stats.deviceRuns++;
-          const timer = createTimer('device_discovery_collection');
-          const success = await this.deviceCollector.collectPCIDevices();
-          const duration = timer.end();
-
-          if (success) {
-            this.stats.lastDeviceSuccess = new Date();
-            if (duration > 5000) {
-              // Log slow collections
-              log.performance.warn('Slow device discovery collection', {
-                duration_ms: duration,
-                hostname: this.hostname,
-              });
-            }
-          }
-        } catch (error) {
-          this.stats.totalErrors++;
-          log.monitoring.error('Scheduled device discovery failed', {
-            error: error.message,
-            hostname: this.hostname,
-            run_count: this.stats.deviceRuns,
-          });
-        }
-      }, intervals.device_discovery * 1000);
-
-      // System metrics collection (CPU + Memory, 30 seconds default)
-      this.intervals.systemMetrics = setInterval(async () => {
-        try {
-          this.stats.systemMetricsRuns++;
-          const timer = createTimer('system_metrics_collection');
-          const success = await this.systemMetricsCollector.collectSystemMetrics();
-          const duration = timer.end();
-
-          if (success) {
-            this.stats.lastSystemMetricsSuccess = new Date();
-            if (duration > 3000) {
-              // Log slow collections
-              log.performance.warn('Slow system metrics collection', {
-                duration_ms: duration,
-                hostname: this.hostname,
-              });
-            }
-          }
-        } catch (error) {
-          this.stats.totalErrors++;
-          log.monitoring.error('Scheduled system metrics collection failed', {
-            error: error.message,
-            hostname: this.hostname,
-            run_count: this.stats.systemMetricsRuns,
-          });
-        }
-      }, intervals.system_metrics * 1000);
-
       this.isRunning = true;
+      log.monitoring.info('Host monitoring service started (TaskQueue-based discovery)', {
+        hostname: this.hostname,
+      });
       return true;
     } catch (error) {
       log.monitoring.error('Failed to start host monitoring service', {
@@ -443,39 +268,27 @@ class HostMonitoringService {
         stack: error.stack,
         hostname: this.hostname,
       });
-      this.stop(); // Cleanup any partial initialization
       return false;
     }
   }
 
   /**
-   * Stop all monitoring intervals
-   * @description Stops all scheduled data collection
+   * Stop host monitoring service
+   * @description Marks service as stopped - TaskQueue handles actual collection intervals
    */
   stop() {
-    Object.values(this.intervals).forEach(intervalId => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    });
-
-    // Reset interval IDs
-    Object.keys(this.intervals).forEach(key => {
-      this.intervals[key] = null;
-    });
-
     this.isRunning = false;
+    log.monitoring.info('Host monitoring service stopped', {
+      hostname: this.hostname,
+    });
   }
 
   /**
    * Restart the monitoring service
-   * @description Stops and starts the service
+   * @description Stops and starts the service (discovery continues via TaskQueue)
    */
-  async restart() {
+  restart() {
     this.stop();
-    await new Promise(resolve => {
-      setTimeout(resolve, 1000);
-    }); // Wait 1 second
     return this.start();
   }
 
@@ -487,6 +300,7 @@ class HostMonitoringService {
     return {
       isRunning: this.isRunning,
       isInitialized: this.isInitialized,
+      discoveryMode: 'taskqueue',
       config: {
         enabled: this.hostMonitoringConfig.enabled,
         intervals: this.hostMonitoringConfig.intervals,
@@ -498,14 +312,7 @@ class HostMonitoringService {
           ? Math.floor((Date.now() - (this.stats.lastNetworkConfigSuccess || Date.now())) / 1000)
           : 0,
       },
-      activeIntervals: {
-        networkConfig: !!this.intervals.networkConfig,
-        networkUsage: !!this.intervals.networkUsage,
-        storage: !!this.intervals.storage,
-        storageFrequent: !!this.intervals.storageFrequent,
-        systemMetrics: !!this.intervals.systemMetrics,
-        cleanup: !!this.intervals.cleanup,
-      },
+      note: 'Discovery is now handled by TaskQueue with BACKGROUND priority tasks',
     };
   }
 
