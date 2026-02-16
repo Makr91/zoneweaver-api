@@ -3,6 +3,7 @@ import { log } from '../../lib/Logger.js';
 import yj from 'yieldable-json';
 import { syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
 import Zones from '../../models/ZoneModel.js';
+import Template from '../../models/TemplateModel.js';
 import config from '../../config/ConfigLoader.js';
 
 /**
@@ -850,6 +851,50 @@ export const executeZoneCreateStorageTask = async task => {
     // Ensure server_id is set if provided
     if (metadata.settings?.server_id) {
       metadata.server_id = String(metadata.settings.server_id).padStart(4, '0');
+    }
+
+    // If template_dataset not set but box reference exists, look up downloaded template
+    if (metadata.settings?.box && !metadata.disks?.boot?.source?.template_dataset) {
+      const [org, boxName] = metadata.settings.box.split('/');
+      const requestedVersion = metadata.settings.box_version || 'latest';
+      const architecture = metadata.settings.box_arch || 'amd64';
+
+      let template;
+      if (requestedVersion === 'latest') {
+        template = await Template.findOne({
+          where: { organization: org, box_name: boxName, architecture, provider: 'zone' },
+          order: [['version', 'DESC']],
+        });
+      } else {
+        template = await Template.findOne({
+          where: {
+            organization: org,
+            box_name: boxName,
+            version: requestedVersion,
+            architecture,
+            provider: 'zone',
+          },
+        });
+      }
+
+      if (!template) {
+        throw new Error(`Template ${org}/${boxName} v${requestedVersion} not found after download`);
+      }
+
+      // Inject template_dataset into metadata
+      metadata.disks = metadata.disks || {};
+      metadata.disks.boot = metadata.disks.boot || {};
+      metadata.disks.boot.source = {
+        type: 'template',
+        template_dataset: template.dataset_path,
+        clone_strategy: 'clone',
+      };
+
+      log.task.info('Resolved template from database after download', {
+        box: `${org}/${boxName}`,
+        version: template.version,
+        dataset_path: template.dataset_path,
+      });
     }
 
     const { onData } = task;
