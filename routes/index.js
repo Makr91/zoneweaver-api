@@ -20,7 +20,13 @@ import {
   createZone,
   modifyZone,
 } from '../controllers/ZoneManagement.js';
-import { listTasks, getTaskDetails, cancelTask, getTaskStats } from '../controllers/TaskQueue.js';
+import {
+  listTasks,
+  getTaskDetails,
+  getTaskOutput,
+  cancelTask,
+  getTaskStats,
+} from '../controllers/TaskQueue.js';
 import {
   startVncSession,
   getVncSessionInfo,
@@ -472,6 +478,7 @@ router.post('/zones/:name/run-provisioners', verifyApiKey, runProvisioners); // 
 router.get('/tasks', verifyApiKey, listTasks); // List tasks
 router.get('/tasks/stats', verifyApiKey, getTaskStats); // Get task statistics
 router.get('/tasks/:taskId', verifyApiKey, getTaskDetails); // Get task details
+router.get('/tasks/:taskId/output', verifyApiKey, getTaskOutput); // Get task output
 router.delete('/tasks/:taskId', verifyApiKey, cancelTask); // Cancel task
 
 // VNC Console Management Routes

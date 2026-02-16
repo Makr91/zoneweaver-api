@@ -28,7 +28,8 @@ const installAnsibleInZone = async (
   port,
   installMode,
   provisioningBasePath,
-  timeout = 300000
+  timeout = 300000,
+  onData = null
 ) => {
   if (installMode === 'pip') {
     await executeSSHCommand(
@@ -37,7 +38,7 @@ const installAnsibleInZone = async (
       credentials,
       'pip3 install ansible 2>/dev/null || pip install ansible 2>/dev/null',
       port,
-      { timeout, provisioningBasePath }
+      { timeout, provisioningBasePath, onData }
     );
   } else if (installMode === 'pkg') {
     await executeSSHCommand(
@@ -46,7 +47,7 @@ const installAnsibleInZone = async (
       credentials,
       'pkg install ansible 2>/dev/null || apt-get install -y ansible 2>/dev/null || yum install -y ansible 2>/dev/null',
       port,
-      { timeout, provisioningBasePath }
+      { timeout, provisioningBasePath, onData }
     );
   }
 };
@@ -67,7 +68,8 @@ const installAnsibleCollections = async (
   port,
   collections,
   provisioningBasePath,
-  timeout = 300000
+  timeout = 300000,
+  onData = null
 ) => {
   if (collections.length > 0) {
     const collectionInstalls = collections.map(collection =>
@@ -77,7 +79,7 @@ const installAnsibleCollections = async (
         credentials,
         `ansible-galaxy collection install ${collection} --force`,
         port,
-        { timeout, provisioningBasePath }
+        { timeout, provisioningBasePath, onData }
       )
     );
     await Promise.all(collectionInstalls);
@@ -98,7 +100,8 @@ const runAnsibleLocalProvisioner = async (
   port,
   credentials,
   provisioner,
-  provisioningBasePath
+  provisioningBasePath,
+  onData = null
 ) => {
   const { playbook, extra_vars = {}, collections = [], install_mode, config_file } = provisioner;
   const username = credentials.username || 'root';
@@ -118,7 +121,8 @@ const runAnsibleLocalProvisioner = async (
     port,
     install_mode,
     provisioningBasePath,
-    installTimeout
+    installTimeout,
+    onData
   );
   await installAnsibleCollections(
     ip,
@@ -127,7 +131,8 @@ const runAnsibleLocalProvisioner = async (
     port,
     collections,
     provisioningBasePath,
-    installTimeout
+    installTimeout,
+    onData
   );
 
   // Build extra-vars
@@ -146,6 +151,7 @@ const runAnsibleLocalProvisioner = async (
   const result = await executeSSHCommand(ip, username, credentials, cmd, port, {
     timeout: playbookTimeout,
     provisioningBasePath,
+    onData,
   });
 
   if (result.success) {
@@ -264,6 +270,7 @@ export const executeZoneSyncTask = async task => {
     });
 
     const { ip, port = 22, credentials = {}, folder } = metadata;
+    const { onData } = task;
 
     if (!ip || !folder) {
       return { success: false, error: 'ip and folder are required in task metadata' };
@@ -293,7 +300,7 @@ export const executeZoneSyncTask = async task => {
       credentials,
       `sudo mkdir -p ${dest}`,
       port,
-      { provisioningBasePath }
+      { provisioningBasePath, onData }
     );
 
     const result = await syncFiles(
@@ -308,6 +315,7 @@ export const executeZoneSyncTask = async task => {
         args: folder.args,
         delete: folder.delete,
         provisioningBasePath,
+        onData,
       }
     );
 
@@ -325,7 +333,7 @@ export const executeZoneSyncTask = async task => {
       credentials,
       chownCmd,
       port,
-      { provisioningBasePath }
+      { provisioningBasePath, onData }
     );
 
     if (!chownResult.success) {
@@ -419,7 +427,8 @@ export const executeZoneProvisionTask = async task => {
       port,
       credentials,
       { ...playbook, extra_vars: extraVars },
-      provisioningBasePath
+      provisioningBasePath,
+      task.onData
     );
 
     // Update zone provisioning status
@@ -471,9 +480,12 @@ export const executeZoneProvisioningExtractTask = async task => {
     // We need the ZFS dataset name (rpool/zones/myzone/provisioning)
     // Assuming dataset_path is the mountpoint which matches the dataset name with leading slash
     const zfsDataset = dataset_path.replace(/^\/+/, '');
+    const { onData } = task;
 
     const createResult = await executeCommand(
-      `pfexec zfs create -o mountpoint=${dataset_path} ${zfsDataset}`
+      `pfexec zfs create -o mountpoint=${dataset_path} ${zfsDataset}`,
+      undefined,
+      onData
     );
 
     // Check if dataset exists if creation failed (idempotency)
@@ -491,7 +503,8 @@ export const executeZoneProvisioningExtractTask = async task => {
     // Extract artifact
     const extractResult = await executeCommand(
       `pfexec tar -xzf ${artifact.path} -C ${dataset_path}`,
-      300000
+      300000,
+      onData
     );
 
     if (!extractResult.success) {
@@ -503,15 +516,17 @@ export const executeZoneProvisioningExtractTask = async task => {
     }
 
     // Fix ownership and permissions for service user (zoneapi)
-    await executeCommand(`pfexec chown -R zoneapi:other ${dataset_path}`);
+    await executeCommand(`pfexec chown -R zoneapi:other ${dataset_path}`, undefined, onData);
 
     // Fix SSH private key permissions (600 for security)
     await executeCommand(
-      `pfexec find ${dataset_path} -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ecdsa' -o -name 'id_ed25519' \\) -exec chmod 600 {} +`
+      `pfexec find ${dataset_path} -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ecdsa' -o -name 'id_ed25519' \\) -exec chmod 600 {} +`,
+      undefined,
+      onData
     );
 
     // Create snapshot
-    await executeCommand(`pfexec zfs snapshot ${zfsDataset}@pre-provision`);
+    await executeCommand(`pfexec zfs snapshot ${zfsDataset}@pre-provision`, undefined, onData);
 
     return { success: true, message: 'Provisioning artifact extracted successfully' };
   } catch (error) {

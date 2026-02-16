@@ -126,7 +126,7 @@ const getNextCdromNumber = zoneConfig => {
  * @param {Object} zoneConfig - Current zone configuration
  * @param {Object} metadata - Modification metadata
  */
-const applyAttributeChanges = async (zoneName, zoneConfig, metadata) => {
+const applyAttributeChanges = async (zoneName, zoneConfig, metadata, onData = null) => {
   const attrMap = {
     ram: metadata.ram,
     vcpus: metadata.vcpus,
@@ -149,7 +149,7 @@ const applyAttributeChanges = async (zoneName, zoneConfig, metadata) => {
   }
 
   const attrCmd = `pfexec zonecfg -z ${zoneName} "${commands.join(' ')}"`;
-  const attrResult = await executeCommand(attrCmd);
+  const attrResult = await executeCommand(attrCmd, undefined, onData);
   if (!attrResult.success) {
     throw new Error(`Attribute modification failed: ${attrResult.error}`);
   }
@@ -165,10 +165,12 @@ const applyAttributeChanges = async (zoneName, zoneConfig, metadata) => {
  * @param {string} zoneName - Zone name
  * @param {boolean} autoboot - Autoboot setting
  */
-const applyAutobootChange = async (zoneName, autoboot) => {
+const applyAutobootChange = async (zoneName, autoboot, onData = null) => {
   const value = autoboot ? 'true' : 'false';
   const autobootResult = await executeCommand(
-    `pfexec zonecfg -z ${zoneName} "set autoboot=${value}"`
+    `pfexec zonecfg -z ${zoneName} "set autoboot=${value}"`,
+    undefined,
+    onData
   );
   if (!autobootResult.success) {
     throw new Error(`Autoboot modification failed: ${autobootResult.error}`);
@@ -202,7 +204,7 @@ const vmTypeCode = vmType => {
   return map[vmType] || '3';
 };
 
-const addNics = async (zoneName, nics, zoneRecord) => {
+const addNics = async (zoneName, nics, zoneRecord, onData = null) => {
   const cmds = nics.map((nic, index) => {
     let { physical } = nic;
     if (!physical && zoneRecord?.partition_id) {
@@ -234,7 +236,11 @@ const addNics = async (zoneName, nics, zoneRecord) => {
   });
 
   if (cmds.length > 0) {
-    const nicResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`);
+    const nicResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`,
+      undefined,
+      onData
+    );
     if (!nicResult.success) {
       throw new Error(`Failed to add NICs: ${nicResult.error}`);
     }
@@ -247,11 +253,15 @@ const addNics = async (zoneName, nics, zoneRecord) => {
  * @param {string} zoneName - Zone name
  * @param {Array} nicNames - Array of NIC physical names to remove
  */
-const removeNics = async (zoneName, nicNames) => {
+const removeNics = async (zoneName, nicNames, onData = null) => {
   const cmds = nicNames.map(nicName => `remove net physical=${nicName}`);
 
   if (cmds.length > 0) {
-    const removeResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`);
+    const removeResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`,
+      undefined,
+      onData
+    );
     if (!removeResult.success) {
       throw new Error(`Failed to remove NICs: ${removeResult.error}`);
     }
@@ -266,7 +276,7 @@ const removeNics = async (zoneName, nicNames) => {
  * @param {Array} disks - Array of disk configurations
  * @param {boolean} force - Whether to force attach in-use datasets
  */
-const addDisks = async (zoneName, zoneConfig, disks, force) => {
+const addDisks = async (zoneName, zoneConfig, disks, force, onData = null) => {
   let nextNum = getNextDiskNumber(zoneConfig);
   const zfsPromises = [];
   const zonecfgCmds = [];
@@ -283,7 +293,11 @@ const addDisks = async (zoneName, zoneConfig, disks, force) => {
 
       const sparseFlag = disk.sparse !== false ? '-s' : '';
       zfsPromises.push(
-        executeCommand(`pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`).then(res => {
+        executeCommand(
+          `pfexec zfs create ${sparseFlag} -V ${size} ${diskPath}`,
+          undefined,
+          onData
+        ).then(res => {
           if (!res.success) {
             throw new Error(`Failed to create disk volume: ${res.error}`);
           }
@@ -317,7 +331,9 @@ const addDisks = async (zoneName, zoneConfig, disks, force) => {
   // Apply zonecfg
   if (zonecfgCmds.length > 0) {
     const diskResult = await executeCommand(
-      `pfexec zonecfg -z ${zoneName} "${zonecfgCmds.join(' ')}"`
+      `pfexec zonecfg -z ${zoneName} "${zonecfgCmds.join(' ')}"`,
+      undefined,
+      onData
     );
     if (!diskResult.success) {
       throw new Error(`Failed to add disks to zone: ${diskResult.error}`);
@@ -335,7 +351,7 @@ const addDisks = async (zoneName, zoneConfig, disks, force) => {
  * @param {Object} zoneConfig - Current zone configuration
  * @param {Array} diskNames - Array of disk attribute names to remove (e.g., 'disk0')
  */
-const removeDisks = async (zoneName, zoneConfig, diskNames) => {
+const removeDisks = async (zoneName, zoneConfig, diskNames, onData = null) => {
   const cmds = [];
 
   for (const diskName of diskNames) {
@@ -358,7 +374,11 @@ const removeDisks = async (zoneName, zoneConfig, diskNames) => {
   }
 
   if (cmds.length > 0) {
-    const removeResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`);
+    const removeResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`,
+      undefined,
+      onData
+    );
     if (!removeResult.success) {
       throw new Error(`Failed to remove disks: ${removeResult.error}`);
     }
@@ -372,7 +392,7 @@ const removeDisks = async (zoneName, zoneConfig, diskNames) => {
  * @param {Object} zoneConfig - Current zone configuration
  * @param {Array} cdroms - Array of CDROM configurations
  */
-const addCdroms = async (zoneName, zoneConfig, cdroms) => {
+const addCdroms = async (zoneName, zoneConfig, cdroms, onData = null) => {
   let nextNum = getNextCdromNumber(zoneConfig);
   const cmds = [];
 
@@ -385,7 +405,11 @@ const addCdroms = async (zoneName, zoneConfig, cdroms) => {
   }
 
   if (cmds.length > 0) {
-    const cdromResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`);
+    const cdromResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`,
+      undefined,
+      onData
+    );
     if (!cdromResult.success) {
       throw new Error(`Failed to add CDROMs to zone: ${cdromResult.error}`);
     }
@@ -399,7 +423,7 @@ const addCdroms = async (zoneName, zoneConfig, cdroms) => {
  * @param {Object} zoneConfig - Current zone configuration
  * @param {Array} cdromNames - Array of cdrom attribute names to remove (e.g., 'cdrom0')
  */
-const removeCdroms = async (zoneName, zoneConfig, cdromNames) => {
+const removeCdroms = async (zoneName, zoneConfig, cdromNames, onData = null) => {
   const cmds = [];
 
   for (const cdromName of cdromNames) {
@@ -422,7 +446,11 @@ const removeCdroms = async (zoneName, zoneConfig, cdromNames) => {
   }
 
   if (cmds.length > 0) {
-    const removeResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`);
+    const removeResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join('; ')}"`,
+      undefined,
+      onData
+    );
     if (!removeResult.success) {
       throw new Error(`Failed to remove CDROMs: ${removeResult.error}`);
     }
@@ -436,7 +464,7 @@ const removeCdroms = async (zoneName, zoneConfig, cdromNames) => {
  * @param {Object} zoneConfig - Current zone configuration
  * @param {Object} cloudInit - Cloud-init configuration
  */
-const applyCloudInitChanges = async (zoneName, zoneConfig, cloudInit) => {
+const applyCloudInitChanges = async (zoneName, zoneConfig, cloudInit, onData = null) => {
   const commands = [];
 
   if (cloudInit.enabled !== undefined) {
@@ -457,7 +485,7 @@ const applyCloudInitChanges = async (zoneName, zoneConfig, cloudInit) => {
 
   if (commands.length > 0) {
     const cloudCmd = `pfexec zonecfg -z ${zoneName} "${commands.join(' ')}"`;
-    const cloudResult = await executeCommand(cloudCmd);
+    const cloudResult = await executeCommand(cloudCmd, undefined, onData);
     if (!cloudResult.success) {
       throw new Error(`Cloud-init modification failed: ${cloudResult.error}`);
     }
@@ -495,7 +523,14 @@ const parseModificationMetadata = async task => {
  * @param {Array} changes - Changes array to update
  * @returns {Promise<void>}
  */
-const applyAttributeChangesIfNeeded = async (zoneName, zoneConfig, metadata, task, changes) => {
+const applyAttributeChangesIfNeeded = async (
+  zoneName,
+  zoneConfig,
+  metadata,
+  task,
+  changes,
+  onData = null
+) => {
   const hasAttrChanges = [
     'ram',
     'vcpus',
@@ -511,7 +546,7 @@ const applyAttributeChangesIfNeeded = async (zoneName, zoneConfig, metadata, tas
 
   if (hasAttrChanges) {
     await updateTaskProgress(task, 20, { status: 'modifying_attributes' });
-    await applyAttributeChanges(zoneName, zoneConfig, metadata);
+    await applyAttributeChanges(zoneName, zoneConfig, metadata, onData);
     changes.push('attributes');
   }
 };
@@ -542,18 +577,18 @@ const finalizeModification = async (zoneName, task, changes) => {
  * @param {Object} task - Task object
  * @param {Array} changes - Changes array
  */
-const handleNetworkModifications = async (zoneName, metadata, task, changes) => {
+const handleNetworkModifications = async (zoneName, metadata, task, changes, onData = null) => {
   if (metadata.add_nics?.length > 0) {
     await updateTaskProgress(task, 50, { status: 'adding_nics' });
     const zoneRecord = await Zones.findOne({ where: { name: zoneName } });
-    await addNics(zoneName, metadata.add_nics, zoneRecord);
+    await addNics(zoneName, metadata.add_nics, zoneRecord, onData);
     changes.push('add_nics');
     await syncZoneToDatabase(zoneName);
   }
 
   if (metadata.remove_nics?.length > 0) {
     await updateTaskProgress(task, 55, { status: 'removing_nics' });
-    await removeNics(zoneName, metadata.remove_nics);
+    await removeNics(zoneName, metadata.remove_nics, onData);
     changes.push('remove_nics');
     await syncZoneToDatabase(zoneName);
   }
@@ -567,31 +602,38 @@ const handleNetworkModifications = async (zoneName, metadata, task, changes) => 
  * @param {Object} task - Task object
  * @param {Array} changes - Changes array
  */
-const handleStorageModifications = async (zoneName, zoneConfig, metadata, task, changes) => {
+const handleStorageModifications = async (
+  zoneName,
+  zoneConfig,
+  metadata,
+  task,
+  changes,
+  onData = null
+) => {
   if (metadata.add_disks?.length > 0) {
     await updateTaskProgress(task, 60, { status: 'adding_disks' });
-    await addDisks(zoneName, zoneConfig, metadata.add_disks, metadata.force);
+    await addDisks(zoneName, zoneConfig, metadata.add_disks, metadata.force, onData);
     changes.push('add_disks');
     await syncZoneToDatabase(zoneName);
   }
 
   if (metadata.remove_disks?.length > 0) {
     await updateTaskProgress(task, 70, { status: 'removing_disks' });
-    await removeDisks(zoneName, zoneConfig, metadata.remove_disks);
+    await removeDisks(zoneName, zoneConfig, metadata.remove_disks, onData);
     changes.push('remove_disks');
     await syncZoneToDatabase(zoneName);
   }
 
   if (metadata.add_cdroms?.length > 0) {
     await updateTaskProgress(task, 75, { status: 'adding_cdroms' });
-    await addCdroms(zoneName, zoneConfig, metadata.add_cdroms);
+    await addCdroms(zoneName, zoneConfig, metadata.add_cdroms, onData);
     changes.push('add_cdroms');
     await syncZoneToDatabase(zoneName);
   }
 
   if (metadata.remove_cdroms?.length > 0) {
     await updateTaskProgress(task, 80, { status: 'removing_cdroms' });
-    await removeCdroms(zoneName, zoneConfig, metadata.remove_cdroms);
+    await removeCdroms(zoneName, zoneConfig, metadata.remove_cdroms, onData);
     changes.push('remove_cdroms');
     await syncZoneToDatabase(zoneName);
   }
@@ -610,28 +652,29 @@ export const executeZoneModifyTask = async task => {
 
   try {
     const { metadata, zoneName, zoneConfig } = await parseModificationMetadata(task);
+    const { onData } = task;
 
     const changes = [];
 
     const initialChanges = changes.length;
-    await applyAttributeChangesIfNeeded(zoneName, zoneConfig, metadata, task, changes);
+    await applyAttributeChangesIfNeeded(zoneName, zoneConfig, metadata, task, changes, onData);
     if (changes.length > initialChanges) {
       await syncZoneToDatabase(zoneName);
     }
 
     if (metadata.autoboot !== undefined) {
       await updateTaskProgress(task, 40, { status: 'modifying_autoboot' });
-      await applyAutobootChange(zoneName, metadata.autoboot);
+      await applyAutobootChange(zoneName, metadata.autoboot, onData);
       changes.push('autoboot');
       await syncZoneToDatabase(zoneName);
     }
 
-    await handleNetworkModifications(zoneName, metadata, task, changes);
-    await handleStorageModifications(zoneName, zoneConfig, metadata, task, changes);
+    await handleNetworkModifications(zoneName, metadata, task, changes, onData);
+    await handleStorageModifications(zoneName, zoneConfig, metadata, task, changes, onData);
 
     if (metadata.cloud_init) {
       await updateTaskProgress(task, 85, { status: 'modifying_cloud_init' });
-      await applyCloudInitChanges(zoneName, zoneConfig, metadata.cloud_init);
+      await applyCloudInitChanges(zoneName, zoneConfig, metadata.cloud_init, onData);
       changes.push('cloud_init');
       await syncZoneToDatabase(zoneName);
     }

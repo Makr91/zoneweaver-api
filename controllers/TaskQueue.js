@@ -167,6 +167,7 @@ import {
   refreshService,
 } from '../lib/ServiceManager.js';
 import { log, createTimer } from '../lib/Logger.js';
+import { taskOutputManager } from '../lib/TaskOutputManager.js';
 
 /**
  * @fileoverview Task Queue controller for Zoneweaver API
@@ -1010,6 +1011,12 @@ const updateParentTaskProgress = async parentTaskId => {
  * @param {string} operationCategory - The operation category
  */
 const executeAndHandleTask = async (task, operationCategory) => {
+  // Create output session for live streaming
+  taskOutputManager.create(task.id);
+  task.onData = chunk => {
+    taskOutputManager.write(task.id, chunk);
+  };
+
   // Execute task with performance timing
   const taskTimer = createTimer(`Task execution: ${task.operation}`);
   const result = await executeTask(task);
@@ -1032,6 +1039,9 @@ const executeAndHandleTask = async (task, operationCategory) => {
   }
 
   await task.update(updateData);
+
+  // Finalize output session (flush to DB, write log file, cleanup)
+  await taskOutputManager.finalize(task.id);
 
   runningTasks.delete(task.id);
 
@@ -1476,6 +1486,53 @@ export const getTaskDetails = async (req, res) => {
       task_id: req.params.taskId,
     });
     return res.status(500).json({ error: 'Failed to retrieve task details' });
+  }
+};
+
+/**
+ * @swagger
+ * /tasks/{taskId}/output:
+ *   get:
+ *     summary: Get task output
+ *     description: Retrieves the output for a specific task (live from memory if running, from DB if completed)
+ *     tags: [Task Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Task ID
+ *     responses:
+ *       200:
+ *         description: Task output retrieved successfully
+ *       404:
+ *         description: Task not found
+ */
+export const getTaskOutput = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+
+    const task = await Tasks.findByPk(taskId, { attributes: ['id', 'status'] });
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const output = await taskOutputManager.getOutput(taskId);
+
+    return res.json({
+      task_id: taskId,
+      status: task.status,
+      output,
+    });
+  } catch (error) {
+    log.database.error('Failed to retrieve task output', {
+      error: error.message,
+      task_id: req.params.taskId,
+    });
+    return res.status(500).json({ error: 'Failed to retrieve task output' });
   }
 };
 

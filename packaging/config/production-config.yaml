@@ -88,6 +88,13 @@ provisioning:
     netmask: "255.255.255.0"
     dhcp_range_start: "10.190.190.10"
     dhcp_range_end: "10.190.190.254"
+  task_output:
+    enabled: true
+    mode: "full"                       # "full" or "circular"
+    circular_max_lines: 10000          # Only used if mode is "circular"
+    flush_interval_seconds: 10         # How often to flush in-memory buffer to DB
+    persist_log_file: true             # Write log file on completion
+    log_directory: "/var/log/zoneweaver-api/tasks"
   zlogin:
     enabled: true
     default_timeout_seconds: 300

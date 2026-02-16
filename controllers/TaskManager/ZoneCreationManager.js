@@ -151,7 +151,7 @@ const buildDatasetPath = (basePath, zoneName, partitionId) => {
  * @param {Array} zfsCreated - Array to track created datasets for rollback
  * @returns {Promise<string|null>} Boot disk path or null
  */
-const prepareBootVolume = async (metadata, zoneName, zfsCreated) => {
+const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData = null) => {
   const { boot_volume } = metadata;
   if (!boot_volume) {
     return null;
@@ -165,7 +165,11 @@ const prepareBootVolume = async (metadata, zoneName, zfsCreated) => {
     const rootDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
     const bootdiskPath = `${rootDataset}/${volumeName}`;
 
-    const parentResult = await executeCommand(`pfexec zfs create -p ${rootDataset}`);
+    const parentResult = await executeCommand(
+      `pfexec zfs create -p ${rootDataset}`,
+      undefined,
+      onData
+    );
     if (!parentResult.success) {
       throw new Error(`Failed to create parent dataset: ${parentResult.error}`);
     }
@@ -173,7 +177,9 @@ const prepareBootVolume = async (metadata, zoneName, zfsCreated) => {
 
     const sparseFlag = boot_volume.sparse !== false ? '-s' : '';
     const zvolResult = await executeCommand(
-      `pfexec zfs create ${sparseFlag} -V ${size} ${bootdiskPath}`
+      `pfexec zfs create ${sparseFlag} -V ${size} ${bootdiskPath}`,
+      undefined,
+      onData
     );
     if (!zvolResult.success) {
       throw new Error(`Failed to create boot volume: ${zvolResult.error}`);
@@ -210,7 +216,7 @@ const prepareBootVolume = async (metadata, zoneName, zfsCreated) => {
  * @param {Array} zfsCreated - Array to track created datasets for rollback
  * @returns {Promise<string|null>} Target dataset path or null
  */
-const importTemplate = async (metadata, zoneName, zfsCreated) => {
+const importTemplate = async (metadata, zoneName, zfsCreated, onData = null) => {
   if (metadata.source?.type !== 'template') {
     return null;
   }
@@ -223,7 +229,11 @@ const importTemplate = async (metadata, zoneName, zfsCreated) => {
   const targetDataset = `${parentDataset}/${volumeName}`;
 
   // Create parent dataset for the zone
-  const parentResult = await executeCommand(`pfexec zfs create -p ${parentDataset}`);
+  const parentResult = await executeCommand(
+    `pfexec zfs create -p ${parentDataset}`,
+    undefined,
+    onData
+  );
   if (!parentResult.success) {
     throw new Error(`Failed to create parent dataset: ${parentResult.error}`);
   }
@@ -232,14 +242,17 @@ const importTemplate = async (metadata, zoneName, zfsCreated) => {
   if (clone_strategy === 'copy') {
     const sendRecvResult = await executeCommand(
       `pfexec zfs send ${template_dataset}@ready | pfexec zfs recv -F ${targetDataset}`,
-      3600 * 1000
+      3600 * 1000,
+      onData
     );
     if (!sendRecvResult.success) {
       throw new Error(`Template import failed: ${sendRecvResult.error}`);
     }
   } else {
     const cloneResult = await executeCommand(
-      `pfexec zfs clone ${template_dataset}@ready ${targetDataset}`
+      `pfexec zfs clone ${template_dataset}@ready ${targetDataset}`,
+      undefined,
+      onData
     );
     if (!cloneResult.success) {
       throw new Error(`Template clone failed: ${cloneResult.error}`);
@@ -279,7 +292,7 @@ const buildZoneAttributeMap = metadata => {
  * @param {string} zoneName - Zone name
  * @param {Object} metadata - Zone creation metadata
  */
-const applyZoneConfig = async (zoneName, metadata) => {
+const applyZoneConfig = async (zoneName, metadata, onData = null) => {
   const pool = metadata.boot_volume?.pool || metadata.disks?.boot?.array || 'rpool';
   const dataset = metadata.boot_volume?.dataset || metadata.disks?.boot?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
@@ -289,7 +302,9 @@ const applyZoneConfig = async (zoneName, metadata) => {
   const brand = metadata.zones?.brand || metadata.brand;
 
   const createResult = await executeCommand(
-    `pfexec zonecfg -z ${zoneName} "create; set zonepath=${zonepath}; set brand=${brand}; set autoboot=${autoboot}; set ip-type=exclusive"`
+    `pfexec zonecfg -z ${zoneName} "create; set zonepath=${zonepath}; set brand=${brand}; set autoboot=${autoboot}; set ip-type=exclusive"`,
+    undefined,
+    onData
   );
   if (!createResult.success) {
     throw new Error(`Zone configuration failed: ${createResult.error}`);
@@ -302,7 +317,11 @@ const applyZoneConfig = async (zoneName, metadata) => {
     .join(' ');
 
   if (attrs) {
-    const attrResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${attrs}"`);
+    const attrResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${attrs}"`,
+      undefined,
+      onData
+    );
     if (!attrResult.success) {
       throw new Error(`Attribute configuration failed: ${attrResult.error}`);
     }
@@ -314,9 +333,9 @@ const applyZoneConfig = async (zoneName, metadata) => {
  * @param {string} zoneName - Zone name
  * @param {string} bootdiskPath - Path to bootdisk dataset
  */
-const configureBootdisk = async (zoneName, bootdiskPath) => {
+const configureBootdisk = async (zoneName, bootdiskPath, onData = null) => {
   const bootdiskCmd = `pfexec zonecfg -z ${zoneName} "${buildAttrCommand('bootdisk', bootdiskPath)} add device; set match=/dev/zvol/rdsk/${bootdiskPath}; end;"`;
-  const bootdiskResult = await executeCommand(bootdiskCmd);
+  const bootdiskResult = await executeCommand(bootdiskCmd, undefined, onData);
   if (!bootdiskResult.success) {
     throw new Error(`Bootdisk configuration failed: ${bootdiskResult.error}`);
   }
@@ -330,7 +349,14 @@ const configureBootdisk = async (zoneName, bootdiskPath) => {
  * @param {boolean} force - Whether to force attach in-use datasets
  * @param {Object} metadata - Zone creation metadata (for partition_id)
  */
-const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force, metadata) => {
+const configureAdditionalDisks = async (
+  zoneName,
+  disks,
+  zfsCreated,
+  force,
+  metadata,
+  onData = null
+) => {
   const zfsPromises = [];
   const zonecfgCmds = [];
 
@@ -382,7 +408,9 @@ const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force, meta
   // Apply zonecfg in batch
   if (zonecfgCmds.length > 0) {
     const diskResult = await executeCommand(
-      `pfexec zonecfg -z ${zoneName} "${zonecfgCmds.join(' ')}"`
+      `pfexec zonecfg -z ${zoneName} "${zonecfgCmds.join(' ')}"`,
+      undefined,
+      onData
     );
     if (!diskResult.success) {
       throw new Error(`Disk configuration failed: ${diskResult.error}`);
@@ -395,7 +423,7 @@ const configureAdditionalDisks = async (zoneName, disks, zfsCreated, force, meta
  * @param {string} zoneName - Zone name
  * @param {Array} cdroms - Array of CDROM configurations
  */
-const configureCdroms = async (zoneName, cdroms) => {
+const configureCdroms = async (zoneName, cdroms, onData = null) => {
   const cmds = cdroms.map((cdrom, i) => {
     // Single CD: 'cdrom', multiple: 'cdrom0', 'cdrom1', etc.
     const attrName = cdroms.length === 1 ? 'cdrom' : `cdrom${i}`;
@@ -403,7 +431,11 @@ const configureCdroms = async (zoneName, cdroms) => {
   });
 
   if (cmds.length > 0) {
-    const cdromResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`);
+    const cdromResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`,
+      undefined,
+      onData
+    );
     if (!cdromResult.success) {
       throw new Error(`CDROM configuration failed: ${cdromResult.error}`);
     }
@@ -453,7 +485,7 @@ const generateVnicName = (nic, index, metadata) => {
  * @param {Array} nics - Array of NIC configurations
  * @param {Object} metadata - Zone creation metadata (for VNIC name generation)
  */
-const configureNics = async (zoneName, nics, metadata) => {
+const configureNics = async (zoneName, nics, metadata, onData = null) => {
   const cmds = nics.map((nic, index) => {
     const physical = nic.physical || generateVnicName(nic, index, metadata);
     let cmd = `add net; set physical=${physical};`;
@@ -474,7 +506,11 @@ const configureNics = async (zoneName, nics, metadata) => {
   });
 
   if (cmds.length > 0) {
-    const nicResult = await executeCommand(`pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`);
+    const nicResult = await executeCommand(
+      `pfexec zonecfg -z ${zoneName} "${cmds.join(' ')}"`,
+      undefined,
+      onData
+    );
     if (!nicResult.success) {
       throw new Error(`NIC configuration failed: ${nicResult.error}`);
     }
@@ -486,7 +522,7 @@ const configureNics = async (zoneName, nics, metadata) => {
  * @param {string} zoneName - Zone name
  * @param {Object} cloudInit - Cloud-init configuration
  */
-const configureCloudInit = async (zoneName, cloudInit) => {
+const configureCloudInit = async (zoneName, cloudInit, onData = null) => {
   const attrs = [];
 
   if (cloudInit.enabled) {
@@ -507,7 +543,7 @@ const configureCloudInit = async (zoneName, cloudInit) => {
 
   if (attrs.length > 0) {
     const cloudCmd = `pfexec zonecfg -z ${zoneName} "${attrs.join(' ')}"`;
-    const cloudResult = await executeCommand(cloudCmd);
+    const cloudResult = await executeCommand(cloudCmd, undefined, onData);
     if (!cloudResult.success) {
       throw new Error(`Cloud-init configuration failed: ${cloudResult.error}`);
     }
@@ -656,13 +692,13 @@ const resolvePartitionId = async (metadata, baseName) => {
  * @param {Object} task - Task object for progress updates
  * @returns {Promise<string|null>} Boot disk path or null
  */
-const prepareStorage = async (metadata, zoneName, zfsCreated, task) => {
+const prepareStorage = async (metadata, zoneName, zfsCreated, task, onData = null) => {
   await updateTaskProgress(task, 10, { status: 'preparing_storage' });
-  let bootdiskPath = await prepareBootVolume(metadata, zoneName, zfsCreated);
+  let bootdiskPath = await prepareBootVolume(metadata, zoneName, zfsCreated, onData);
 
   if (metadata.source?.type === 'template') {
     await updateTaskProgress(task, 30, { status: 'importing_template' });
-    const templatePath = await importTemplate(metadata, zoneName, zfsCreated);
+    const templatePath = await importTemplate(metadata, zoneName, zfsCreated, onData);
     if (templatePath) {
       bootdiskPath = templatePath;
     }
@@ -679,13 +715,20 @@ const prepareStorage = async (metadata, zoneName, zfsCreated, task) => {
  * @param {Array} zfsCreated - Array to track created datasets for rollback
  * @param {Object} task - Task object for progress updates
  */
-const applyAllZoneConfig = async (zoneName, metadata, bootdiskPath, zfsCreated, task) => {
+const applyAllZoneConfig = async (
+  zoneName,
+  metadata,
+  bootdiskPath,
+  zfsCreated,
+  task,
+  onData = null
+) => {
   await updateTaskProgress(task, 40, { status: 'configuring_zone' });
-  await applyZoneConfig(zoneName, metadata);
+  await applyZoneConfig(zoneName, metadata, onData);
 
   if (bootdiskPath) {
     await updateTaskProgress(task, 50, { status: 'configuring_bootdisk' });
-    await configureBootdisk(zoneName, bootdiskPath);
+    await configureBootdisk(zoneName, bootdiskPath, onData);
   }
 
   if (metadata.additional_disks?.length > 0) {
@@ -695,23 +738,24 @@ const applyAllZoneConfig = async (zoneName, metadata, bootdiskPath, zfsCreated, 
       metadata.additional_disks,
       zfsCreated,
       metadata.force,
-      metadata
+      metadata,
+      onData
     );
   }
 
   if (metadata.cdroms?.length > 0) {
     await updateTaskProgress(task, 70, { status: 'configuring_cdroms' });
-    await configureCdroms(zoneName, metadata.cdroms);
+    await configureCdroms(zoneName, metadata.cdroms, onData);
   }
 
   if (metadata.nics?.length > 0) {
     await updateTaskProgress(task, 75, { status: 'configuring_network' });
-    await configureNics(zoneName, metadata.nics, metadata);
+    await configureNics(zoneName, metadata.nics, metadata, onData);
   }
 
   if (metadata.cloud_init) {
     await updateTaskProgress(task, 80, { status: 'configuring_cloud_init' });
-    await configureCloudInit(zoneName, metadata.cloud_init);
+    await configureCloudInit(zoneName, metadata.cloud_init, onData);
   }
 };
 
@@ -765,7 +809,7 @@ const storeInfrastructureConfig = async (zone, metadata, zoneName) => {
  * @param {Object} metadata - Zone creation metadata
  * @param {Object} task - Task object for progress updates
  */
-const finalizeAndInstallZone = async (zoneName, metadata, task) => {
+const finalizeAndInstallZone = async (zoneName, metadata, task, onData = null) => {
   await syncZoneToDatabase(zoneName, 'configured');
 
   const zoneRecord = await Zones.findOne({ where: { name: zoneName } });
@@ -777,7 +821,11 @@ const finalizeAndInstallZone = async (zoneName, metadata, task) => {
   }
 
   await updateTaskProgress(task, 90, { status: 'installing_zone' });
-  const installResult = await executeCommand(`pfexec zoneadm -z ${zoneName} install`, 3600 * 1000);
+  const installResult = await executeCommand(
+    `pfexec zoneadm -z ${zoneName} install`,
+    3600 * 1000,
+    onData
+  );
   if (!installResult.success) {
     throw new Error(`Zone installation failed: ${installResult.error}`);
   }
@@ -833,12 +881,13 @@ export const executeZoneCreateTask = async task => {
       return { success: false, error: validation.error };
     }
 
-    const bootdiskPath = await prepareStorage(metadata, zoneName, zfsCreated, task);
+    const { onData } = task;
+    const bootdiskPath = await prepareStorage(metadata, zoneName, zfsCreated, task, onData);
 
-    await applyAllZoneConfig(zoneName, metadata, bootdiskPath, zfsCreated, task);
+    await applyAllZoneConfig(zoneName, metadata, bootdiskPath, zfsCreated, task, onData);
     zonecfgApplied = true;
 
-    await finalizeAndInstallZone(zoneName, metadata, task);
+    await finalizeAndInstallZone(zoneName, metadata, task, onData);
     await updateTaskProgress(task, 100, { status: 'completed' });
 
     log.task.info('Zone creation completed', {

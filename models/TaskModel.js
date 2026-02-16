@@ -164,6 +164,11 @@ const Tasks = db.define(
       allowNull: true,
       comment: 'Detailed progress information (transferred bytes, speed, ETA, etc.)',
     },
+    output: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Task output (JSON array of {stream, data, timestamp} entries)',
+    },
   },
   {
     freezeTableName: true,
