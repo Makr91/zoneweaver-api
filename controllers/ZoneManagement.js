@@ -88,6 +88,7 @@ const resolveBoxToTemplate = async (settings, disks) => {
         requested_version: requestedVersion,
         architecture,
         hint: 'Download template first using POST /templates/pull',
+        note: 'For private boxes, include "auth_token" parameter in the download request',
         download_example: {
           source_name: defaultSource?.name || 'Default Registry',
           organization: org,
@@ -107,6 +108,205 @@ const resolveBoxToTemplate = async (settings, disks) => {
   });
 
   return { success: true, template_dataset: template.dataset_path };
+};
+
+/**
+ * Determine source_name from box_url or use default
+ * @param {string} [boxUrl] - Optional box URL
+ * @returns {{success: boolean, source_name?: string, error?: string}}
+ */
+const determineSourceFromBoxUrl = boxUrl => {
+  const templateConfig = config.getTemplateSources();
+
+  if (boxUrl) {
+    const matchingSource = templateConfig.sources?.find(s => s.enabled && boxUrl.startsWith(s.url));
+    if (matchingSource) {
+      return { success: true, source_name: matchingSource.name };
+    }
+    return {
+      success: false,
+      error: `No configured source matches box_url: ${boxUrl}`,
+    };
+  }
+
+  const defaultSource = templateConfig.sources?.find(
+    s => s.enabled && (s.name === 'Default Registry' || s.default)
+  );
+
+  if (!defaultSource) {
+    return {
+      success: false,
+      error: 'No default template source configured',
+    };
+  }
+
+  return { success: true, source_name: defaultSource.name };
+};
+
+/**
+ * Create zone creation sub-tasks with proper dependencies
+ * @param {string} zoneName - Zone name
+ * @param {Object} requestBody - Full request body
+ * @param {string} parentTaskId - Parent task ID
+ * @param {string} [firstDependency] - First task dependency (e.g., template_download)
+ * @param {boolean} startAfterCreate - Whether to create start task
+ * @param {string} createdBy - Created by identifier
+ * @returns {Promise<{subTasks: Object}>}
+ */
+const createZoneCreationSubTasks = async (
+  zoneName,
+  requestBody,
+  parentTaskId,
+  firstDependency,
+  startAfterCreate,
+  createdBy
+) => {
+  const baseMetadata = JSON.stringify(requestBody);
+
+  // Sub-task 1: Storage
+  const storageTask = await Tasks.create({
+    zone_name: zoneName,
+    operation: 'zone_create_storage',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    parent_task_id: parentTaskId,
+    depends_on: firstDependency,
+    metadata: baseMetadata,
+    status: 'pending',
+  });
+
+  // Sub-task 2: Config
+  const configTask = await Tasks.create({
+    zone_name: zoneName,
+    operation: 'zone_create_config',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    parent_task_id: parentTaskId,
+    depends_on: storageTask.id,
+    metadata: baseMetadata,
+    status: 'pending',
+  });
+
+  // Sub-task 3: Install
+  const installTask = await Tasks.create({
+    zone_name: zoneName,
+    operation: 'zone_create_install',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    parent_task_id: parentTaskId,
+    depends_on: configTask.id,
+    metadata: baseMetadata,
+    status: 'pending',
+  });
+
+  // Sub-task 4: Finalize
+  const finalizeTask = await Tasks.create({
+    zone_name: zoneName,
+    operation: 'zone_create_finalize',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    parent_task_id: parentTaskId,
+    depends_on: installTask.id,
+    metadata: baseMetadata,
+    status: 'pending',
+  });
+
+  const subTasks = {
+    storage: storageTask.id,
+    config: configTask.id,
+    install: installTask.id,
+    finalize: finalizeTask.id,
+  };
+
+  // Optional: Start task
+  if (startAfterCreate) {
+    const startTask = await Tasks.create({
+      zone_name: zoneName,
+      operation: 'start',
+      priority: TaskPriority.MEDIUM,
+      created_by: createdBy,
+      parent_task_id: parentTaskId,
+      depends_on: finalizeTask.id,
+      status: 'pending',
+    });
+    subTasks.start = startTask.id;
+  }
+
+  return { subTasks };
+};
+
+/**
+ * Handle auto-download scenario for missing templates
+ * @param {string} finalZoneName - Final zone name
+ * @param {Object} requestBody - Request body
+ * @param {Object} settings - Settings object
+ * @param {boolean} startAfterCreate - Start after create flag
+ * @param {string} createdBy - Created by identifier
+ * @returns {Promise<Object>} Response object
+ */
+const handleAutoDownload = async (
+  finalZoneName,
+  requestBody,
+  settings,
+  startAfterCreate,
+  createdBy
+) => {
+  const parentTask = await Tasks.create({
+    zone_name: finalZoneName,
+    operation: 'zone_create_orchestration',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    metadata: JSON.stringify(requestBody),
+    status: 'pending',
+  });
+
+  const sourceResult = determineSourceFromBoxUrl(settings.box_url);
+  if (!sourceResult.success) {
+    throw new Error(sourceResult.error);
+  }
+
+  const [org, boxName] = settings.box.split('/');
+
+  const downloadTask = await Tasks.create({
+    zone_name: 'system',
+    operation: 'template_download',
+    priority: TaskPriority.MEDIUM,
+    created_by: createdBy,
+    parent_task_id: parentTask.id,
+    metadata: JSON.stringify({
+      source_name: sourceResult.source_name,
+      organization: org,
+      box_name: boxName,
+      version: settings.box_version || 'latest',
+      provider: 'zone',
+      architecture: settings.box_arch || 'amd64',
+      auth_token: settings.box_auth_token,
+    }),
+    status: 'pending',
+  });
+
+  const { subTasks } = await createZoneCreationSubTasks(
+    finalZoneName,
+    requestBody,
+    parentTask.id,
+    downloadTask.id,
+    startAfterCreate,
+    createdBy
+  );
+
+  return {
+    success: true,
+    parent_task_id: parentTask.id,
+    zone_name: finalZoneName,
+    operation: 'zone_create_orchestration',
+    status: 'pending',
+    message: 'Template download and zone creation queued',
+    requires_download: true,
+    sub_tasks: {
+      template_download: downloadTask.id,
+      ...subTasks,
+    },
+  };
 };
 
 /**
@@ -1153,7 +1353,7 @@ export const restartZone = async (req, res) => {
  *                       type: "template"
  *     responses:
  *       200:
- *         description: Creation task queued successfully
+ *         description: Zone creation orchestration queued successfully
  *         content:
  *           application/json:
  *             schema:
@@ -1162,25 +1362,50 @@ export const restartZone = async (req, res) => {
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 task_id:
+ *                 parent_task_id:
  *                   type: string
  *                   format: uuid
+ *                   description: Parent orchestration task ID (poll this for overall progress)
  *                 zone_name:
  *                   type: string
- *                   example: "web-server-01"
+ *                   example: "0001--web-server-01.example.com"
  *                 operation:
  *                   type: string
- *                   example: "zone_create"
+ *                   example: "zone_create_orchestration"
  *                 status:
  *                   type: string
  *                   example: "pending"
  *                 message:
  *                   type: string
- *                   example: "Zone creation task queued successfully"
- *                 start_task_id:
- *                   type: string
- *                   format: uuid
- *                   description: Present only when start_after_create is true
+ *                   example: "Template download and zone creation queued"
+ *                 requires_download:
+ *                   type: boolean
+ *                   description: Whether template auto-download was triggered
+ *                   example: true
+ *                 sub_tasks:
+ *                   type: object
+ *                   description: IDs of all sub-tasks
+ *                   properties:
+ *                     template_download:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Template download task (only if requires_download is true)
+ *                     storage:
+ *                       type: string
+ *                       format: uuid
+ *                     config:
+ *                       type: string
+ *                       format: uuid
+ *                     install:
+ *                       type: string
+ *                       format: uuid
+ *                     finalize:
+ *                       type: string
+ *                       format: uuid
+ *                     start:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Start task (only if start_after_create is true)
  *       400:
  *         description: Invalid parameters (missing name/brand or invalid zone name)
  *       409:
@@ -1271,11 +1496,12 @@ export const createZone = async (req, res) => {
 
     // Box resolution: convert settings.box reference to template_dataset path
     const boxResolution = await resolveBoxToTemplate(settings, req.body.disks);
-    if (!boxResolution.success) {
-      return res.status(boxResolution.error.status).json(boxResolution.error);
-    }
 
-    if (boxResolution.template_dataset) {
+    // Ensure metadata.name is set for task executor (base name, not prefixed)
+    req.body.name = baseName;
+
+    // Template found locally - inject template_dataset
+    if (boxResolution.success && boxResolution.template_dataset) {
       req.body.disks = req.body.disks || {};
       req.body.disks.boot = req.body.disks.boot || {};
       req.body.disks.boot.source = {
@@ -1285,43 +1511,53 @@ export const createZone = async (req, res) => {
       };
     }
 
-    // Ensure metadata.name is set for task executor (base name, not prefixed)
-    req.body.name = baseName;
+    // Handle missing template with auto-download
+    if (!boxResolution.success && boxResolution.error.status === 404 && settings.box) {
+      const response = await handleAutoDownload(
+        finalZoneName,
+        req.body,
+        settings,
+        start_after_create,
+        req.entity.name
+      );
+      return res.json(response);
+    }
 
-    // Create the zone_create task with FINAL zone name
-    const createTask = await Tasks.create({
+    // Template missing but cannot auto-download (no box reference)
+    if (!boxResolution.success) {
+      return res.status(boxResolution.error.status).json(boxResolution.error);
+    }
+
+    // Template available - create orchestration with sub-tasks (no download)
+    const parentTask = await Tasks.create({
       zone_name: finalZoneName,
-      operation: 'zone_create',
+      operation: 'zone_create_orchestration',
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
       metadata: JSON.stringify(req.body),
       status: 'pending',
     });
 
-    const response = {
+    // Create zone creation sub-tasks (no download dependency)
+    const { subTasks } = await createZoneCreationSubTasks(
+      finalZoneName,
+      req.body,
+      parentTask.id,
+      null,
+      start_after_create,
+      req.entity.name
+    );
+
+    return res.json({
       success: true,
-      task_id: createTask.id,
+      parent_task_id: parentTask.id,
       zone_name: finalZoneName,
-      operation: 'zone_create',
+      operation: 'zone_create_orchestration',
       status: 'pending',
-      message: 'Zone creation task queued successfully',
-    };
-
-    // If start_after_create, create a dependent start task with FINAL zone name
-    if (start_after_create) {
-      const startTask = await Tasks.create({
-        zone_name: finalZoneName,
-        operation: 'start',
-        priority: TaskPriority.MEDIUM,
-        created_by: req.entity.name,
-        depends_on: createTask.id,
-        status: 'pending',
-      });
-      response.start_task_id = startTask.id;
-      response.message = 'Zone creation task queued with auto-start';
-    }
-
-    return res.json(response);
+      message: 'Zone creation queued',
+      requires_download: false,
+      sub_tasks: subTasks,
+    });
   } catch (error) {
     log.database.error('Database error creating zone task', {
       error: error.message,

@@ -145,3 +145,4 @@ dist
 .pnp.*
 SCRATCH_NOTES.md
 VNC_PERFORMANCE_INVESTIGATION_SCRATCHPAD.md
+test-provisioner-config.json

@@ -827,3 +827,225 @@ export const executeZoneCreateTask = async task => {
     return { success: false, error: `Zone creation failed: ${error.message}` };
   }
 };
+
+/**
+ * Execute zone creation storage task (sub-task 1 of 4)
+ * Handles boot volume creation and template import
+ * @param {Object} task - Task object from database
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeZoneCreateStorageTask = async task => {
+  log.task.debug('Zone creation storage task starting', {
+    task_id: task.id,
+    zone_name: task.zone_name,
+  });
+
+  const zfsCreated = [];
+  const zoneName = task.zone_name;
+
+  try {
+    await updateTaskProgress(task, 5, { status: 'validating' });
+    const metadata = await parseMetadata(task.metadata);
+
+    // Ensure server_id is set if provided
+    if (metadata.settings?.server_id) {
+      metadata.server_id = String(metadata.settings.server_id).padStart(4, '0');
+    }
+
+    const { onData } = task;
+    const bootdiskPath = await prepareStorage(metadata, zoneName, zfsCreated, task, onData);
+
+    // Store output for next task
+    metadata._execution_output = {
+      bootdiskPath,
+      zfsCreated,
+    };
+
+    await task.update({ metadata: JSON.stringify(metadata) });
+    await updateTaskProgress(task, 100, { status: 'completed' });
+
+    log.task.info('Zone creation storage task completed', {
+      zone_name: zoneName,
+      bootdiskPath,
+    });
+
+    return { success: true, message: `Storage prepared for zone ${zoneName}` };
+  } catch (error) {
+    log.task.error('Zone creation storage task exception', {
+      error: error.message,
+      stack: error.stack,
+      zone_name: zoneName,
+    });
+
+    await rollbackCreation(zoneName, false, zfsCreated);
+
+    return { success: false, error: `Storage preparation failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute zone creation config task (sub-task 2 of 4)
+ * Applies zone configuration via zonecfg
+ * @param {Object} task - Task object from database
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeZoneCreateConfigTask = async task => {
+  log.task.debug('Zone creation config task starting', {
+    task_id: task.id,
+    zone_name: task.zone_name,
+  });
+
+  const zoneName = task.zone_name;
+  let zonecfgApplied = false;
+
+  try {
+    const metadata = await parseMetadata(task.metadata);
+
+    // Read bootdiskPath from storage task output
+    const bootdiskPath = metadata._execution_output?.bootdiskPath;
+    const zfsCreated = metadata._execution_output?.zfsCreated || [];
+
+    const { onData } = task;
+
+    // Apply all zone configuration
+    await applyAllZoneConfig(zoneName, metadata, bootdiskPath, zfsCreated, task, onData);
+    zonecfgApplied = true;
+
+    // Store output for potential rollback
+    metadata._execution_output = {
+      ...metadata._execution_output,
+      zonecfgApplied: true,
+    };
+
+    await task.update({ metadata: JSON.stringify(metadata) });
+    await updateTaskProgress(task, 100, { status: 'completed' });
+
+    log.task.info('Zone creation config task completed', { zone_name: zoneName });
+
+    return { success: true, message: `Zone ${zoneName} configured successfully` };
+  } catch (error) {
+    log.task.error('Zone creation config task exception', {
+      error: error.message,
+      stack: error.stack,
+      zone_name: zoneName,
+    });
+
+    // Rollback zone config if applied
+    if (zonecfgApplied) {
+      await executeCommand(`pfexec zonecfg -z ${zoneName} delete -F`);
+    }
+
+    return { success: false, error: `Zone configuration failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute zone creation install task (sub-task 3 of 4)
+ * Installs the zone via zoneadm install
+ * @param {Object} task - Task object from database
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeZoneCreateInstallTask = async task => {
+  log.task.debug('Zone creation install task starting', {
+    task_id: task.id,
+    zone_name: task.zone_name,
+  });
+
+  const zoneName = task.zone_name;
+
+  try {
+    const metadata = await parseMetadata(task.metadata);
+    const { onData } = task;
+
+    await updateTaskProgress(task, 10, { status: 'installing_zone' });
+
+    const installResult = await executeCommand(
+      `pfexec zoneadm -z ${zoneName} install`,
+      3600 * 1000,
+      onData
+    );
+    if (!installResult.success) {
+      throw new Error(`Zone installation failed: ${installResult.error}`);
+    }
+
+    await updateTaskProgress(task, 90, { status: 'setting_permissions' });
+
+    // Fix zonepath permissions
+    const pool = metadata.disks?.boot?.pool || 'rpool';
+    const dataset = metadata.disks?.boot?.dataset || 'zones';
+    const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
+    const zonepath = metadata.zonepath || `/${datasetPath}/path`;
+
+    const chmodResult = await executeCommand(`pfexec chmod 755 ${zonepath}`);
+    if (!chmodResult.success) {
+      log.task.warn('Failed to set zonepath permissions', { zonepath, error: chmodResult.error });
+    }
+
+    await updateTaskProgress(task, 100, { status: 'completed' });
+
+    log.task.info('Zone creation install task completed', { zone_name: zoneName });
+
+    return { success: true, message: `Zone ${zoneName} installed successfully` };
+  } catch (error) {
+    log.task.error('Zone creation install task exception', {
+      error: error.message,
+      stack: error.stack,
+      zone_name: zoneName,
+    });
+
+    return { success: false, error: `Zone installation failed: ${error.message}` };
+  }
+};
+
+/**
+ * Execute zone creation finalize task (sub-task 4 of 4)
+ * Syncs zone to database and stores configuration
+ * @param {Object} task - Task object from database
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+export const executeZoneCreateFinalizeTask = async task => {
+  log.task.debug('Zone creation finalize task starting', {
+    task_id: task.id,
+    zone_name: task.zone_name,
+  });
+
+  const zoneName = task.zone_name;
+
+  try {
+    const metadata = await parseMetadata(task.metadata);
+
+    await updateTaskProgress(task, 10, { status: 'syncing_to_database' });
+    await syncZoneToDatabase(zoneName, 'configured');
+
+    const zoneRecord = await Zones.findOne({ where: { name: zoneName } });
+    if (zoneRecord) {
+      await zoneRecord.update({
+        server_id: metadata.server_id,
+        vm_type: metadata.zones?.vmtype || metadata.vm_type || 'production',
+      });
+    }
+
+    await updateTaskProgress(task, 50, { status: 'syncing_installed_status' });
+    await syncZoneToDatabase(zoneName, 'installed');
+
+    await updateTaskProgress(task, 80, { status: 'storing_configuration' });
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (zone) {
+      await storeInfrastructureConfig(zone, metadata, zoneName);
+    }
+
+    await updateTaskProgress(task, 100, { status: 'completed' });
+
+    log.task.info('Zone creation finalize task completed', { zone_name: zoneName });
+
+    return { success: true, message: `Zone ${zoneName} finalized successfully` };
+  } catch (error) {
+    log.task.error('Zone creation finalize task exception', {
+      error: error.message,
+      stack: error.stack,
+      zone_name: zoneName,
+    });
+
+    return { success: false, error: `Zone finalization failed: ${error.message}` };
+  }
+};

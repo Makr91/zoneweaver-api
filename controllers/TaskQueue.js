@@ -136,7 +136,12 @@ import {
   executeTemplatePublishTask,
   executeTemplateExportTask,
 } from './TaskManager/TemplateManager.js';
-import { executeZoneCreateTask } from './TaskManager/ZoneCreationManager.js';
+import {
+  executeZoneCreateStorageTask,
+  executeZoneCreateConfigTask,
+  executeZoneCreateInstallTask,
+  executeZoneCreateFinalizeTask,
+} from './TaskManager/ZoneCreationManager.js';
 import { executeZoneModifyTask } from './TaskManager/ZoneModificationManager.js';
 import {
   executeCreateNatRuleTask,
@@ -304,7 +309,11 @@ const OPERATION_CATEGORIES = {
   template_export: 'template',
 
   // Zone lifecycle operations
-  zone_create: 'zone_lifecycle',
+  zone_create_orchestration: 'zone_lifecycle',
+  zone_create_storage: 'zone_lifecycle',
+  zone_create_config: 'zone_lifecycle',
+  zone_create_install: 'zone_lifecycle',
+  zone_create_finalize: 'zone_lifecycle',
   zone_modify: 'zone_lifecycle',
   zone_provisioning_extract: 'zone_lifecycle',
   zone_setup: 'zone_lifecycle',
@@ -791,7 +800,10 @@ const executeVncStartTask = async zoneName => {
  * Map of operations that pass full task object (need progress tracking)
  */
 const TASK_OBJECT_OPERATIONS = {
-  zone_create: executeZoneCreateTask,
+  zone_create_storage: executeZoneCreateStorageTask,
+  zone_create_config: executeZoneCreateConfigTask,
+  zone_create_install: executeZoneCreateInstallTask,
+  zone_create_finalize: executeZoneCreateFinalizeTask,
   zone_modify: executeZoneModifyTask,
   zone_setup: executeZoneSetupTask,
   zone_provisioning_extract: executeZoneProvisioningExtractTask,
@@ -804,6 +816,7 @@ const TASK_OBJECT_OPERATIONS = {
  * Parent task operations that track subtasks
  */
 const PARENT_OPERATIONS = [
+  'zone_create_orchestration',
   'zone_provision_orchestration',
   'zone_sync_parent',
   'zone_provision_parent',
