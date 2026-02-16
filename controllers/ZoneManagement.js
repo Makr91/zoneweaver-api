@@ -1,6 +1,7 @@
 import Zones from '../models/ZoneModel.js';
 import Tasks, { TaskPriority } from '../models/TaskModel.js';
 import VncSessions from '../models/VncSessionModel.js';
+import Template from '../models/TemplateModel.js';
 import { executeCommand } from '../lib/CommandManager.js';
 import { getZoneConfig as fetchZoneConfig } from '../lib/ZoneConfigUtils.js';
 import { errorResponse } from './SystemHostController/utils/ResponseHelpers.js';
@@ -26,6 +27,86 @@ const getSystemZoneStatus = async zoneName => {
     return parts[2] || 'unknown';
   }
   return 'not_found';
+};
+
+/**
+ * Resolve box reference to template dataset path
+ * @param {Object} settings - Settings object from request
+ * @param {Object} disks - Disks object from request
+ * @returns {Promise<{success: boolean, template_dataset?: string, error?: Object}>}
+ */
+const resolveBoxToTemplate = async (settings, disks) => {
+  if (!settings.box || disks?.boot?.source?.template_dataset) {
+    return { success: true };
+  }
+
+  const [org, boxName] = settings.box.split('/');
+  if (!org || !boxName) {
+    return {
+      success: false,
+      error: {
+        status: 400,
+        message: 'Invalid box format. Expected: "organization/box-name"',
+        provided: settings.box,
+      },
+    };
+  }
+
+  const requestedVersion = settings.box_version || 'latest';
+  const architecture = settings.box_arch || 'amd64';
+
+  let template;
+  if (requestedVersion === 'latest' || !requestedVersion) {
+    template = await Template.findOne({
+      where: { organization: org, box_name: boxName, architecture, provider: 'zone' },
+      order: [['version', 'DESC']],
+    });
+  } else {
+    template = await Template.findOne({
+      where: {
+        organization: org,
+        box_name: boxName,
+        version: requestedVersion,
+        architecture,
+        provider: 'zone',
+      },
+    });
+  }
+
+  if (!template) {
+    const templateConfig = config.getTemplateSources();
+    const defaultSource = templateConfig.sources?.find(
+      s => s.enabled && (s.name === 'Default Registry' || s.default)
+    );
+
+    return {
+      success: false,
+      error: {
+        status: 404,
+        message: 'Template not available locally',
+        box: `${org}/${boxName}`,
+        requested_version: requestedVersion,
+        architecture,
+        hint: 'Download template first using POST /templates/pull',
+        download_example: {
+          source_name: defaultSource?.name || 'Default Registry',
+          organization: org,
+          box_name: boxName,
+          version: requestedVersion === 'latest' ? '<specific version>' : requestedVersion,
+          provider: 'zone',
+          architecture,
+        },
+      },
+    };
+  }
+
+  log.api.info('Resolved box reference to template', {
+    box: `${org}/${boxName}`,
+    resolved_version: template.version,
+    dataset_path: template.dataset_path,
+  });
+
+  return { success: true, template_dataset: template.dataset_path };
 };
 
 /**
@@ -663,8 +744,9 @@ export const restartZone = async (req, res) => {
  *   post:
  *     summary: Create a new zone
  *     description: |
- *       Queues a task to create a new zone with the specified configuration.
- *       Only `name` and `brand` are required - all other fields are optional.
+ *       Queues a task to create a new zone with the specified configuration using Hosts.yml structure.
+ *       Required: `settings.hostname`, `settings.domain`, `zones.brand`
+ *       Optional: Box reference (`settings.box`) auto-resolves to template if available locally.
  *       The zone is created via `zonecfg` and installed via `zoneadm install`.
  *       Use `start_after_create` to automatically boot the zone after creation.
  *     tags: [Zone Management]
@@ -676,75 +758,127 @@ export const restartZone = async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, brand]
+ *             required: [settings, zones]
  *             properties:
- *               name:
- *                 type: string
- *                 description: Zone name (alphanumeric, hyphens, underscores)
- *                 example: "web-server-01"
- *               brand:
- *                 type: string
- *                 description: Zone brand
- *                 enum: [bhyve, lx, lipkg, sparse, pkgsrc, kvm]
- *                 example: "bhyve"
- *               ram:
- *                 type: string
- *                 description: Memory allocation
- *                 example: "2G"
- *               vcpus:
- *                 type: string
- *                 description: Number of virtual CPUs
- *                 example: "2"
- *               bootrom:
- *                 type: string
- *                 description: Boot ROM firmware
- *                 example: "BHYVE_RELEASE_CSM"
- *               hostbridge:
- *                 type: string
- *                 description: Host bridge emulation
- *                 example: "i440fx"
- *               diskif:
- *                 type: string
- *                 description: Disk interface type
- *                 example: "virtio"
- *               netif:
- *                 type: string
- *                 description: Network interface type
- *                 example: "virtio"
- *               os_type:
- *                 type: string
- *                 description: Guest OS type
- *                 example: "generic"
- *               vnc:
- *                 type: string
- *                 description: VNC console setting
- *                 example: "on"
- *               acpi:
- *                 type: string
- *                 description: ACPI support
- *                 example: "on"
- *               xhci:
- *                 type: string
- *                 description: xHCI USB controller
- *                 example: "on"
- *               server_id:
- *                 type: string
- *                 description: Numeric server identifier for VNIC naming (up to 8 digits). Auto-generated if omitted.
- *                 example: "0001"
- *               vm_type:
- *                 type: string
- *                 description: VM type classification for VNIC naming convention
- *                 enum: [template, development, production, firewall, other]
- *                 default: "production"
- *                 example: "production"
- *               autoboot:
- *                 type: boolean
- *                 description: Auto-boot zone on system startup
- *                 default: false
- *               zonepath:
- *                 type: string
- *                 description: Custom zone path (auto-generated if omitted)
- *                 example: "/rpool/zones/web-server-01/path"
+ *               settings:
+ *                 type: object
+ *                 description: Host settings (Hosts.yml format)
+ *                 required: [hostname, domain]
+ *                 properties:
+ *                   hostname:
+ *                     type: string
+ *                     description: Zone hostname (combined with domain to form FQDN)
+ *                     example: "web-server-01"
+ *                   domain:
+ *                     type: string
+ *                     description: Domain name (combined with hostname to form FQDN)
+ *                     example: "example.com"
+ *                   server_id:
+ *                     type: string
+ *                     description: Numeric server identifier (required if prefix_zone_names enabled)
+ *                     example: "0001"
+ *                   box:
+ *                     type: string
+ *                     description: "Box reference in format 'organization/box-name'. Auto-resolves to template if available locally."
+ *                     example: "STARTcloud/debian13-server"
+ *                   box_version:
+ *                     type: string
+ *                     description: "Box version. Defaults to 'latest' if omitted."
+ *                     default: "latest"
+ *                     example: "2025.8.22"
+ *                   box_arch:
+ *                     type: string
+ *                     description: Box architecture
+ *                     default: "amd64"
+ *                     example: "amd64"
+ *                   box_url:
+ *                     type: string
+ *                     description: "Box registry URL. Defaults to configured 'Default Registry' if omitted."
+ *                     example: "https://boxvault.startcloud.com"
+ *                   vcpus:
+ *                     type: integer
+ *                     description: Number of virtual CPUs
+ *                     example: 2
+ *                   memory:
+ *                     type: string
+ *                     description: Memory allocation
+ *                     example: "2G"
+ *                   os_type:
+ *                     type: string
+ *                     description: Guest OS type
+ *                     example: "Debian_64"
+ *               zones:
+ *                 type: object
+ *                 description: Zone configuration (Hosts.yml format)
+ *                 required: [brand]
+ *                 properties:
+ *                   brand:
+ *                     type: string
+ *                     description: Zone brand
+ *                     enum: [bhyve, lx, lipkg, sparse, pkgsrc, kvm]
+ *                     example: "bhyve"
+ *                   vmtype:
+ *                     type: string
+ *                     description: VM type classification
+ *                     enum: [template, development, production, firewall, other]
+ *                     default: "production"
+ *                     example: "production"
+ *                   hostbridge:
+ *                     type: string
+ *                     description: Host bridge emulation
+ *                     example: "i440fx"
+ *                   diskif:
+ *                     type: string
+ *                     description: Disk interface type
+ *                     example: "virtio"
+ *                   netif:
+ *                     type: string
+ *                     description: Network interface type
+ *                     example: "virtio-net-viona"
+ *                   acpi:
+ *                     type: string
+ *                     description: ACPI support
+ *                     example: "on"
+ *                   vnc:
+ *                     type: string
+ *                     description: VNC console setting
+ *                     example: "on"
+ *                   autostart:
+ *                     type: boolean
+ *                     description: Auto-boot zone on system startup
+ *                     default: false
+ *               networks:
+ *                 type: array
+ *                 description: Network configuration (Hosts.yml format)
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       enum: [internal, external]
+ *                       example: "internal"
+ *                     address:
+ *                       type: string
+ *                       description: IP address
+ *                       example: "10.190.190.10"
+ *                     netmask:
+ *                       type: string
+ *                       example: "255.255.255.0"
+ *                     gateway:
+ *                       type: string
+ *                       example: "10.190.190.1"
+ *                     is_control:
+ *                       type: boolean
+ *                       description: Whether this is the control/management network
+ *                     provisional:
+ *                       type: boolean
+ *                       description: Whether this is the provisioning network
+ *                     dns:
+ *                       type: array
+ *                       description: DNS servers
+ *                       items:
+ *                         type: string
+ *                       example: ["8.8.8.8"]
  *               disks:
  *                 type: object
  *                 description: Disk configuration. Omit entirely for diskless zones (PXE/netboot).
@@ -981,6 +1115,42 @@ export const restartZone = async (req, res) => {
  *                 disks:
  *                   boot:
  *                     dataset: "rpool/vms/old-server/root"
+ *             from_box_reference:
+ *               summary: Zone from box reference (auto-resolve template)
+ *               value:
+ *                 settings:
+ *                   hostname: "auto-resolved"
+ *                   domain: "startcloud.com"
+ *                   server_id: "0003"
+ *                   box: "STARTcloud/debian13-server"
+ *                   box_version: "2025.8.22"
+ *                   box_arch: "amd64"
+ *                   vcpus: 2
+ *                   memory: "4G"
+ *                 zones:
+ *                   brand: "bhyve"
+ *                   vmtype: "production"
+ *                 disks:
+ *                   boot:
+ *                     source:
+ *                       type: "template"
+ *                 nics:
+ *                   - global_nic: "estub_vz_1"
+ *                     nic_type: "internal"
+ *                 start_after_create: false
+ *             from_box_latest:
+ *               summary: Zone from box (latest version)
+ *               value:
+ *                 settings:
+ *                   hostname: "latest-test"
+ *                   domain: "example.com"
+ *                   box: "STARTcloud/debian13-server"
+ *                 zones:
+ *                   brand: "bhyve"
+ *                 disks:
+ *                   boot:
+ *                     source:
+ *                       type: "template"
  *     responses:
  *       200:
  *         description: Creation task queued successfully
@@ -1097,6 +1267,22 @@ export const createZone = async (req, res) => {
         error: `Zone ${finalZoneName} already exists on the system`,
         system_status: systemStatus,
       });
+    }
+
+    // Box resolution: convert settings.box reference to template_dataset path
+    const boxResolution = await resolveBoxToTemplate(settings, req.body.disks);
+    if (!boxResolution.success) {
+      return res.status(boxResolution.error.status).json(boxResolution.error);
+    }
+
+    if (boxResolution.template_dataset) {
+      req.body.disks = req.body.disks || {};
+      req.body.disks.boot = req.body.disks.boot || {};
+      req.body.disks.boot.source = {
+        type: 'template',
+        template_dataset: boxResolution.template_dataset,
+        clone_strategy: 'clone',
+      };
     }
 
     // Ensure metadata.name is set for task executor (base name, not prefixed)
