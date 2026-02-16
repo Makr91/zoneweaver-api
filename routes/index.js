@@ -20,6 +20,7 @@ import {
   createZone,
   modifyZone,
 } from '../controllers/ZoneManagement.js';
+import { getServerIds, getNextServerId } from '../controllers/ZoneServerIds.js';
 import {
   listTasks,
   getTaskDetails,
@@ -454,6 +455,10 @@ router.post('/zones/orchestration/enable', verifyApiKey, enableOrchestration); /
 router.post('/zones/orchestration/disable', verifyApiKey, disableOrchestration); // Disable zone orchestration control
 router.get('/zones/priorities', verifyApiKey, getZonePriorities); // List all zones with priorities
 router.post('/zones/orchestration/test', verifyApiKey, testOrchestration); // Test orchestration (dry run)
+
+// Zone Server ID Discovery Routes (must come before parameterized routes)
+router.get('/zones/ids/next', verifyApiKey, getNextServerId); // Get next available server ID
+router.get('/zones/ids', verifyApiKey, getServerIds); // Get server ID usage information
 
 // Zone Creation & Modification Routes (must come before parameterized routes)
 router.post('/zones', verifyApiKey, createZone); // Create a new zone

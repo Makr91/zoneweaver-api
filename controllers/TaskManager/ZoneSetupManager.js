@@ -45,7 +45,7 @@ export const executeZoneSetupTask = async task => {
       return { success: false, error: `Recipe '${recipe_id}' not found` };
     }
 
-    // Fetch zone to get partition_id and vm_type for vnic naming
+    // Fetch zone to get server_id and vm_type for vnic naming
     const zone = await Zones.findOne({ where: { name: zone_name } });
     if (!zone) {
       return { success: false, error: `Zone '${zone_name}' not found` };
@@ -75,8 +75,8 @@ export const executeZoneSetupTask = async task => {
 
       const nicType = nicTypeMap[nic_type];
       const vmType = vmTypeMap[zone.vm_type] || '3';
-      const partitionId = zone.partition_id.padStart(4, '0');
-      const vnic_name = `vnic${nicType}${vmType}_${partitionId}_${index}`;
+      const serverId = zone.server_id.padStart(4, '0');
+      const vnic_name = `vnic${nicType}${vmType}_${serverId}_${index}`;
 
       return {
         index,

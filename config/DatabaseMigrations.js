@@ -141,20 +141,47 @@ class DatabaseMigrations {
         await this.addColumnIfNotExists('tasks', 'parent_task_id', 'CHAR(36) REFERENCES tasks(id)');
       }
 
-      // Migration for zones table partition_id and vm_type
+      // Migration for zones table server_id and vm_type (legacy - kept for old installs)
       if (await this.tableExists('zones')) {
-        await this.addColumnIfNotExists('zones', 'partition_id', 'VARCHAR(8)');
+        await this.addColumnIfNotExists('zones', 'server_id', 'VARCHAR(8)');
         // SQLite doesn't support UNIQUE in ALTER TABLE ADD COLUMN, so create index separately
         try {
-          await db.query(
-            'CREATE UNIQUE INDEX IF NOT EXISTS zones_partition_id ON zones(partition_id)'
-          );
+          await db.query('CREATE UNIQUE INDEX IF NOT EXISTS zones_server_id ON zones(server_id)');
         } catch (indexError) {
-          log.database.warn('Failed to create partition_id unique index (may already exist)', {
+          log.database.warn('Failed to create server_id unique index (may already exist)', {
             error: indexError.message,
           });
         }
         await this.addColumnIfNotExists('zones', 'vm_type', "VARCHAR(255) DEFAULT 'production'");
+      }
+
+      // Migration: Rename partition_id to server_id in zones table
+      if (await this.tableExists('zones')) {
+        const hasPartitionId = await this.columnExists('zones', 'partition_id');
+        const hasServerId = await this.columnExists('zones', 'server_id');
+
+        if (hasPartitionId && !hasServerId) {
+          log.database.info('Migrating partition_id to server_id in zones table');
+          try {
+            // Drop old index
+            await db.query('DROP INDEX IF EXISTS zones_partition_id');
+
+            // Rename column (SQLite 3.25.0+)
+            await db.query('ALTER TABLE zones RENAME COLUMN partition_id TO server_id');
+
+            // Create new unique index
+            await db.query('CREATE UNIQUE INDEX IF NOT EXISTS zones_server_id ON zones(server_id)');
+
+            log.database.info('Successfully renamed partition_id to server_id');
+          } catch (renameError) {
+            log.database.error('Failed to rename partition_id to server_id', {
+              error: renameError.message,
+            });
+            throw renameError;
+          }
+        } else if (hasServerId) {
+          log.database.debug('zones.server_id already exists, skipping migration');
+        }
       }
 
       log.database.info('All database migrations completed successfully');

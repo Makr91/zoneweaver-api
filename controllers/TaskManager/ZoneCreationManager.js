@@ -11,27 +11,6 @@ import config from '../../config/ConfigLoader.js';
  */
 
 /**
- * Generate the next available partition_id
- * Finds the highest existing partition_id and increments by 1
- * Uses a configurable starting number for HA/distributed deployments
- * @returns {Promise<string>} Next available partition_id (zero-padded to 4 digits minimum)
- */
-const generatePartitionId = async () => {
-  const startingId = config.get('zones.partition_id_start') || 1;
-
-  const highest = await Zones.findOne({
-    where: { partition_id: { [Zones.sequelize.Sequelize.Op.ne]: null } },
-    order: [[Zones.sequelize.literal('CAST(partition_id AS INTEGER)'), 'DESC']],
-    attributes: ['partition_id'],
-  });
-
-  const nextId = highest
-    ? Math.max(parseInt(highest.partition_id, 10) + 1, startingId)
-    : startingId;
-  return String(nextId).padStart(4, '0');
-};
-
-/**
  * Update task progress
  * @param {Object} task - Task record
  * @param {number} percent - Progress percentage
@@ -114,31 +93,16 @@ const buildAttrCommand = (name, value) =>
   `add attr; set name=${name}; set value=\\"${value}\\"; set type=string; end;`;
 
 /**
- * Build zone name with partition_id prefix if enabled
- * @param {string} baseName - User-provided zone name
- * @param {string} partitionId - Partition ID
- * @returns {string} Full zone name
- */
-const buildZoneName = (baseName, partitionId) => {
-  const zonesConfig = config.getZones();
-  if (zonesConfig.prefix_zone_names && partitionId) {
-    const paddedId = partitionId.padStart(4, '0');
-    return `${paddedId}--${baseName}`;
-  }
-  return baseName;
-};
-
-/**
- * Build dataset path with partition_id prefix if enabled
+ * Build dataset path with server_id prefix if enabled
  * @param {string} basePath - Base dataset path
- * @param {string} zoneName - Zone name (may already include partition prefix)
- * @param {string} partitionId - Partition ID
+ * @param {string} zoneName - Zone name (may already include server prefix)
+ * @param {string} serverId - Server ID
  * @returns {string} Full dataset path
  */
-const buildDatasetPath = (basePath, zoneName, partitionId) => {
+const buildDatasetPath = (basePath, zoneName, serverId) => {
   const zonesConfig = config.getZones();
-  const paddedId = partitionId.padStart(4, '0');
-  if (zonesConfig.prefix_datasets && partitionId && !zoneName.startsWith(paddedId)) {
+  const paddedId = serverId.padStart(4, '0');
+  if (zonesConfig.prefix_datasets && serverId && !zoneName.startsWith(paddedId)) {
     return `${basePath}/${paddedId}--${zoneName}`;
   }
   return `${basePath}/${zoneName}`;
@@ -162,7 +126,7 @@ const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData = null) 
     const dataset = boot_volume.dataset || 'zones';
     const volumeName = boot_volume.volume_name || 'root';
     const size = boot_volume.size || '30G';
-    const rootDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
+    const rootDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
     const bootdiskPath = `${rootDataset}/${volumeName}`;
 
     const parentResult = await executeCommand(
@@ -225,7 +189,7 @@ const importTemplate = async (metadata, zoneName, zfsCreated, onData = null) => 
   const pool = metadata.boot_volume?.pool || 'rpool';
   const dataset = metadata.boot_volume?.dataset || 'zones';
   const volumeName = metadata.boot_volume?.volume_name || 'root';
-  const parentDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
+  const parentDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
   const targetDataset = `${parentDataset}/${volumeName}`;
 
   // Create parent dataset for the zone
@@ -295,7 +259,7 @@ const buildZoneAttributeMap = metadata => {
 const applyZoneConfig = async (zoneName, metadata, onData = null) => {
   const pool = metadata.boot_volume?.pool || metadata.disks?.boot?.array || 'rpool';
   const dataset = metadata.boot_volume?.dataset || metadata.disks?.boot?.dataset || 'zones';
-  const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
+  const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
   const zonepath = metadata.zonepath || `/${datasetPath}/path`;
   const autoboot =
     metadata.autoboot === true || metadata.zones?.autostart === true ? 'true' : 'false';
@@ -347,7 +311,7 @@ const configureBootdisk = async (zoneName, bootdiskPath, onData = null) => {
  * @param {Array} disks - Array of disk configurations
  * @param {Array} zfsCreated - Array to track created datasets for rollback
  * @param {boolean} force - Whether to force attach in-use datasets
- * @param {Object} metadata - Zone creation metadata (for partition_id)
+ * @param {Object} metadata - Zone creation metadata (for server_id)
  */
 const configureAdditionalDisks = async (
   zoneName,
@@ -369,7 +333,7 @@ const configureAdditionalDisks = async (
       const dset = disk.dataset || 'zones';
       const volName = disk.volume_name || `disk${i}`;
       const size = disk.size || '50G';
-      const datasetPath = buildDatasetPath(`${pool}/${dset}`, zoneName, metadata.partition_id);
+      const datasetPath = buildDatasetPath(`${pool}/${dset}`, zoneName, metadata.server_id);
       diskPath = `${datasetPath}/${volName}`;
 
       const sparseFlag = disk.sparse !== false ? '-s' : '';
@@ -466,7 +430,7 @@ const vmTypeCode = vmType => {
 
 /**
  * Generate a VNIC name following the vagrant-zones naming convention
- * Pattern: vnic{nictype}{vmtype}_{partition_id}_{nic_index}
+ * Pattern: vnic{nictype}{vmtype}_{server_id}_{nic_index}
  * @param {Object} nic - NIC configuration
  * @param {number} index - NIC index
  * @param {Object} metadata - Zone creation metadata
@@ -475,8 +439,8 @@ const vmTypeCode = vmType => {
 const generateVnicName = (nic, index, metadata) => {
   const typeChar = nicTypeCode(nic.nic_type);
   const vmChar = vmTypeCode(metadata.vm_type);
-  const partitionId = (metadata.partition_id || '0').padStart(4, '0');
-  return `vnic${typeChar}${vmChar}_${partitionId}_${index}`;
+  const serverId = (metadata.server_id || '0').padStart(4, '0');
+  return `vnic${typeChar}${vmChar}_${serverId}_${index}`;
 };
 
 /**
@@ -616,75 +580,6 @@ const validateZoneCreationRequest = async (metadata, zoneName) => {
 };
 
 /**
- * Resolve partition_id: validate user-provided or auto-generate
- * Supports both old structure (metadata.partition_id) and new Hosts.yml structure (metadata.settings.server_id)
- * @param {Object} metadata - Zone creation metadata
- * @param {string} baseName - Base zone name (without partition prefix)
- * @returns {Promise<{valid: boolean, error?: string}>}
- */
-const resolvePartitionId = async (metadata, baseName) => {
-  // Check for Hosts.yml structure first (settings.server_id)
-  if (metadata.settings?.server_id) {
-    metadata.partition_id = String(metadata.settings.server_id).padStart(4, '0');
-    const existing = await Zones.findOne({ where: { partition_id: metadata.partition_id } });
-    if (existing) {
-      return {
-        valid: false,
-        error: `Server ID ${metadata.partition_id} is already in use by zone ${existing.name}`,
-      };
-    }
-    log.task.info('Using server_id from settings as partition_id', {
-      base_name: baseName,
-      partition_id: metadata.partition_id,
-    });
-    return { valid: true };
-  }
-
-  // Fallback to old structure (metadata.partition_id)
-  if (metadata.partition_id) {
-    const existing = await Zones.findOne({ where: { partition_id: metadata.partition_id } });
-    if (existing) {
-      return {
-        valid: false,
-        error: `Partition ID ${metadata.partition_id} is already in use by zone ${existing.name}`,
-      };
-    }
-  } else {
-    // Check if a zone with this base name exists but was deleted from system
-    // Reuse its partition_id if it's orphaned
-    const zonesConfig = config.getZones();
-    if (zonesConfig.prefix_zone_names) {
-      const pattern = `%--${baseName}`;
-      const orphanedZone = await Zones.findOne({
-        where: {
-          name: { [Zones.sequelize.Sequelize.Op.like]: pattern },
-          is_orphaned: true,
-        },
-        order: [['partition_id', 'ASC']],
-      });
-
-      if (orphanedZone && orphanedZone.partition_id) {
-        metadata.partition_id = orphanedZone.partition_id;
-        log.task.info('Reusing partition_id from orphaned zone', {
-          base_name: baseName,
-          partition_id: metadata.partition_id,
-          orphaned_zone: orphanedZone.name,
-        });
-      } else {
-        metadata.partition_id = await generatePartitionId();
-      }
-    } else {
-      metadata.partition_id = await generatePartitionId();
-    }
-  }
-  log.task.info('Assigned partition_id', {
-    zone_name: baseName,
-    partition_id: metadata.partition_id,
-  });
-  return { valid: true };
-};
-
-/**
  * Prepare storage: boot volume and optional template import
  * @param {Object} metadata - Zone creation metadata
  * @param {string} zoneName - Zone name
@@ -804,7 +699,7 @@ const storeInfrastructureConfig = async (zone, metadata, zoneName) => {
 };
 
 /**
- * Sync zone to database and persist partition_id/vm_type, then install
+ * Sync zone to database and persist server_id/vm_type, then install
  * @param {string} zoneName - Zone name
  * @param {Object} metadata - Zone creation metadata
  * @param {Object} task - Task object for progress updates
@@ -815,7 +710,7 @@ const finalizeAndInstallZone = async (zoneName, metadata, task, onData = null) =
   const zoneRecord = await Zones.findOne({ where: { name: zoneName } });
   if (zoneRecord) {
     await zoneRecord.update({
-      partition_id: metadata.partition_id,
+      server_id: metadata.server_id,
       vm_type: metadata.zones?.vmtype || metadata.vm_type || 'production',
     });
   }
@@ -833,7 +728,7 @@ const finalizeAndInstallZone = async (zoneName, metadata, task, onData = null) =
   // Fix zonepath permissions for service user (zoneapi) access to provisioning datasets
   const pool = metadata.boot_volume?.pool || metadata.disks?.boot?.array || 'rpool';
   const dataset = metadata.boot_volume?.dataset || metadata.disks?.boot?.dataset || 'zones';
-  const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.partition_id);
+  const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
   const zonepath = metadata.zonepath || `/${datasetPath}/path`;
   const chmodResult = await executeCommand(`pfexec chmod 755 ${zonepath}`);
   if (!chmodResult.success) {
@@ -861,20 +756,18 @@ export const executeZoneCreateTask = async task => {
 
   const zfsCreated = [];
   let zonecfgApplied = false;
-  let zoneName = null;
+
+  // Zone name is already final (with or without prefix) from the controller
+  const zoneName = task.zone_name;
 
   try {
     await updateTaskProgress(task, 5, { status: 'validating' });
     const metadata = await parseMetadata(task.metadata);
-    const baseName = metadata.name;
 
-    const partitionResult = await resolvePartitionId(metadata, baseName);
-    if (!partitionResult.valid) {
-      return { success: false, error: partitionResult.error };
+    // Ensure server_id is set in metadata if provided in settings (Hosts.yml format)
+    if (metadata.settings?.server_id) {
+      metadata.server_id = String(metadata.settings.server_id).padStart(4, '0');
     }
-
-    // Build final zone name with partition_id prefix if enabled
-    zoneName = buildZoneName(baseName, metadata.partition_id);
 
     const validation = await validateZoneCreationRequest(metadata, zoneName);
     if (!validation.valid) {
@@ -892,8 +785,8 @@ export const executeZoneCreateTask = async task => {
 
     log.task.info('Zone creation completed', {
       zone_name: zoneName,
-      brand: metadata.brand,
-      partition_id: metadata.partition_id,
+      brand: metadata.zones?.brand || metadata.brand,
+      server_id: metadata.server_id,
     });
 
     return { success: true, message: `Zone ${zoneName} created successfully` };

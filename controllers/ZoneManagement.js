@@ -6,6 +6,7 @@ import { getZoneConfig as fetchZoneConfig } from '../lib/ZoneConfigUtils.js';
 import { errorResponse } from './SystemHostController/utils/ResponseHelpers.js';
 import { log } from '../lib/Logger.js';
 import { validateZoneName } from '../lib/ZoneValidation.js';
+import config from '../config/ConfigLoader.js';
 
 /**
  * @fileoverview Zone Management controller for Zoneweaver API
@@ -282,11 +283,11 @@ export const getZoneConfig = async (req, res) => {
     }
 
     // Get zone configuration using shared utility
-    const config = await fetchZoneConfig(zoneName);
+    const zoneConfig = await fetchZoneConfig(zoneName);
 
     return res.json({
       zone_name: zoneName,
-      configuration: config,
+      configuration: zoneConfig,
     });
   } catch (error) {
     log.monitoring.error('Error getting zone config', {
@@ -726,9 +727,9 @@ export const restartZone = async (req, res) => {
  *                 type: string
  *                 description: xHCI USB controller
  *                 example: "on"
- *               partition_id:
+ *               server_id:
  *                 type: string
- *                 description: Numeric partition identifier for VNIC naming (up to 8 digits). Auto-generated if omitted.
+ *                 description: Numeric server identifier for VNIC naming (up to 8 digits). Auto-generated if omitted.
  *                 example: "0001"
  *               vm_type:
  *                 type: string
@@ -799,7 +800,7 @@ export const restartZone = async (req, res) => {
  *                   properties:
  *                     physical:
  *                       type: string
- *                       description: VNIC name. Auto-generated from partition_id if omitted.
+ *                       description: VNIC name. Auto-generated from server_id if omitted.
  *                       example: "vnice3_0001_0"
  *                     global_nic:
  *                       type: string
@@ -984,34 +985,81 @@ export const createZone = async (req, res) => {
       });
     }
 
-    // Build FQDN: hostname.domain (e.g., "test-debian13.startcloud.com" or "nginx.s1.nht.gov.jm")
-    const name = `${settings.hostname}.${settings.domain}`;
+    // Build base FQDN: hostname.domain
+    const baseName = `${settings.hostname}.${settings.domain}`;
 
-    if (!validateZoneName(name)) {
+    if (!validateZoneName(baseName)) {
       return res.status(400).json({ error: 'Invalid zone name' });
     }
 
-    // Check zone doesn't exist in DB
-    const existingZone = await Zones.findOne({ where: { name } });
-    if (existingZone) {
-      return res.status(409).json({ error: `Zone ${name} already exists in database` });
+    // Check if prefix mode is enabled
+    const zonesConfig = config.getZones();
+    let finalZoneName = baseName;
+    let serverId = null;
+
+    if (zonesConfig.prefix_zone_names) {
+      // Prefix mode enabled - server_id is REQUIRED
+      if (!settings.server_id) {
+        return res.status(400).json({
+          error: 'server_id required when prefix_zone_names is enabled',
+          hint: 'Use GET /zones/ids to find available server IDs',
+          config: {
+            prefix_zone_names: true,
+            constraints: {
+              format: 'numeric',
+              min_length: 4,
+              max_length: 8,
+              min_value: 1,
+              max_value: 99999999,
+            },
+          },
+        });
+      }
+
+      // Validate server_id format (numeric, will be padded to 4 digits minimum)
+      serverId = String(settings.server_id).padStart(4, '0');
+      if (!/^\d+$/u.test(settings.server_id)) {
+        return res.status(400).json({
+          error: 'server_id must be numeric',
+          provided: settings.server_id,
+        });
+      }
+
+      // Check if server_id is already in use
+      const existingServerId = await Zones.findOne({ where: { server_id: serverId } });
+      if (existingServerId) {
+        return res.status(409).json({
+          error: `Server ID ${serverId} is already in use`,
+          zone: existingServerId.name,
+          hint: 'Use GET /zones/ids/next to get the next available ID',
+        });
+      }
+
+      // Build final zone name with prefix
+      finalZoneName = `${serverId}--${baseName}`;
     }
 
-    // Check zone doesn't exist on system
-    const systemStatus = await getSystemZoneStatus(name);
+    // Check zone doesn't exist in DB (using final name)
+    const existingZone = await Zones.findOne({ where: { name: finalZoneName } });
+    if (existingZone) {
+      return res.status(409).json({ error: `Zone ${finalZoneName} already exists in database` });
+    }
+
+    // Check zone doesn't exist on system (using final name)
+    const systemStatus = await getSystemZoneStatus(finalZoneName);
     if (systemStatus !== 'not_found') {
       return res.status(409).json({
-        error: `Zone ${name} already exists on the system`,
+        error: `Zone ${finalZoneName} already exists on the system`,
         system_status: systemStatus,
       });
     }
 
-    // Ensure metadata.name is set for task executor
-    req.body.name = name;
+    // Ensure metadata.name is set for task executor (base name, not prefixed)
+    req.body.name = baseName;
 
-    // Create the zone_create task
+    // Create the zone_create task with FINAL zone name
     const createTask = await Tasks.create({
-      zone_name: name,
+      zone_name: finalZoneName,
       operation: 'zone_create',
       priority: TaskPriority.MEDIUM,
       created_by: req.entity.name,
@@ -1022,16 +1070,16 @@ export const createZone = async (req, res) => {
     const response = {
       success: true,
       task_id: createTask.id,
-      zone_name: name,
+      zone_name: finalZoneName,
       operation: 'zone_create',
       status: 'pending',
       message: 'Zone creation task queued successfully',
     };
 
-    // If start_after_create, create a dependent start task
+    // If start_after_create, create a dependent start task with FINAL zone name
     if (start_after_create) {
       const startTask = await Tasks.create({
-        zone_name: name,
+        zone_name: finalZoneName,
         operation: 'start',
         priority: TaskPriority.MEDIUM,
         created_by: req.entity.name,

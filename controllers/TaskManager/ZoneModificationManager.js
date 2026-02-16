@@ -207,13 +207,13 @@ const vmTypeCode = vmType => {
 const addNics = async (zoneName, nics, zoneRecord, onData = null) => {
   const cmds = nics.map((nic, index) => {
     let { physical } = nic;
-    if (!physical && zoneRecord?.partition_id) {
+    if (!physical && zoneRecord?.server_id) {
       const typeChar = nicTypeCode(nic.nic_type);
       const vmChar = vmTypeCode(zoneRecord.vm_type);
       // Count existing NICs to offset the index
       const existingNicCount = zoneRecord.configuration?.net?.length || 0;
-      const paddedPartitionId = zoneRecord.partition_id.padStart(4, '0');
-      physical = `vnic${typeChar}${vmChar}_${paddedPartitionId}_${existingNicCount + index}`;
+      const paddedServerId = zoneRecord.server_id.padStart(4, '0');
+      physical = `vnic${typeChar}${vmChar}_${paddedServerId}_${existingNicCount + index}`;
     }
     if (!physical) {
       physical = `vnic_${zoneName}_${index}`;
