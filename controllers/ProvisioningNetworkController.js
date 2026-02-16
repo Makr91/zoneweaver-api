@@ -128,6 +128,7 @@ const detectActiveInterface = async () => {
  *         description: Failed to check provisioning network status
  */
 export const getProvisioningNetworkStatus = async (req, res) => {
+  void req;
   try {
     const netConfig = getProvNetConfig();
 
@@ -235,7 +236,10 @@ export const setupProvisioningNetwork = async (req, res) => {
         parent_task_id: parentTask.id,
         depends_on: lastTaskId,
         metadata: await new Promise(resolve => {
-          yj.stringifyAsync(metadata, (err, result) => resolve(result));
+          yj.stringifyAsync(metadata, (err, result) => {
+            void err;
+            resolve(result);
+          });
         }),
       });
       lastTaskId = task.id;
@@ -362,7 +366,10 @@ export const teardownProvisioningNetwork = async (req, res) => {
         parent_task_id: parentTask.id,
         depends_on: lastTaskId,
         metadata: await new Promise(resolve => {
-          yj.stringifyAsync(metadata, (err, result) => resolve(result));
+          yj.stringifyAsync(metadata, (err, result) => {
+            void err;
+            resolve(result);
+          });
         }),
       });
       lastTaskId = task.id;

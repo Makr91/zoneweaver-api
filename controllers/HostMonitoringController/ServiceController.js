@@ -42,6 +42,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to get monitoring status
  */
 export const getMonitoringStatus = (req, res) => {
+  void req;
   try {
     const service = getHostMonitoringService();
     const status = service.getStatus();
@@ -97,6 +98,7 @@ export const getMonitoringStatus = (req, res) => {
  *         description: Failed to get health check
  */
 export const getHealthCheck = async (req, res) => {
+  void req;
   try {
     const service = getHostMonitoringService();
     const health = await service.getHealthCheck();

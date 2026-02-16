@@ -31,6 +31,19 @@ const { DataTypes } = Sequelize;
  *           type: string
  *           description: Host IP address
  *           example: "127.0.0.1"
+ *         requested_port:
+ *           type: integer
+ *           description: Static port from zone configuration (if specified)
+ *           example: 9001
+ *         console_host:
+ *           type: string
+ *           description: VNC bind address from zone configuration
+ *           example: "0.0.0.0"
+ *         port_source:
+ *           type: string
+ *           enum: [static, dynamic]
+ *           description: Whether port was statically assigned or dynamically allocated
+ *           example: "static"
  *         process_id:
  *           type: integer
  *           description: Process ID of the zadm webvnc process
@@ -74,6 +87,26 @@ const VncSessions = db.define(
       allowNull: false,
       defaultValue: '127.0.0.1',
       comment: 'Host IP address where VNC server is running',
+    },
+    requested_port: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      validate: {
+        min: 1025,
+        max: 65535,
+      },
+      comment: 'Static port from zone configuration (null for dynamic allocation)',
+    },
+    console_host: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: '0.0.0.0',
+      comment: 'VNC bind address from zone configuration',
+    },
+    port_source: {
+      type: DataTypes.ENUM('static', 'dynamic'),
+      defaultValue: 'dynamic',
+      comment: 'Whether port was statically assigned or dynamically allocated',
     },
     process_id: {
       type: DataTypes.INTEGER,

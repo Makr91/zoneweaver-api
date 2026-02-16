@@ -50,6 +50,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to retrieve runlevel information
  */
 export const getCurrentRunlevel = async (req, res) => {
+  void req;
   try {
     let currentRunlevel = 'unknown';
     let description = 'Unknown';

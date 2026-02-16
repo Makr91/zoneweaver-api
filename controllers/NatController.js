@@ -51,6 +51,7 @@ const executeCommand = async command => {
  *         description: Failed to retrieve NAT rules
  */
 export const getNatRules = async (req, res) => {
+  void req;
   try {
     // Get active NAT rules from kernel
     const activeResult = await executeCommand('pfexec ipnat -l');
@@ -247,6 +248,7 @@ export const deleteNatRule = async (req, res) => {
  *         description: Failed to get ipfilter status
  */
 export const getNatStatus = async (req, res) => {
+  void req;
   try {
     const result = await executeCommand('svcs -H -o state,stime network/ipfilter');
 
@@ -286,6 +288,7 @@ export const getNatStatus = async (req, res) => {
  *         description: Failed to get forwarding status
  */
 export const getForwardingStatus = async (req, res) => {
+  void req;
   try {
     const result = await executeCommand('pfexec routeadm -p');
 

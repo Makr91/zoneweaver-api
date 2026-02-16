@@ -63,6 +63,7 @@ const storage = multer.diskStorage({
   },
 
   filename: (req, file, cb) => {
+    void req;
     // Use original filename, but sanitize it
     const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
     return cb(null, sanitizedName);
@@ -73,6 +74,8 @@ const storage = multer.diskStorage({
  * File filter function
  */
 const fileFilter = (req, file, cb) => {
+  void req;
+  void file;
   try {
     const fileBrowserConfig = config.getFileBrowser();
 
@@ -120,6 +123,7 @@ const createUploadMiddleware = () => {
  * Error handler for multer errors
  */
 export const handleUploadError = (error, req, res, next) => {
+  void req;
   if (error instanceof multer.MulterError) {
     switch (error.code) {
       case 'LIMIT_FILE_SIZE': {

@@ -39,6 +39,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to get host information
  */
 export const getHostInfo = async (req, res) => {
+  void req;
   try {
     const hostInfo = await HostInfo.findOne({
       order: [['updated_at', 'DESC']],
@@ -94,6 +95,7 @@ export const getHostInfo = async (req, res) => {
  *         description: Failed to get monitoring summary
  */
 export const getMonitoringSummary = async (req, res) => {
+  void req;
   const startTime = Date.now();
   log.monitoring.debug('Monitoring summary query started');
 

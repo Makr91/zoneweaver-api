@@ -602,6 +602,7 @@ export const getFaultDetails = async (req, res) => {
  *         description: Failed to get fault manager configuration
  */
 export const getFaultManagerConfig = async (req, res) => {
+  void req;
   try {
     const faultConfig = config.getFaultManagement();
 

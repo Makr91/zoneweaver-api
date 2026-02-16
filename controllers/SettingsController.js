@@ -143,6 +143,7 @@ const createBackup = async () => {
  *         description: Failed to get settings
  */
 export const getSettings = async (req, res) => {
+  void req;
   try {
     // Return a sanitized version of the config, omitting sensitive details
     const currentConfig = config.getAll();
@@ -306,6 +307,7 @@ export const updateSettings = async (req, res) => {
  *         description: Failed to create backup
  */
 export const createConfigBackup = async (req, res) => {
+  void req;
   try {
     await fs.mkdir(backupDir, { recursive: true });
     const timestamp = Date.now();
@@ -337,6 +339,7 @@ export const createConfigBackup = async (req, res) => {
 };
 
 export const listBackups = async (req, res) => {
+  void req;
   try {
     await fs.mkdir(backupDir, { recursive: true });
     const files = await fs.readdir(backupDir);
@@ -502,6 +505,7 @@ export const restoreBackup = async (req, res) => {
  *         description: Failed to initiate server restart
  */
 export const restartServer = (req, res) => {
+  void req;
   try {
     // Send success response immediately before initiating restart
     const response = res.json({
@@ -526,6 +530,8 @@ export const restartServer = (req, res) => {
               stdio: 'ignore',
             },
             (error, _stdout, _stderr) => {
+              void _stdout;
+              void _stderr;
               // This callback likely won't execute since the process will be killed
               // but we include it for completeness
               if (error) {

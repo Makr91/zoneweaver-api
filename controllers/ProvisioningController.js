@@ -133,6 +133,7 @@ export const checkAndInstallPackages = async () => {
  *         description: Failed to get provisioning status
  */
 export const getProvisioningStatus = async (req, res) => {
+  void req;
   const status = {};
   const packageEntries = Object.entries(packages);
 

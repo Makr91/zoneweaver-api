@@ -528,6 +528,7 @@ export const startLogStream = async (req, res) => {
  *         description: Failed to list sessions
  */
 export const listLogStreamSessions = async (req, res) => {
+  void req;
   try {
     const sessions = await LogStreamSession.findAll({
       where: { status: 'active' },

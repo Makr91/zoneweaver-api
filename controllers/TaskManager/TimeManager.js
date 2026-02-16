@@ -526,6 +526,7 @@ const setupTargetSystem = async (
   install_if_needed,
   migratedServers
 ) => {
+  void current_system;
   // Step 4: Install target package if needed
   if (!targetInfo.installed && install_if_needed) {
     log.task.info('Installing package', {

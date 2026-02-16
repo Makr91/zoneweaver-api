@@ -35,6 +35,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to get timezone
  */
 export const getTimezone = async (req, res) => {
+  void req;
   try {
     const timezoneResult = getCurrentTimezone();
 

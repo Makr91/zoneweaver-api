@@ -250,6 +250,7 @@ export const generateApiKey = async (req, res) => {
  *               $ref: '#/components/schemas/Error'
  */
 export const listApiKeys = async (req, res) => {
+  void req;
   try {
     const entities = await Entities.findAll({
       attributes: ['id', 'name', 'description', 'is_active', 'created_at', 'last_used'],

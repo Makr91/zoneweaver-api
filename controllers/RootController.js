@@ -21,6 +21,7 @@ import { log } from '../lib/Logger.js';
  *         description: Internal server error
  */
 export const getRoot = async (req, res) => {
+  void req;
   try {
     const entities = await Entities.findAll({
       where: { is_active: true },

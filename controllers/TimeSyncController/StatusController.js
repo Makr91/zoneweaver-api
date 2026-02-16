@@ -31,6 +31,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to get time sync status
  */
 export const getTimeSyncStatus = async (req, res) => {
+  void req;
   try {
     // Detect available service using ServiceManager utilities
     const serviceInfo = await detectTimeService();
@@ -94,6 +95,7 @@ export const getTimeSyncStatus = async (req, res) => {
  *         description: Failed to get available systems
  */
 export const getAvailableTimeSyncSystems = async (req, res) => {
+  void req;
   try {
     const systemsInfo = await detectAvailableTimeSyncSystems();
 

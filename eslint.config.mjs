@@ -52,10 +52,11 @@ export default [
       'no-unused-vars': [
         'error',
         {
-          args: 'after-used',
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          ignoreRestSiblings: true,
+          vars: 'all',
+          args: 'all',
+          caughtErrors: 'all',
+          ignoreRestSiblings: false,
+          reportUsedIgnorePattern: false,
         },
       ],
       'no-use-before-define': ['error', { functions: false, classes: true, variables: true }],
@@ -125,7 +126,6 @@ export default [
       // === CODE QUALITY ===
       complexity: ['warn', 25], // Increased complexity limit for API endpoints
       'max-depth': ['warn', 6], // Increased nesting depth for API logic
-      'max-lines': 'off', // No file length limits for API files
       'max-lines-per-function': ['warn', { max: 200, skipComments: true }], // Larger functions for API endpoints
       'max-params': ['warn', 8], // More parameters for API functions
       'max-statements': ['warn', 50], // More statements for API endpoints
@@ -190,7 +190,6 @@ export default [
       },
     },
     rules: {
-      // Relax rules for test files
       'no-console': 'off',
       'no-unused-expressions': 'off',
       'max-lines': 'off',

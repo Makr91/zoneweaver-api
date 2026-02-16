@@ -1645,6 +1645,7 @@ export const cancelTask = async (req, res) => {
  *                   type: boolean
  */
 export const getTaskStats = async (req, res) => {
+  void req;
   try {
     const stats = await Tasks.findAll({
       attributes: ['status', [Tasks.sequelize.fn('COUNT', '*'), 'count']],

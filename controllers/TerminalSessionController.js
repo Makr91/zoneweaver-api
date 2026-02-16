@@ -611,6 +611,7 @@ export const getPtyProcess = sessionId => activePtyProcesses.get(sessionId);
  *                 $ref: '#/components/schemas/TerminalSession'
  */
 export const listTerminalSessions = async (req, res) => {
+  void req;
   try {
     const sessions = await TerminalSessions.findAll({
       order: [['created_at', 'DESC']],

@@ -60,6 +60,7 @@ import { log } from '../../lib/Logger.js';
  *         description: Failed to get user information
  */
 export const getCurrentUserInfo = async (req, res) => {
+  void req;
   try {
     // Get current user info
     const currentUser = os.userInfo();

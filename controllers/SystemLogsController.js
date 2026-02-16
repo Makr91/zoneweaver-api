@@ -260,6 +260,7 @@ const formatDateForGrep = since => {
  *         description: Failed to list log files
  */
 export const listLogFiles = async (req, res) => {
+  void req;
   try {
     const logsConfig = config.getSystemLogs();
 

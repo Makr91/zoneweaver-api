@@ -39,6 +39,7 @@ const execProm = util.promisify(exec);
  *               $ref: '#/components/schemas/Error'
  */
 export const serverStats = async (req, res) => {
+  void req;
   try {
     const returnObject = {};
 

@@ -251,6 +251,7 @@ export const getVlanDetails = async (req, res) => {
       );
       if (linkResult.success) {
         const [, _linkClass, mtu, state] = linkResult.output.split(':');
+        void _linkClass;
         vlanDetails.mtu = parseInt(mtu) || null;
         vlanDetails.state = state;
       }

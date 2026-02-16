@@ -71,6 +71,7 @@ import { RUNLEVEL_DESCRIPTIONS } from './utils/SystemValidation.js';
  *         description: Failed to retrieve system status
  */
 export const getSystemStatus = async (req, res) => {
+  void req;
   try {
     // Get basic system information
     const hostname = os.hostname();
@@ -194,6 +195,7 @@ export const getSystemStatus = async (req, res) => {
  *         description: Failed to retrieve uptime information
  */
 export const getSystemUptime = (req, res) => {
+  void req;
   try {
     const uptimeSeconds = os.uptime();
     const loadAvg = os.loadavg();
@@ -260,6 +262,7 @@ export const getSystemUptime = (req, res) => {
  *         description: Failed to retrieve reboot status
  */
 export const getRebootRequiredStatus = async (req, res) => {
+  void req;
   try {
     const rebootStatus = await getRebootStatus();
     return directSuccessResponse(res, 'Reboot status retrieved successfully', rebootStatus);

@@ -27,6 +27,7 @@ import {
  *         description: List of enabled template sources
  */
 export const listSources = (req, res) => {
+  void req;
   try {
     const templateConfig = config.getTemplateSources();
     const sources = (templateConfig?.sources || [])
@@ -174,6 +175,7 @@ export const getRemoteTemplateDetails = async (req, res) => {
  *         description: List of local templates
  */
 export const listLocalTemplates = async (req, res) => {
+  void req;
   try {
     const templates = await Template.findAll({
       order: [['created_at', 'DESC']],

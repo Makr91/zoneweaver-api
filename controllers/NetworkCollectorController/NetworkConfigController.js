@@ -51,6 +51,7 @@ export class NetworkConfigController {
         portLines.forEach(line => {
           const [_linkName, port, speed, duplex, portState, address, portStateInfo] =
             line.split(':');
+          void _linkName;
 
           if (!port) {
             // This is the aggregate summary line
@@ -120,6 +121,7 @@ export class NetworkConfigController {
         lacpLines.forEach(line => {
           const [_linkName, port, aggregatable, sync, coll, dist, defaulted, expired] =
             line.split(':');
+          void _linkName;
           lacpInfo.push({
             port,
             aggregatable: aggregatable === 'yes',

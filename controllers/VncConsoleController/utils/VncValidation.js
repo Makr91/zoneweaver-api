@@ -165,6 +165,58 @@ export const findAvailablePort = () =>
   });
 
 /**
+ * Validate static port for zone VNC session
+ * Checks port range, OS availability, and cross-zone conflicts
+ * @param {number} port - Port to validate
+ * @param {string} zoneName - Zone name requesting the port
+ * @returns {Promise<{available: boolean, reason?: string}>}
+ */
+export const validateStaticPort = async (port, zoneName) => {
+  const { Op } = await import('sequelize');
+
+  // Range validation (unprivileged ports recommended)
+  if (port < 1025) {
+    return {
+      available: false,
+      reason: `Port ${port} requires root privileges (<1025). Use ports ≥1025.`,
+    };
+  }
+
+  if (port > 65535) {
+    return {
+      available: false,
+      reason: `Port ${port} exceeds maximum (65535)`,
+    };
+  }
+
+  // Check other zones (active or stopped)
+  const otherZone = await VncSessions.findOne({
+    where: {
+      web_port: port,
+      zone_name: { [Op.ne]: zoneName },
+    },
+  });
+
+  if (otherZone) {
+    return {
+      available: false,
+      reason: `Port ${port} already allocated to zone ${otherZone.zone_name}`,
+    };
+  }
+
+  // OS-level availability test (reuse existing bind test)
+  const osAvailable = await isPortAvailable(port);
+  if (!osAvailable) {
+    return {
+      available: false,
+      reason: `Port ${port} in use by system process`,
+    };
+  }
+
+  return { available: true };
+};
+
+/**
  * Test if VNC web server is responding using Promise-based approach (optimized for performance)
  * @param {number} port - Port to test
  * @param {number} maxRetries - Maximum retry attempts

@@ -75,6 +75,7 @@ const executeCommand = async command => {
  *         description: Failed to get hostname
  */
 export const getHostname = async (req, res) => {
+  void req;
   try {
     let nodenameMismatch = false;
     let nodenameFile = null;

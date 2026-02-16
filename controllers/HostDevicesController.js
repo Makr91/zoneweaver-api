@@ -369,6 +369,7 @@ export const getDeviceDetails = async (req, res) => {
  *                   type: object
  */
 export const getDeviceCategories = async (req, res) => {
+  void req;
   const hostname = os.hostname();
 
   try {
@@ -454,6 +455,7 @@ export const getDeviceCategories = async (req, res) => {
  *                   type: object
  */
 export const getPPTStatus = async (req, res) => {
+  void req;
   const hostname = os.hostname();
 
   try {
@@ -529,6 +531,7 @@ export const getPPTStatus = async (req, res) => {
  *                   type: integer
  */
 export const triggerDeviceDiscovery = async (req, res) => {
+  void req;
   const hostname = os.hostname();
 
   try {

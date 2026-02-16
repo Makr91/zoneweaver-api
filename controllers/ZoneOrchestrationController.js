@@ -44,6 +44,7 @@ import { log } from '../lib/Logger.js';
  *         description: Failed to retrieve orchestration status
  */
 export const getZoneOrchestrationStatus = async (req, res) => {
+  void req;
   try {
     const status = await getOrchestrationStatus();
 
@@ -229,6 +230,7 @@ export const disableOrchestration = async (req, res) => {
  *         description: Failed to retrieve zone priorities
  */
 export const getZonePriorities = async (req, res) => {
+  void req;
   try {
     const zonesResult = await getZonesForOrchestration('running');
 

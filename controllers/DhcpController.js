@@ -117,6 +117,7 @@ const parseDhcpdConf = async () => {
  *         description: Failed to retrieve DHCP configuration
  */
 export const getDhcpConfig = async (req, res) => {
+  void req;
   try {
     const config = await parseDhcpdConf();
     return res.json({
@@ -240,6 +241,7 @@ export const updateDhcpConfig = async (req, res) => {
  *         description: Failed to retrieve DHCP hosts
  */
 export const getDhcpHosts = async (req, res) => {
+  void req;
   try {
     const hosts = await DhcpHosts.findAll();
     return res.json({
@@ -409,6 +411,7 @@ export const removeDhcpHost = async (req, res) => {
  *         description: Failed to get DHCP service status
  */
 export const getDhcpStatus = async (req, res) => {
+  void req;
   try {
     const result = await executeCommand(
       'svcs -H -o state,stime network/service/dhcp:ipv4 2>/dev/null'

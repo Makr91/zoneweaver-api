@@ -633,6 +633,7 @@ export const getProvisioningStatus = async (req, res) => {
  *         description: Failed to list profiles
  */
 export const listProvisioningProfiles = async (req, res) => {
+  void req;
   try {
     const profiles = await ProvisioningProfiles.findAll({
       order: [['name', 'ASC']],

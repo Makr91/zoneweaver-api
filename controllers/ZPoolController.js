@@ -43,6 +43,7 @@ const executeCommand = async command => {
  *         description: Pools retrieved successfully
  */
 export const listPools = async (req, res) => {
+  void req;
   try {
     const result = await executeCommand(
       'pfexec zpool list -H -p -o name,size,alloc,free,cap,dedup,health,altroot'
@@ -1382,6 +1383,7 @@ export const importPool = async (req, res) => {
  *         description: Importable pools listed successfully
  */
 export const listImportablePools = async (req, res) => {
+  void req;
   try {
     const result = await executeCommand('pfexec zpool import');
 

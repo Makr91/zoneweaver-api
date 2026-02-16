@@ -621,6 +621,7 @@ const applyPersistentZFSSettings = async settings => {
  *         description: Failed to get ZFS ARC configuration
  */
 export const getARCConfig = async (req, res) => {
+  void req;
   const hostname = os.hostname();
   try {
     // Get current ARC statistics

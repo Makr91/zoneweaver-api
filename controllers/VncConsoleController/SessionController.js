@@ -14,7 +14,12 @@ import {
   directSuccessResponse,
   errorResponse,
 } from '../SystemHostController/utils/ResponseHelpers.js';
-import { validateZoneName, findAvailablePort, testVncConnection } from './utils/VncValidation.js';
+import {
+  validateZoneName,
+  findAvailablePort,
+  testVncConnection,
+  validateStaticPort,
+} from './utils/VncValidation.js';
 import { sessionManager } from './utils/VncSessionManager.js';
 import { log } from '../../lib/Logger.js';
 
@@ -68,6 +73,9 @@ const handleOrphanedProcessCheck = async (req, res, zoneName) => {
           zone_name: zoneName,
           web_port: port,
           host_ip: '127.0.0.1',
+          requested_port: null,
+          console_host: '0.0.0.0',
+          port_source: 'dynamic',
           process_id: parseInt(pid),
           status: 'active',
           created_at: new Date(),
@@ -166,15 +174,9 @@ const handleExistingSession = async (req, res, zoneName, existingSessionInfo) =>
 /**
  * Validate and finalize VNC session
  */
-const validateAndFinalizeSession = async (
-  req,
-  res,
-  zoneName,
-  vncProcess,
-  webPort,
-  stdout,
-  stderr
-) => {
+const validateAndFinalizeSession = async (req, res, options) => {
+  const { zoneName, vncProcess, webPort, stdout, stderr, staticPort, bindHost, portSource } =
+    options;
   // Wait for process to start and validate
   await new Promise(resolve => {
     setTimeout(resolve, 3000);
@@ -249,6 +251,9 @@ const validateAndFinalizeSession = async (
     zone_name: zoneName,
     web_port: webPort,
     host_ip: '127.0.0.1',
+    requested_port: staticPort || null,
+    console_host: bindHost,
+    port_source: portSource,
     process_id: vncProcess.pid,
     status: 'active',
     created_at: new Date(),
@@ -273,9 +278,42 @@ const validateAndFinalizeSession = async (
  * Create new VNC session
  */
 const createNewVncSession = async (req, res, zoneName) => {
-  // Create new session
-  const webPort = await findAvailablePort();
-  const netport = `0.0.0.0:${webPort}`;
+  // Get zone configuration for static port settings
+  const zone = await Zones.findOne({ where: { name: zoneName } });
+  const zoneConfig = zone?.configuration ? JSON.parse(zone.configuration) : {};
+  const staticPort = zoneConfig.settings?.consoleport;
+  const bindHost = zoneConfig.settings?.consolehost || '0.0.0.0';
+
+  let webPort;
+  let portSource = 'dynamic';
+
+  // Static port allocation
+  if (staticPort) {
+    const validation = await validateStaticPort(staticPort, zoneName);
+    if (!validation.available) {
+      return res.status(409).json({
+        error: 'Static port unavailable',
+        port: staticPort,
+        reason: validation.reason,
+      });
+    }
+    webPort = staticPort;
+    portSource = 'static';
+    log.websocket.info('Using static VNC port', {
+      zone_name: zoneName,
+      port: webPort,
+      bind_host: bindHost,
+    });
+  } else {
+    // Dynamic port allocation (existing behavior)
+    webPort = await findAvailablePort();
+    log.websocket.debug('Allocated dynamic VNC port', {
+      zone_name: zoneName,
+      port: webPort,
+    });
+  }
+
+  const netport = `${bindHost}:${webPort}`;
 
   log.websocket.info('Spawning VNC process', {
     command: `pfexec zadm vnc -w ${netport} ${zoneName}`,
@@ -334,15 +372,16 @@ const createNewVncSession = async (req, res, zoneName) => {
   // Detach the process
   vncProcess.unref();
 
-  const result = await validateAndFinalizeSession(
-    req,
-    res,
+  const result = await validateAndFinalizeSession(req, res, {
     zoneName,
     vncProcess,
     webPort,
     stdout,
-    stderr
-  );
+    stderr,
+    staticPort,
+    bindHost,
+    portSource,
+  });
   return result;
 };
 

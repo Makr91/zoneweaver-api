@@ -1007,6 +1007,17 @@ export const restartZone = async (req, res) => {
  *                     type: string
  *                     description: Guest OS type
  *                     example: "Debian_64"
+ *                   consoleport:
+ *                     type: integer
+ *                     description: "Static VNC console port (1025-65535). If specified, this port will be reserved for this zone's VNC console. If omitted, a dynamic port is assigned."
+ *                     minimum: 1025
+ *                     maximum: 65535
+ *                     example: 6001
+ *                   consolehost:
+ *                     type: string
+ *                     description: "VNC bind address. Defaults to '0.0.0.0' (all interfaces). Set to '127.0.0.1' for localhost-only access."
+ *                     default: "0.0.0.0"
+ *                     example: "0.0.0.0"
  *               zones:
  *                 type: object
  *                 description: Zone configuration (Hosts.yml format)

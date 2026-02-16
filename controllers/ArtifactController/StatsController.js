@@ -73,6 +73,7 @@ import { Op } from 'sequelize';
  *         description: Failed to retrieve statistics
  */
 export const getArtifactStats = async (req, res) => {
+  void req;
   try {
     const artifactConfig = config.getArtifactStorage();
 
@@ -156,6 +157,7 @@ export const getArtifactStats = async (req, res) => {
  *         description: Failed to retrieve service status
  */
 export const getArtifactServiceStatus = (req, res) => {
+  void req;
   try {
     const service = getArtifactStorageService();
     const status = service.getStatus();

@@ -78,6 +78,7 @@ log measurements statistics tracking
  *         description: Failed to get configuration
  */
 export const getTimeSyncConfig = async (req, res) => {
+  void req;
   try {
     // Detect available service using ServiceManager utilities
     const serviceInfo = await detectTimeService();

@@ -448,6 +448,7 @@ export const stopZloginSession = async (req, res) => {
  *                 $ref: '#/components/schemas/ZloginSession'
  */
 export const listZloginSessions = async (req, res) => {
+  void req;
   try {
     const sessions = await ZloginSessions.findAll({
       order: [['created_at', 'DESC']],
