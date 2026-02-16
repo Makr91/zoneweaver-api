@@ -19,6 +19,7 @@ import { specs, swaggerUi } from './config/swagger.js';
 import { startTaskProcessor } from './controllers/TaskQueue.js';
 import { startVncSessionCleanup } from './controllers/VncConsoleController/index.js';
 import { getZloginCleanupTask } from './controllers/ZloginController.js';
+import { getSSHCleanupTask, startSSHSessionCleanup } from './controllers/SSHTerminalController.js';
 import { cleanupLogStreamSessions } from './controllers/LogStreamController.js';
 import CleanupService from './controllers/CleanupService.js';
 import { startHostMonitoring } from './controllers/HostMonitoringService.js';
@@ -159,8 +160,12 @@ httpServer.listen(httpPort, () => {
         // Start VNC session cleanup
         startVncSessionCleanup();
 
+        // Clean up stale SSH sessions from previous server run
+        await startSSHSessionCleanup();
+
         // Register cleanup tasks
         CleanupService.registerTask(getZloginCleanupTask());
+        CleanupService.registerTask(getSSHCleanupTask());
         CleanupService.registerTask({
           name: 'log_stream_cleanup',
           description: 'Clean up old log streaming session records',

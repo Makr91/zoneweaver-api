@@ -73,6 +73,20 @@ const resolveBoxToTemplate = async (settings, disks) => {
     });
   }
 
+  // Verify ZFS dataset actually exists (self-healing for manually deleted templates)
+  if (template) {
+    const datasetCheck = await executeCommand(`pfexec zfs list ${template.dataset_path}@ready`);
+    if (!datasetCheck.success) {
+      log.api.warn('Template ZFS dataset missing, removing stale DB record', {
+        box: `${org}/${boxName}`,
+        dataset_path: template.dataset_path,
+        template_id: template.id,
+      });
+      await template.destroy();
+      template = null;
+    }
+  }
+
   if (!template) {
     const templateConfig = config.getTemplateSources();
     const defaultSource = templateConfig.sources?.find(

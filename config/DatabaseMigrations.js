@@ -13,6 +13,7 @@ import { up as seedDefaultRecipes } from '../db/seeders/20260209-default-recipes
 import '../models/TemplateModel.js';
 import '../models/RecipeModel.js';
 import '../models/ProvisioningProfileModel.js';
+import '../models/SSHSessionModel.js';
 
 /**
  * Database Migration Helper Class

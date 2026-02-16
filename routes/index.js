@@ -120,6 +120,12 @@ import {
   listZloginSessions,
 } from '../controllers/ZloginController.js';
 import {
+  startSSHSession,
+  stopSSHSession,
+  getSSHSessionInfo,
+  listSSHSessions,
+} from '../controllers/SSHTerminalController.js';
+import {
   listServices,
   getServiceDetailsController,
   serviceAction,
@@ -558,6 +564,12 @@ router.post('/zones/:zoneName/zlogin/start', verifyApiKey, startZloginSession);
 router.get('/zlogin/sessions', verifyApiKey, listZloginSessions);
 router.get('/zlogin/sessions/:sessionId', verifyApiKey, getZloginSessionInfo);
 router.delete('/zlogin/sessions/:sessionId/stop', verifyApiKey, stopZloginSession);
+
+// SSH Terminal Routes
+router.post('/zones/:zoneName/ssh/start', verifyApiKey, startSSHSession);
+router.get('/ssh/sessions', verifyApiKey, listSSHSessions);
+router.get('/ssh/sessions/:sessionId', verifyApiKey, getSSHSessionInfo);
+router.delete('/ssh/sessions/:sessionId/stop', verifyApiKey, stopSSHSession);
 
 // Service Management Routes (ordered from most specific to least specific)
 router.get('/services', verifyApiKey, listServices);
