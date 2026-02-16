@@ -116,61 +116,60 @@ const buildDatasetPath = (basePath, zoneName, serverId) => {
  * @returns {Promise<string|null>} Boot disk path or null
  */
 const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData = null) => {
-  const { boot_volume } = metadata;
-  if (!boot_volume) {
-    return null;
+  const bootDisk = metadata.disks?.boot;
+  if (!bootDisk) {
+    return null; // Diskless zone
   }
 
-  if (boot_volume.create_new) {
-    const pool = boot_volume.pool || 'rpool';
-    const dataset = boot_volume.dataset || 'zones';
-    const volumeName = boot_volume.volume_name || 'root';
-    const size = boot_volume.size || '30G';
-    const rootDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
-    const bootdiskPath = `${rootDataset}/${volumeName}`;
+  // Scenario 1: Attaching existing dataset
+  // If only dataset field exists (no pool/volume_name), it's a full path to existing dataset
+  if (bootDisk.dataset && !bootDisk.pool && !bootDisk.volume_name) {
+    const existingDataset = bootDisk.dataset;
 
-    const parentResult = await executeCommand(
-      `pfexec zfs create -p ${rootDataset}`,
-      undefined,
-      onData
-    );
-    if (!parentResult.success) {
-      throw new Error(`Failed to create parent dataset: ${parentResult.error}`);
-    }
-    zfsCreated.push(rootDataset);
-
-    const sparseFlag = boot_volume.sparse !== false ? '-s' : '';
-    const zvolResult = await executeCommand(
-      `pfexec zfs create ${sparseFlag} -V ${size} ${bootdiskPath}`,
-      undefined,
-      onData
-    );
-    if (!zvolResult.success) {
-      throw new Error(`Failed to create boot volume: ${zvolResult.error}`);
-    }
-
-    log.task.info('Created boot volume', { path: bootdiskPath, size });
-    return bootdiskPath;
-  }
-
-  if (boot_volume.existing_dataset) {
-    const { existing_dataset } = boot_volume;
-
-    const existResult = await executeCommand(`pfexec zfs list ${existing_dataset}`);
+    const existResult = await executeCommand(`pfexec zfs list ${existingDataset}`);
     if (!existResult.success) {
-      throw new Error(`Dataset not found: ${existing_dataset}`);
+      throw new Error(`Dataset not found: ${existingDataset}`);
     }
 
-    const usageCheck = await checkZvolInUse(existing_dataset);
+    const usageCheck = await checkZvolInUse(existingDataset);
     if (usageCheck.inUse && !metadata.force) {
-      throw new Error(`Dataset ${existing_dataset} is already in use by zone ${usageCheck.usedBy}`);
+      throw new Error(`Dataset ${existingDataset} is already in use by zone ${usageCheck.usedBy}`);
     }
 
-    log.task.info('Attaching existing dataset', { path: existing_dataset });
-    return existing_dataset;
+    log.task.info('Attaching existing dataset', { path: existingDataset });
+    return existingDataset;
   }
 
-  return null;
+  // Scenario 2: Creating new volume (scratch or template will override)
+  const pool = bootDisk.pool || 'rpool';
+  const dataset = bootDisk.dataset || 'zones';
+  const volumeName = bootDisk.volume_name || 'boot';
+  const size = bootDisk.size || '48G';
+  const rootDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
+  const bootdiskPath = `${rootDataset}/${volumeName}`;
+
+  const parentResult = await executeCommand(
+    `pfexec zfs create -p ${rootDataset}`,
+    undefined,
+    onData
+  );
+  if (!parentResult.success) {
+    throw new Error(`Failed to create parent dataset: ${parentResult.error}`);
+  }
+  zfsCreated.push(rootDataset);
+
+  const sparseFlag = bootDisk.sparse !== false ? '-s' : '';
+  const zvolResult = await executeCommand(
+    `pfexec zfs create ${sparseFlag} -V ${size} ${bootdiskPath}`,
+    undefined,
+    onData
+  );
+  if (!zvolResult.success) {
+    throw new Error(`Failed to create boot volume: ${zvolResult.error}`);
+  }
+
+  log.task.info('Created boot volume', { path: bootdiskPath, size });
+  return bootdiskPath;
 };
 
 /**
@@ -181,14 +180,16 @@ const prepareBootVolume = async (metadata, zoneName, zfsCreated, onData = null) 
  * @returns {Promise<string|null>} Target dataset path or null
  */
 const importTemplate = async (metadata, zoneName, zfsCreated, onData = null) => {
-  if (metadata.source?.type !== 'template') {
+  const bootDisk = metadata.disks?.boot;
+  if (!bootDisk?.source || bootDisk.source.type !== 'template') {
     return null;
   }
 
-  const { template_dataset, clone_strategy } = metadata.source;
-  const pool = metadata.boot_volume?.pool || 'rpool';
-  const dataset = metadata.boot_volume?.dataset || 'zones';
-  const volumeName = metadata.boot_volume?.volume_name || 'root';
+  const { template_dataset, clone_strategy = 'clone' } = bootDisk.source;
+  const pool = bootDisk.pool || 'rpool';
+  const dataset = bootDisk.dataset || 'zones';
+  const volumeName = bootDisk.volume_name || 'boot';
+  const requestedSize = bootDisk.size || '48G';
   const parentDataset = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
   const targetDataset = `${parentDataset}/${volumeName}`;
 
@@ -224,6 +225,25 @@ const importTemplate = async (metadata, zoneName, zfsCreated, onData = null) => 
   }
 
   zfsCreated.push(targetDataset);
+
+  // Grow volume if requested size is larger than template size
+  if (requestedSize) {
+    const resizeResult = await executeCommand(
+      `pfexec zfs set volsize=${requestedSize} ${targetDataset}`,
+      undefined,
+      onData
+    );
+    if (!resizeResult.success) {
+      log.task.warn('Failed to resize boot volume', {
+        target: targetDataset,
+        requested_size: requestedSize,
+        error: resizeResult.error,
+      });
+    } else {
+      log.task.info('Boot volume resized', { target: targetDataset, size: requestedSize });
+    }
+  }
+
   log.task.info('Template imported', { template: template_dataset, target: targetDataset });
   return targetDataset;
 };
@@ -257,8 +277,8 @@ const buildZoneAttributeMap = metadata => {
  * @param {Object} metadata - Zone creation metadata
  */
 const applyZoneConfig = async (zoneName, metadata, onData = null) => {
-  const pool = metadata.boot_volume?.pool || metadata.disks?.boot?.array || 'rpool';
-  const dataset = metadata.boot_volume?.dataset || metadata.disks?.boot?.dataset || 'zones';
+  const pool = metadata.disks?.boot?.pool || 'rpool';
+  const dataset = metadata.disks?.boot?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
   const zonepath = metadata.zonepath || `/${datasetPath}/path`;
   const autoboot =
@@ -591,7 +611,7 @@ const prepareStorage = async (metadata, zoneName, zfsCreated, task, onData = nul
   await updateTaskProgress(task, 10, { status: 'preparing_storage' });
   let bootdiskPath = await prepareBootVolume(metadata, zoneName, zfsCreated, onData);
 
-  if (metadata.source?.type === 'template') {
+  if (metadata.disks?.boot?.source?.type === 'template') {
     await updateTaskProgress(task, 30, { status: 'importing_template' });
     const templatePath = await importTemplate(metadata, zoneName, zfsCreated, onData);
     if (templatePath) {
@@ -626,11 +646,11 @@ const applyAllZoneConfig = async (
     await configureBootdisk(zoneName, bootdiskPath, onData);
   }
 
-  if (metadata.additional_disks?.length > 0) {
+  if (metadata.disks?.additional?.length > 0) {
     await updateTaskProgress(task, 60, { status: 'configuring_disks' });
     await configureAdditionalDisks(
       zoneName,
-      metadata.additional_disks,
+      metadata.disks.additional,
       zfsCreated,
       metadata.force,
       metadata,
@@ -726,8 +746,8 @@ const finalizeAndInstallZone = async (zoneName, metadata, task, onData = null) =
   }
 
   // Fix zonepath permissions for service user (zoneapi) access to provisioning datasets
-  const pool = metadata.boot_volume?.pool || metadata.disks?.boot?.array || 'rpool';
-  const dataset = metadata.boot_volume?.dataset || metadata.disks?.boot?.dataset || 'zones';
+  const pool = metadata.disks?.boot?.pool || 'rpool';
+  const dataset = metadata.disks?.boot?.dataset || 'zones';
   const datasetPath = buildDatasetPath(`${pool}/${dataset}`, zoneName, metadata.server_id);
   const zonepath = metadata.zonepath || `/${datasetPath}/path`;
   const chmodResult = await executeCommand(`pfexec chmod 755 ${zonepath}`);

@@ -745,53 +745,85 @@ export const restartZone = async (req, res) => {
  *                 type: string
  *                 description: Custom zone path (auto-generated if omitted)
  *                 example: "/rpool/zones/web-server-01/path"
- *               boot_volume:
+ *               disks:
  *                 type: object
- *                 description: Boot disk configuration. Omit entirely for diskless zones (PXE/netboot).
+ *                 description: Disk configuration. Omit entirely for diskless zones (PXE/netboot).
  *                 properties:
- *                   create_new:
- *                     type: boolean
- *                     description: Create a new ZFS volume for boot disk
- *                   existing_dataset:
- *                     type: string
- *                     description: Path to existing ZFS dataset to attach (mutually exclusive with create_new)
- *                     example: "rpool/vms/old-server/root"
- *                   pool:
- *                     type: string
- *                     description: ZFS pool for new volume
- *                     example: "rpool"
- *                   dataset:
- *                     type: string
- *                     description: Parent dataset path
- *                     example: "zones"
- *                   volume_name:
- *                     type: string
- *                     description: Volume name
- *                     example: "root"
- *                   size:
- *                     type: string
- *                     description: Volume size
- *                     example: "30G"
- *                   sparse:
- *                     type: boolean
- *                     description: Create sparse volume (thin provisioned)
- *               source:
- *                 type: object
- *                 description: Zone source - scratch (default) or template
- *                 properties:
- *                   type:
- *                     type: string
- *                     enum: [scratch, template]
- *                     example: "scratch"
- *                   template_dataset:
- *                     type: string
- *                     description: Template ZFS dataset (required if type is template)
- *                     example: "rpool/templates/omnios-base"
- *                   clone_strategy:
- *                     type: string
- *                     enum: [clone, copy]
- *                     description: "clone = thin ZFS clone, copy = full ZFS send/recv"
- *                     example: "clone"
+ *                   boot:
+ *                     type: object
+ *                     description: Boot disk configuration
+ *                     properties:
+ *                       source:
+ *                         type: object
+ *                         description: Boot disk source (template or scratch). Omit for existing dataset.
+ *                         properties:
+ *                           type:
+ *                             type: string
+ *                             enum: [template, scratch]
+ *                             description: "template = clone from template, scratch = blank volume"
+ *                             example: "template"
+ *                           template_dataset:
+ *                             type: string
+ *                             description: Template ZFS dataset path (required if type is template)
+ *                             example: "rpool/templates/STARTcloud/debian13-server/2025.8.22"
+ *                           clone_strategy:
+ *                             type: string
+ *                             enum: [clone, copy]
+ *                             description: "clone = thin ZFS clone (default), copy = full ZFS send/recv"
+ *                             default: "clone"
+ *                             example: "clone"
+ *                       pool:
+ *                         type: string
+ *                         description: ZFS pool for new volume
+ *                         default: "rpool"
+ *                         example: "rpool"
+ *                       dataset:
+ *                         type: string
+ *                         description: "Parent dataset path (e.g., 'zones' or 'zones/companyA/suborgB'). For existing zvol, provide full path without pool/volume_name."
+ *                         default: "zones"
+ *                         example: "zones"
+ *                       volume_name:
+ *                         type: string
+ *                         description: Volume name for new volume
+ *                         default: "boot"
+ *                         example: "boot"
+ *                       size:
+ *                         type: string
+ *                         description: "Volume size. For templates, volume will be grown if template is smaller."
+ *                         default: "48G"
+ *                         example: "48G"
+ *                       sparse:
+ *                         type: boolean
+ *                         description: Create sparse volume (thin provisioned)
+ *                         default: true
+ *                   additional:
+ *                     type: array
+ *                     description: Additional disks beyond the boot volume
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         pool:
+ *                           type: string
+ *                           description: ZFS pool
+ *                           default: "rpool"
+ *                           example: "rpool"
+ *                         dataset:
+ *                           type: string
+ *                           description: "Parent dataset path or full path for existing zvol"
+ *                           default: "zones"
+ *                           example: "zones"
+ *                         volume_name:
+ *                           type: string
+ *                           description: Volume name
+ *                           example: "data"
+ *                         size:
+ *                           type: string
+ *                           description: Volume size
+ *                           example: "100G"
+ *                         sparse:
+ *                           type: boolean
+ *                           description: Create sparse volume
+ *                           default: true
  *               nics:
  *                 type: array
  *                 description: Network interfaces to configure
@@ -833,32 +865,6 @@ export const restartZone = async (req, res) => {
  *                       type: string
  *                       description: Path to ISO file
  *                       example: "/iso/omnios-r151050.iso"
- *               additional_disks:
- *                 type: array
- *                 description: Additional disks beyond the boot volume
- *                 items:
- *                   type: object
- *                   properties:
- *                     create_new:
- *                       type: boolean
- *                       description: Create a new ZFS volume
- *                     existing_dataset:
- *                       type: string
- *                       description: Path to existing zvol
- *                     pool:
- *                       type: string
- *                       example: "rpool"
- *                     dataset:
- *                       type: string
- *                       example: "zones"
- *                     volume_name:
- *                       type: string
- *                       example: "data"
- *                     size:
- *                       type: string
- *                       example: "50G"
- *                     sparse:
- *                       type: boolean
  *               cloud_init:
  *                 type: object
  *                 description: Cloud-init provisioning attributes
@@ -891,51 +897,90 @@ export const restartZone = async (req, res) => {
  *                 default: false
  *           examples:
  *             minimal:
- *               summary: Minimal zone (name + brand only)
+ *               summary: Minimal zone (hostname + domain + brand only)
  *               value:
- *                 name: "test-vm-01"
- *                 brand: "bhyve"
- *             with_resources:
- *               summary: Zone with resources
+ *                 settings:
+ *                   hostname: "test-vm-01"
+ *                   domain: "example.com"
+ *                 zones:
+ *                   brand: "bhyve"
+ *             with_scratch_disk:
+ *               summary: Zone with blank scratch disk
  *               value:
- *                 name: "web-server-01"
- *                 brand: "bhyve"
- *                 ram: "2G"
- *                 vcpus: "2"
- *                 boot_volume:
- *                   create_new: true
- *                   pool: "rpool"
- *                   dataset: "zones"
- *                   volume_name: "root"
- *                   size: "30G"
+ *                 settings:
+ *                   hostname: "web-server-01"
+ *                   domain: "example.com"
+ *                   server_id: "0001"
+ *                   vcpus: 2
+ *                   memory: "2G"
+ *                 zones:
+ *                   brand: "bhyve"
+ *                   vmtype: "production"
+ *                 disks:
+ *                   boot:
+ *                     source:
+ *                       type: "scratch"
+ *                     pool: "rpool"
+ *                     dataset: "zones"
+ *                     volume_name: "boot"
+ *                     size: "30G"
+ *                     sparse: true
  *                 nics:
- *                   - physical: "vnic0"
- *                     global_nic: "igb0"
+ *                   - global_nic: "igb0"
+ *                     nic_type: "external"
  *                 start_after_create: true
  *             from_template:
- *               summary: Zone from template
+ *               summary: Zone from template with additional disk
  *               value:
- *                 name: "from-template"
- *                 brand: "bhyve"
- *                 source:
- *                   type: "template"
- *                   template_dataset: "rpool/templates/omnios-base"
- *                   clone_strategy: "clone"
- *                 boot_volume:
- *                   pool: "rpool"
- *                   dataset: "zones"
- *                   volume_name: "root"
- *                   size: "30G"
- *             existing_zvol:
- *               summary: Zone with existing zvol
+ *                 settings:
+ *                   hostname: "debian-server"
+ *                   domain: "startcloud.com"
+ *                   server_id: "0002"
+ *                   vcpus: 4
+ *                   memory: "4G"
+ *                 zones:
+ *                   brand: "bhyve"
+ *                   vmtype: "production"
+ *                   hostbridge: "i440fx"
+ *                   diskif: "virtio"
+ *                   netif: "virtio-net-viona"
+ *                 disks:
+ *                   boot:
+ *                     source:
+ *                       type: "template"
+ *                       template_dataset: "rpool/templates/STARTcloud/debian13-server/2025.8.22"
+ *                       clone_strategy: "clone"
+ *                     pool: "rpool"
+ *                     dataset: "zones"
+ *                     volume_name: "boot"
+ *                     size: "48G"
+ *                     sparse: true
+ *                   additional:
+ *                     - pool: "rpool"
+ *                       dataset: "zones"
+ *                       volume_name: "data"
+ *                       size: "100G"
+ *                       sparse: true
+ *                 nics:
+ *                   - global_nic: "estub_vz_1"
+ *                     nic_type: "internal"
+ *                   - global_nic: "ixgbe1"
+ *                     vlan_id: 11
+ *                     nic_type: "external"
+ *                 start_after_create: false
+ *             existing_dataset:
+ *               summary: Zone with existing dataset
  *               value:
- *                 name: "migrated-vm"
- *                 brand: "bhyve"
- *                 ram: "4G"
- *                 vcpus: "4"
- *                 boot_volume:
- *                   create_new: false
- *                   existing_dataset: "rpool/vms/old-server/root"
+ *                 settings:
+ *                   hostname: "migrated-vm"
+ *                   domain: "example.com"
+ *                   vcpus: 4
+ *                   memory: "4G"
+ *                 zones:
+ *                   brand: "bhyve"
+ *                 disks:
+ *                   boot:
+ *                     dataset: "rpool/vms/old-server/root"
  *     responses:
  *       200:
  *         description: Creation task queued successfully
