@@ -121,6 +121,73 @@ const getNextCdromNumber = zoneConfig => {
 };
 
 /**
+ * Build CPU configuration value for bhyve (simple or complex topology)
+ * Format: [[cpus=]numcpus][,sockets=n][,cores=n][,threads=n]
+ * @param {Object} metadata - Modification metadata
+ * @returns {string|number|undefined} CPU configuration value
+ */
+const buildCpuValue = metadata => {
+  const zones = metadata.zones || {};
+  const vcpus = metadata.vcpus || metadata.settings?.vcpus;
+
+  // No vcpu change requested
+  if (!vcpus && !zones.cpu_configuration) {
+    return undefined;
+  }
+
+  // Simple mode (default)
+  if (!zones.cpu_configuration || zones.cpu_configuration === 'simple') {
+    return vcpus;
+  }
+
+  // Complex mode - build topology string
+  if (zones.cpu_configuration === 'complex') {
+    const cpuConf = zones.complex_cpu_conf;
+
+    if (!cpuConf || cpuConf.length === 0) {
+      throw new Error('complex_cpu_conf required when cpu_configuration is "complex"');
+    }
+
+    const [conf] = cpuConf;
+    const { sockets, cores, threads } = conf;
+
+    // Validation
+    if (!sockets || !cores || !threads) {
+      throw new Error('complex_cpu_conf must specify sockets, cores, and threads');
+    }
+
+    if (sockets < 1 || cores < 1 || threads < 1) {
+      throw new Error('sockets, cores, and threads must be >= 1');
+    }
+
+    if (sockets > 16) {
+      throw new Error('sockets must be <= 16 (bhyve limit)');
+    }
+
+    if (cores > 32) {
+      throw new Error('cores must be <= 32 (bhyve limit)');
+    }
+
+    if (threads > 2) {
+      throw new Error('threads must be <= 2 (SMT limit)');
+    }
+
+    const total = sockets * cores * threads;
+    if (total > 32) {
+      throw new Error(`Total vCPUs (${total}) exceeds bhyve maximum of 32`);
+    }
+
+    // Build topology string
+    return `sockets=${sockets},cores=${cores},threads=${threads}`;
+  }
+
+  // Invalid configuration
+  throw new Error(
+    `Invalid cpu_configuration: ${zones.cpu_configuration}. Must be "simple" or "complex"`
+  );
+};
+
+/**
  * Apply simple attribute modifications (ram, vcpus, etc.)
  * @param {string} zoneName - Zone name
  * @param {Object} zoneConfig - Current zone configuration
@@ -129,7 +196,7 @@ const getNextCdromNumber = zoneConfig => {
 const applyAttributeChanges = async (zoneName, zoneConfig, metadata, onData = null) => {
   const attrMap = {
     ram: metadata.ram,
-    vcpus: metadata.vcpus,
+    vcpus: buildCpuValue(metadata),
     bootrom: metadata.bootrom,
     hostbridge: metadata.hostbridge,
     diskif: metadata.diskif,

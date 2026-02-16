@@ -1047,6 +1047,41 @@ export const restartZone = async (req, res) => {
  *                     type: boolean
  *                     description: Auto-boot zone on system startup
  *                     default: false
+ *                   cpu_configuration:
+ *                     type: string
+ *                     enum: [simple, complex]
+ *                     description: "CPU topology mode. 'simple' uses vcpus as-is, 'complex' builds topology string from complex_cpu_conf."
+ *                     default: "simple"
+ *                     example: "complex"
+ *                   complex_cpu_conf:
+ *                     type: array
+ *                     description: "CPU topology specification (required if cpu_configuration is 'complex'). Array should contain one topology object."
+ *                     items:
+ *                       type: object
+ *                       required: [sockets, cores, threads]
+ *                       properties:
+ *                         sockets:
+ *                           type: integer
+ *                           minimum: 1
+ *                           maximum: 16
+ *                           description: "Number of CPU sockets (bhyve limit: 16)"
+ *                           example: 2
+ *                         cores:
+ *                           type: integer
+ *                           minimum: 1
+ *                           maximum: 32
+ *                           description: "Cores per socket (bhyve limit: 32)"
+ *                           example: 2
+ *                         threads:
+ *                           type: integer
+ *                           minimum: 1
+ *                           maximum: 2
+ *                           description: "Threads per core (SMT: 1 or 2)"
+ *                           example: 1
+ *                     example:
+ *                       - sockets: 2
+ *                         cores: 2
+ *                         threads: 1
  *               networks:
  *                 type: array
  *                 description: Network configuration (Hosts.yml format)
@@ -1351,6 +1386,35 @@ export const restartZone = async (req, res) => {
  *                   boot:
  *                     source:
  *                       type: "template"
+ *             with_complex_cpu:
+ *               summary: Zone with complex CPU topology
+ *               value:
+ *                 settings:
+ *                   hostname: "high-performance"
+ *                   domain: "example.com"
+ *                   server_id: "0010"
+ *                   vcpus: 8
+ *                   memory: "16G"
+ *                 zones:
+ *                   brand: "bhyve"
+ *                   vmtype: "production"
+ *                   cpu_configuration: "complex"
+ *                   complex_cpu_conf:
+ *                     - sockets: 2
+ *                       cores: 2
+ *                       threads: 2
+ *                   hostbridge: "i440fx"
+ *                   diskif: "virtio"
+ *                   netif: "virtio-net-viona"
+ *                 disks:
+ *                   boot:
+ *                     source:
+ *                       type: "template"
+ *                       template_dataset: "rpool/templates/STARTcloud/debian13-server/2025.8.22"
+ *                 nics:
+ *                   - global_nic: "ixgbe1"
+ *                     vlan_id: 11
+ *                     nic_type: "external"
  *     responses:
  *       200:
  *         description: Zone creation orchestration queued successfully
@@ -1638,6 +1702,34 @@ export const createZone = async (req, res) => {
  *               autoboot:
  *                 type: boolean
  *                 description: Auto-boot zone on system startup
+ *               cpu_configuration:
+ *                 type: string
+ *                 enum: [simple, complex]
+ *                 description: "Change CPU topology mode"
+ *                 example: "complex"
+ *               complex_cpu_conf:
+ *                 type: array
+ *                 description: "New CPU topology (required if cpu_configuration is 'complex')"
+ *                 items:
+ *                   type: object
+ *                   required: [sockets, cores, threads]
+ *                   properties:
+ *                     sockets:
+ *                       type: integer
+ *                       minimum: 1
+ *                       maximum: 16
+ *                     cores:
+ *                       type: integer
+ *                       minimum: 1
+ *                       maximum: 32
+ *                     threads:
+ *                       type: integer
+ *                       minimum: 1
+ *                       maximum: 2
+ *                 example:
+ *                   - sockets: 2
+ *                     cores: 2
+ *                     threads: 1
  *               add_nics:
  *                 type: array
  *                 description: NICs to add to the zone
