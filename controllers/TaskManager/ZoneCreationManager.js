@@ -4,6 +4,7 @@ import yj from 'yieldable-json';
 import { syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
 import Zones from '../../models/ZoneModel.js';
 import Template from '../../models/TemplateModel.js';
+import Tasks from '../../models/TaskModel.js';
 import config from '../../config/ConfigLoader.js';
 
 /**
@@ -946,9 +947,18 @@ export const executeZoneCreateConfigTask = async task => {
   try {
     const metadata = await parseMetadata(task.metadata);
 
-    // Read bootdiskPath from storage task output
-    const bootdiskPath = metadata._execution_output?.bootdiskPath;
-    const zfsCreated = metadata._execution_output?.zfsCreated || [];
+    // Query storage task to get its updated metadata
+    const storageTask = await Tasks.findByPk(task.depends_on);
+    if (!storageTask) {
+      throw new Error('Storage task not found');
+    }
+
+    const storageMetadata = await parseMetadata(storageTask.metadata);
+
+    // Merge storage task's execution output and server_id
+    const bootdiskPath = storageMetadata._execution_output?.bootdiskPath;
+    const zfsCreated = storageMetadata._execution_output?.zfsCreated || [];
+    metadata.server_id = storageMetadata.server_id;
 
     const { onData } = task;
 
@@ -1000,6 +1010,12 @@ export const executeZoneCreateInstallTask = async task => {
 
   try {
     const metadata = await parseMetadata(task.metadata);
+
+    // Ensure server_id is set from settings if not at top level
+    if (!metadata.server_id && metadata.settings?.server_id) {
+      metadata.server_id = String(metadata.settings.server_id).padStart(4, '0');
+    }
+
     const { onData } = task;
 
     await updateTaskProgress(task, 10, { status: 'installing_zone' });
@@ -1058,6 +1074,11 @@ export const executeZoneCreateFinalizeTask = async task => {
 
   try {
     const metadata = await parseMetadata(task.metadata);
+
+    // Ensure server_id is set from settings if not at top level
+    if (!metadata.server_id && metadata.settings?.server_id) {
+      metadata.server_id = String(metadata.settings.server_id).padStart(4, '0');
+    }
 
     await updateTaskProgress(task, 10, { status: 'syncing_to_database' });
     await syncZoneToDatabase(zoneName, 'configured');
