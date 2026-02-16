@@ -77,16 +77,18 @@ zones:
       thresholds:
         warning: 70                            # Advisory warning when pool would exceed this % after operation
         critical: 80                           # Critical warning when pool would exceed this % (performance degrades)
-    # memory:                                  # Future — same pattern for RAM over-provisioning
-    #   strategy: "committed"
-    #   thresholds:
-    #     warning: 80
-    #     critical: 90
-    # cpu:                                     # Future — same pattern for CPU over-provisioning
-    #   strategy: "committed"
-    #   thresholds:
-    #     warning: 80
-    #     critical: 90
+    memory:
+      strategy: "committed"                    # "committed" = sum all zone RAM vs host total; "actual" = new RAM vs free memory
+      arc_accounting: true                     # Subtract ZFS ARC minimum (c_min) from usable RAM
+      thresholds:
+        warning: 80                            # Advisory warning at 80% host memory committed
+        critical: 90                           # Critical warning at 90% host memory committed
+    cpu:
+      strategy: "committed"                    # "committed" = sum all zone vCPUs vs physical cores; "actual" = running zones only
+      hard_limit: 400                          # Hard reject at 400% overcommit (4:1 vCPU-to-core ratio)
+      thresholds:
+        warning: 150                           # Advisory at 1.5:1 vCPU overcommit
+        critical: 300                          # Critical at 3:1 vCPU overcommit
 provisioning:
   install_tools: true
   staging_path: "/var/lib/zoneweaver-api/provisioning"
