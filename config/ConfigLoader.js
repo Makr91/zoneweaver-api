@@ -293,6 +293,17 @@ class ConfigLoader {
   getZoneOrchestration() {
     return this.config.zones?.orchestration || {};
   }
+
+  /**
+   * Gets resource validation configuration
+   * @description Returns resource over-provisioning prevention settings
+   * @returns {Object} Resource validation configuration object
+   * @returns {boolean} returns.enabled - Whether resource validation is enabled
+   * @returns {Object} returns.storage - Storage validation settings (strategy, thresholds)
+   */
+  getResourceValidation() {
+    return this.config.zones?.resource_validation || {};
+  }
 }
 
 // Export singleton instance

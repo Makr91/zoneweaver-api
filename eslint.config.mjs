@@ -126,8 +126,8 @@ export default [
       // === CODE QUALITY ===
       complexity: ['warn', 25], // Increased complexity limit for API endpoints
       'max-depth': ['warn', 6], // Increased nesting depth for API logic
-      'max-lines-per-function': ['warn', { max: 200, skipComments: true }], // Larger functions for API endpoints
       'max-params': ['warn', 8], // More parameters for API functions
+      'max-lines-per-function': ['warn', { max: 200, skipComments: true }], // Larger functions for API endpoints
       'max-statements': ['warn', 50], // More statements for API endpoints
 
       // === NAMING CONVENTIONS ===

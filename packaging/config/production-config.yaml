@@ -70,6 +70,23 @@ zones:
     failure_handling:
       default_action: "abort"             # abort, force_stuck, skip_stuck
       allow_emergency_override: true      # Allow bypassing orchestration entirely
+  resource_validation:
+    enabled: true                              # Enable pre-flight resource checks before zone creation/modification
+    storage:
+      strategy: "committed"                    # "committed" = sum all volsizes vs pool total; "actual" = new disk vs pool free
+      thresholds:
+        warning: 70                            # Advisory warning when pool would exceed this % after operation
+        critical: 80                           # Critical warning when pool would exceed this % (performance degrades)
+    # memory:                                  # Future — same pattern for RAM over-provisioning
+    #   strategy: "committed"
+    #   thresholds:
+    #     warning: 80
+    #     critical: 90
+    # cpu:                                     # Future — same pattern for CPU over-provisioning
+    #   strategy: "committed"
+    #   thresholds:
+    #     warning: 80
+    #     critical: 90
 provisioning:
   install_tools: true
   staging_path: "/var/lib/zoneweaver-api/provisioning"

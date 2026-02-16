@@ -8,6 +8,10 @@ import { errorResponse } from './SystemHostController/utils/ResponseHelpers.js';
 import { log } from '../lib/Logger.js';
 import { validateZoneName } from '../lib/ZoneValidation.js';
 import config from '../config/ConfigLoader.js';
+import {
+  validateZoneCreationResources,
+  validateZoneModificationResources,
+} from '../lib/ResourceValidation.js';
 
 /**
  * @fileoverview Zone Management controller for Zoneweaver API
@@ -247,6 +251,72 @@ const createZoneCreationSubTasks = async (
   }
 
   return { subTasks };
+};
+
+/**
+ * Resolve final zone name with optional server_id prefix
+ * @param {string} baseName - Base FQDN (hostname.domain)
+ * @param {Object} settings - Request settings object
+ * @returns {Promise<{success: boolean, finalZoneName?: string, error?: Object}>}
+ */
+const resolveZoneName = async (baseName, settings) => {
+  const zonesConfig = config.getZones();
+
+  if (!zonesConfig.prefix_zone_names) {
+    return { success: true, finalZoneName: baseName };
+  }
+
+  // Prefix mode enabled - server_id is REQUIRED
+  if (!settings.server_id) {
+    return {
+      success: false,
+      error: {
+        status: 400,
+        error: 'server_id required when prefix_zone_names is enabled',
+        hint: 'Use GET /zones/ids to find available server IDs',
+        config: {
+          prefix_zone_names: true,
+          constraints: {
+            format: 'numeric',
+            min_length: 4,
+            max_length: 8,
+            min_value: 1,
+            max_value: 99999999,
+          },
+        },
+      },
+    };
+  }
+
+  // Validate server_id format (numeric, will be padded to 4 digits minimum)
+  if (!/^\d+$/u.test(settings.server_id)) {
+    return {
+      success: false,
+      error: {
+        status: 400,
+        error: 'server_id must be numeric',
+        provided: settings.server_id,
+      },
+    };
+  }
+
+  const serverId = String(settings.server_id).padStart(4, '0');
+
+  // Check if server_id is already in use
+  const existingServerId = await Zones.findOne({ where: { server_id: serverId } });
+  if (existingServerId) {
+    return {
+      success: false,
+      error: {
+        status: 409,
+        error: `Server ID ${serverId} is already in use`,
+        zone: existingServerId.name,
+        hint: 'Use GET /zones/ids/next to get the next available ID',
+      },
+    };
+  }
+
+  return { success: true, finalZoneName: `${serverId}--${baseName}` };
 };
 
 /**
@@ -1521,52 +1591,12 @@ export const createZone = async (req, res) => {
       return res.status(400).json({ error: 'Invalid zone name' });
     }
 
-    // Check if prefix mode is enabled
-    const zonesConfig = config.getZones();
-    let finalZoneName = baseName;
-    let serverId = null;
-
-    if (zonesConfig.prefix_zone_names) {
-      // Prefix mode enabled - server_id is REQUIRED
-      if (!settings.server_id) {
-        return res.status(400).json({
-          error: 'server_id required when prefix_zone_names is enabled',
-          hint: 'Use GET /zones/ids to find available server IDs',
-          config: {
-            prefix_zone_names: true,
-            constraints: {
-              format: 'numeric',
-              min_length: 4,
-              max_length: 8,
-              min_value: 1,
-              max_value: 99999999,
-            },
-          },
-        });
-      }
-
-      // Validate server_id format (numeric, will be padded to 4 digits minimum)
-      serverId = String(settings.server_id).padStart(4, '0');
-      if (!/^\d+$/u.test(settings.server_id)) {
-        return res.status(400).json({
-          error: 'server_id must be numeric',
-          provided: settings.server_id,
-        });
-      }
-
-      // Check if server_id is already in use
-      const existingServerId = await Zones.findOne({ where: { server_id: serverId } });
-      if (existingServerId) {
-        return res.status(409).json({
-          error: `Server ID ${serverId} is already in use`,
-          zone: existingServerId.name,
-          hint: 'Use GET /zones/ids/next to get the next available ID',
-        });
-      }
-
-      // Build final zone name with prefix
-      finalZoneName = `${serverId}--${baseName}`;
+    // Resolve final zone name (applies server_id prefix if configured)
+    const nameResult = await resolveZoneName(baseName, settings);
+    if (!nameResult.success) {
+      return res.status(nameResult.error.status).json(nameResult.error);
     }
+    const { finalZoneName } = nameResult;
 
     // Check zone doesn't exist in DB (using final name)
     const existingZone = await Zones.findOne({ where: { name: finalZoneName } });
@@ -1600,6 +1630,15 @@ export const createZone = async (req, res) => {
       };
     }
 
+    // Validate resource availability (storage space) before creating any tasks
+    const resourceValidation = await validateZoneCreationResources(req.body);
+    if (!resourceValidation.valid) {
+      return res.status(400).json({
+        error: 'Insufficient resources',
+        details: resourceValidation.errors,
+      });
+    }
+
     // Handle missing template with auto-download
     if (!boxResolution.success && boxResolution.error.status === 404 && settings.box) {
       const response = await handleAutoDownload(
@@ -1609,6 +1648,9 @@ export const createZone = async (req, res) => {
         start_after_create,
         req.entity.name
       );
+      if (resourceValidation.warnings.length > 0) {
+        response.resource_warnings = resourceValidation.warnings;
+      }
       return res.json(response);
     }
 
@@ -1637,7 +1679,7 @@ export const createZone = async (req, res) => {
       req.entity.name
     );
 
-    return res.json({
+    const createResponse = {
       success: true,
       parent_task_id: parentTask.id,
       zone_name: finalZoneName,
@@ -1646,7 +1688,11 @@ export const createZone = async (req, res) => {
       message: 'Zone creation queued',
       requires_download: false,
       sub_tasks: subTasks,
-    });
+    };
+    if (resourceValidation.warnings.length > 0) {
+      createResponse.resource_warnings = resourceValidation.warnings;
+    }
+    return res.json(createResponse);
   } catch (error) {
     log.database.error('Database error creating zone task', {
       error: error.message,
@@ -1965,6 +2011,15 @@ export const modifyZone = async (req, res) => {
       }
     }
 
+    // Validate resource availability for modifications (e.g., add_disks)
+    const resourceValidation = await validateZoneModificationResources(req.body, zoneName);
+    if (!resourceValidation.valid) {
+      return res.status(400).json({
+        error: 'Insufficient resources',
+        details: resourceValidation.errors,
+      });
+    }
+
     // Create the zone_modify task
     const modifyTask = await Tasks.create({
       zone_name: zoneName,
@@ -1975,7 +2030,7 @@ export const modifyZone = async (req, res) => {
       status: 'pending',
     });
 
-    return res.json({
+    const modifyResponse = {
       success: true,
       task_id: modifyTask.id,
       zone_name: zoneName,
@@ -1983,7 +2038,11 @@ export const modifyZone = async (req, res) => {
       status: 'pending',
       message: 'Modification queued. Changes will take effect on next zone boot.',
       requires_restart: true,
-    });
+    };
+    if (resourceValidation.warnings.length > 0) {
+      modifyResponse.resource_warnings = resourceValidation.warnings;
+    }
+    return res.json(modifyResponse);
   } catch (error) {
     log.database.error('Database error modifying zone task', {
       error: error.message,
