@@ -179,7 +179,7 @@ import {
   createBridge,
   deleteBridge,
   modifyBridgeLinks,
-} from '../controllers/BridgeController.js';
+} from '../controllers/BridgeController/index.js';
 import {
   getNatRules,
   createNatRule,
