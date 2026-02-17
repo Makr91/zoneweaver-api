@@ -6,31 +6,12 @@ import Zones from '../../models/ZoneModel.js';
 import Template from '../../models/TemplateModel.js';
 import Tasks from '../../models/TaskModel.js';
 import config from '../../config/ConfigLoader.js';
+import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
 
 /**
  * Zone Creation Manager for Zone Lifecycle Operations
  * Handles creating new zones with zonecfg and zoneadm
  */
-
-/**
- * Update task progress
- * @param {Object} task - Task record
- * @param {number} percent - Progress percentage
- * @param {Object} info - Progress info object
- */
-const updateTaskProgress = async (task, percent, info) => {
-  if (!task) {
-    return;
-  }
-  try {
-    await task.update({
-      progress_percent: percent,
-      progress_info: info,
-    });
-  } catch (error) {
-    log.task.debug('Progress update failed', { error: error.message });
-  }
-};
 
 /**
  * Check if a zvol is already in use by another zone

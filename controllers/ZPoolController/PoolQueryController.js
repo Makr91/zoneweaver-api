@@ -1,4 +1,4 @@
-import { executeCommand } from './utils/CommandExecutor.js';
+import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
 
 /**

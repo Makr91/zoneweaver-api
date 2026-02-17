@@ -4,32 +4,13 @@ import { log } from '../../lib/Logger.js';
 import { checkZvolInUse } from './ZoneCreationManager.js';
 import { getZoneConfig, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
 import Zones from '../../models/ZoneModel.js';
+import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';
 
 /**
  * Zone Modification Manager for Zone Configuration Changes
  * Handles modifying existing zone configurations via zonecfg
  * Changes are queued and take effect on next zone boot
  */
-
-/**
- * Update task progress
- * @param {Object} task - Task record
- * @param {number} percent - Progress percentage
- * @param {Object} info - Progress info object
- */
-const updateTaskProgress = async (task, percent, info) => {
-  if (!task) {
-    return;
-  }
-  try {
-    await task.update({
-      progress_percent: percent,
-      progress_info: info,
-    });
-  } catch (error) {
-    log.task.debug('Progress update failed', { error: error.message });
-  }
-};
 
 /**
  * Check if a named attribute exists in zone configuration

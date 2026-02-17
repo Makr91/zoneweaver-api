@@ -69,7 +69,7 @@ import {
   executeTemplatePublishTask,
   executeTemplateExportTask,
   executeTemplateMoveTask,
-} from '../TaskManager/TemplateManager.js';
+} from '../TaskManager/TemplateManager/index.js';
 import {
   executeArtifactDownloadTask,
   executeArtifactScanAllTask,
