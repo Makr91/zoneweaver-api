@@ -148,7 +148,7 @@ import {
   deleteIPAddress,
   enableIPAddress,
   disableIPAddress,
-} from '../controllers/NetworkController.js';
+} from '../controllers/NetworkController/index.js';
 import {
   getVNICs,
   getVNICDetails,
