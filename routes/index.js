@@ -81,7 +81,7 @@ import {
   restoreBackup,
   deleteBackup,
   restartServer,
-} from '../controllers/SettingsController.js';
+} from '../controllers/SettingsController/index.js';
 import {
   listSwapAreas,
   getSwapSummary,
