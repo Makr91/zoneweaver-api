@@ -1580,6 +1580,20 @@ export const stopTaskProcessor = () => {
  *           type: integer
  *           default: 50
  *         description: Maximum number of tasks to return
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [created_at, priority, status, zone_name, operation, started_at, completed_at]
+ *           default: created_at
+ *         description: Column to sort results by
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [ASC, DESC]
+ *           default: DESC
+ *         description: Sort direction (ascending or descending)
  *     responses:
  *       200:
  *         description: Tasks retrieved successfully
@@ -1611,6 +1625,8 @@ export const listTasks = async (req, res) => {
       include_count,
       min_priority,
       parent_task_id,
+      sort,
+      order: sortOrder,
     } = req.query;
     const whereClause = {};
 
@@ -1637,9 +1653,21 @@ export const listTasks = async (req, res) => {
       whereClause.updatedAt = { [Op.gte]: new Date(since) };
     }
 
+    const validSortColumns = [
+      'created_at',
+      'priority',
+      'status',
+      'zone_name',
+      'operation',
+      'started_at',
+      'completed_at',
+    ];
+    const sortColumn = validSortColumns.includes(sort) ? sort : 'created_at';
+    const sortDirection = sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
     const tasks = await Tasks.findAll({
       where: whereClause,
-      order: [['created_at', 'DESC']],
+      order: [[sortColumn, sortDirection]],
       limit: parseInt(limit),
     });
 
@@ -1874,6 +1902,60 @@ export const getTaskStats = async (req, res) => {
       stack: error.stack,
     });
     res.status(500).json({ error: 'Failed to retrieve task statistics' });
+  }
+};
+
+/**
+ * @swagger
+ * /tasks/completed:
+ *   delete:
+ *     summary: Clear completed tasks
+ *     description: |
+ *       Hard-deletes all completed, failed, and cancelled tasks from the database immediately.
+ *       Running and pending tasks are not affected.
+ *     tags: [Task Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Completed tasks cleared successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 deleted_count:
+ *                   type: integer
+ *                   description: Number of tasks deleted
+ *       500:
+ *         description: Failed to clear completed tasks
+ */
+export const clearCompletedTasks = async (req, res) => {
+  try {
+    const deleted = await Tasks.destroy({
+      where: {
+        status: { [Op.in]: ['completed', 'failed', 'cancelled'] },
+      },
+    });
+
+    log.database.info('Completed tasks cleared', {
+      triggered_by: req.entity.name,
+      deleted_count: deleted,
+    });
+
+    return res.json({
+      success: true,
+      message: `Deleted ${deleted} completed/failed/cancelled tasks`,
+      deleted_count: deleted,
+    });
+  } catch (error) {
+    log.database.error('Error clearing completed tasks', {
+      error: error.message,
+      stack: error.stack,
+    });
+    return res.status(500).json({ error: 'Failed to clear completed tasks' });
   }
 };
 

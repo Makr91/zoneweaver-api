@@ -33,6 +33,7 @@ import {
   getTaskOutput,
   cancelTask,
   getTaskStats,
+  clearCompletedTasks,
 } from '../controllers/TaskQueue.js';
 import {
   startVncSession,
@@ -72,6 +73,7 @@ import {
 } from '../controllers/HostDevicesController.js';
 import {
   getSettings,
+  getSettingsSchema,
   updateSettings,
   createConfigBackup,
   listBackups,
@@ -420,6 +422,7 @@ import {
   analyzeDatabase,
   triggerCleanup,
 } from '../controllers/DatabaseController.js';
+import { getVersion, checkForAppUpdates } from '../controllers/VersionController.js';
 import config from '../config/ConfigLoader.js';
 
 const router = express.Router();
@@ -444,6 +447,10 @@ router.post('/provisioning/profiles', verifyApiKey, createProvisioningProfile); 
 router.get('/provisioning/profiles/:id', verifyApiKey, getProvisioningProfile); // Get profile details
 router.put('/provisioning/profiles/:id', verifyApiKey, updateProvisioningProfile); // Update profile
 router.delete('/provisioning/profiles/:id', verifyApiKey, deleteProvisioningProfile); // Delete profile
+
+// Version and Update Routes
+router.get('/version', verifyApiKey, getVersion); // Get application version information
+router.get('/app/updates/check', verifyApiKey, checkForAppUpdates); // Check for application updates
 
 // Root route to display registered Zoneweaver API instances
 router.get('/', getRoot);
@@ -507,8 +514,9 @@ router.post('/zones/:name/sync', verifyApiKey, syncZone); // Sync provisioning f
 router.post('/zones/:name/run-provisioners', verifyApiKey, runProvisioners); // Run provisioners ad-hoc
 
 // Task Management Routes
-router.get('/tasks', verifyApiKey, listTasks); // List tasks
+router.get('/tasks', verifyApiKey, listTasks); // List tasks (supports ?sort=&order= params)
 router.get('/tasks/stats', verifyApiKey, getTaskStats); // Get task statistics
+router.delete('/tasks/completed', verifyApiKey, clearCompletedTasks); // Hard-delete all completed/failed/cancelled tasks
 router.get('/tasks/:taskId', verifyApiKey, getTaskDetails); // Get task details
 router.get('/tasks/:taskId/output', verifyApiKey, getTaskOutput); // Get task output
 router.delete('/tasks/:taskId', verifyApiKey, cancelTask); // Cancel task
@@ -566,6 +574,7 @@ router.post('/host/devices/refresh', verifyApiKey, triggerDeviceDiscovery); // T
 
 // Settings Management Routes
 router.get('/settings', verifyApiKey, getSettings); // Get current application settings
+router.get('/settings/schema', verifyApiKey, getSettingsSchema); // Get settings schema with types/defaults/descriptions
 router.put('/settings', verifyApiKey, updateSettings); // Update application settings
 router.post('/settings/backup', verifyApiKey, createConfigBackup); // Create a configuration backup
 router.get('/settings/backups', verifyApiKey, listBackups); // List configuration backups
