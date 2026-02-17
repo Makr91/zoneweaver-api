@@ -242,7 +242,7 @@ import {
   updateARCConfig,
   validateARCConfig,
   resetARCConfig,
-} from '../controllers/ARCConfigController.js';
+} from '../controllers/ARCConfigController/index.js';
 import {
   listDatasets,
   getDatasetDetails,
