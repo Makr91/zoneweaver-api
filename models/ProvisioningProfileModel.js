@@ -10,6 +10,44 @@ import { v4 as uuidv4 } from 'uuid';
 
 const { DataTypes } = Sequelize;
 
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     ProvisioningProfile:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         name:
+ *           type: string
+ *         description:
+ *           type: string
+ *         recipe_id:
+ *           type: string
+ *           format: uuid
+ *         default_credentials:
+ *           type: object
+ *         default_sync_folders:
+ *           type: array
+ *           items:
+ *             type: object
+ *         default_provisioners:
+ *           type: array
+ *           items:
+ *             type: object
+ *         default_variables:
+ *           type: object
+ *         created_by:
+ *           type: string
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ */
 const ProvisioningProfiles = db.define(
   'provisioning_profiles',
   {

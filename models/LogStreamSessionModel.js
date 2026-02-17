@@ -8,6 +8,35 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/Database.js';
 
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     LogStreamSession:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *           description: Database ID
+ *         session_id:
+ *           type: string
+ *           description: Unique session identifier
+ *         logname:
+ *           type: string
+ *           description: Name of the log file
+ *         log_path:
+ *           type: string
+ *           description: Full path to log file
+ *         status:
+ *           type: string
+ *           enum: [created, active, closed, error, stopped]
+ *         lines_sent:
+ *           type: integer
+ *           description: Number of lines sent to client
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ */
 const LogStreamSession = sequelize.define(
   'LogStreamSession',
   {

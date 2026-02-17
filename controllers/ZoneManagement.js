@@ -1917,6 +1917,10 @@ export const createZone = async (req, res) => {
  *                     example: "8.8.8.8,8.8.4.4"
  *                   sshkey:
  *                     type: string
+ *               provisioner:
+ *                 type: object
+ *                 description: Provisioner configuration object
+ *                 example: { "type": "ansible", "playbook": "site.yml" }
  *           examples:
  *             change_resources:
  *               summary: Change RAM and vCPUs

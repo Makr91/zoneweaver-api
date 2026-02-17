@@ -9,6 +9,49 @@ import { v4 as uuidv4 } from 'uuid';
 
 const { DataTypes } = Sequelize;
 
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Recipe:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         name:
+ *           type: string
+ *         description:
+ *           type: string
+ *         os_family:
+ *           type: string
+ *         brand:
+ *           type: string
+ *         is_default:
+ *           type: boolean
+ *         boot_string:
+ *           type: string
+ *         login_prompt:
+ *           type: string
+ *         shell_prompt:
+ *           type: string
+ *         timeout_seconds:
+ *           type: integer
+ *         steps:
+ *           type: array
+ *           items:
+ *             type: object
+ *         variables:
+ *           type: object
+ *         created_by:
+ *           type: string
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ */
 const Recipes = db.define(
   'recipes',
   {
