@@ -114,7 +114,7 @@ import {
   deleteProvisioningProfile,
   syncZone,
   runProvisioners,
-} from '../controllers/ProvisioningOrchestrationController.js';
+} from '../controllers/ProvisioningOrchestrationController/index.js';
 import {
   startTerminalSession,
   stopTerminalSession,
