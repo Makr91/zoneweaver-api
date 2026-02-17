@@ -157,7 +157,7 @@ import {
   getVNICStats,
   getVNICProperties,
   setVNICProperties,
-} from '../controllers/VnicController.js';
+} from '../controllers/VnicController/index.js';
 import {
   getAggregates,
   getAggregateDetails,
