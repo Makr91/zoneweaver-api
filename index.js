@@ -12,7 +12,7 @@ import cors from 'cors';
 import { WebSocketServer } from 'ws';
 
 import config from './config/ConfigLoader.js';
-import { log } from './lib/Logger.js';
+import { log, morganMiddleware } from './lib/Logger.js';
 import DatabaseMigrations from './config/DatabaseMigrations.js';
 import router from './routes/index.js';
 import { specs, swaggerUi } from './config/swagger.js';
@@ -85,6 +85,7 @@ const maxUploadSize = `${maxUploadGB}gb`;
 app.set('trust proxy', 1);
 app.use(express.json({ limit: maxUploadSize }));
 app.use(express.urlencoded({ limit: maxUploadSize, extended: true }));
+app.use(morganMiddleware);
 
 /**
  * API routes

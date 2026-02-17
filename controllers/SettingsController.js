@@ -300,6 +300,23 @@ const SETTINGS_SCHEMA = {
         description: 'Log file directory',
         default: '/var/log/zoneweaver-api',
       },
+      enable_compression: {
+        type: 'boolean',
+        description: 'Enable gzip compression of aged archive logs',
+        default: true,
+      },
+      compression_age_days: {
+        type: 'integer',
+        description: 'Days before archived logs are compressed',
+        default: 7,
+        min: 1,
+      },
+      max_files: {
+        type: 'integer',
+        description: 'Maximum archived log files to keep per category',
+        default: 30,
+        min: 1,
+      },
       performance_threshold_ms: {
         type: 'integer',
         description: 'Only log operations slower than this (ms)',
