@@ -297,7 +297,7 @@ import {
   acquitFault,
   markRepaired,
   markReplaced,
-} from '../controllers/FaultManagementController.js';
+} from '../controllers/FaultManagementController/index.js';
 import {
   listLogFiles,
   getLogFile,

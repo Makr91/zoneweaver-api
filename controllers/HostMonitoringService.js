@@ -16,7 +16,7 @@ import HostInfo from '../models/HostInfoModel.js';
 import db from '../config/Database.js';
 import DatabaseMigrations from '../config/DatabaseMigrations.js';
 import { getRebootStatus, checkAndClearAfterReboot } from '../lib/RebootManager.js';
-import { getFaultStatusForHealth } from './FaultManagementController.js';
+import { getFaultStatusForHealth } from './FaultManagementController/index.js';
 import { log } from '../lib/Logger.js';
 import os from 'os';
 
