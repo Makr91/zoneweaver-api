@@ -1148,10 +1148,17 @@ export const executeZoneCreateFinalizeTask = async task => {
 
     const zoneRecord = await Zones.findOne({ where: { name: zoneName } });
     if (zoneRecord) {
-      await zoneRecord.update({
+      const updateFields = {
         server_id: metadata.server_id,
         vm_type: metadata.zones?.vmtype || metadata.vm_type || 'production',
-      });
+      };
+      if (metadata.notes) {
+        updateFields.notes = metadata.notes;
+      }
+      if (Array.isArray(metadata.tags) && metadata.tags.length > 0) {
+        updateFields.tags = metadata.tags;
+      }
+      await zoneRecord.update(updateFields);
     }
 
     await updateTaskProgress(task, 50, { status: 'syncing_installed_status' });

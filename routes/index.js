@@ -13,6 +13,10 @@ import {
   listZones,
   getZoneDetails,
   getZoneConfig,
+  getZoneNotes,
+  updateZoneNotes,
+  getZoneTags,
+  updateZoneTags,
   startZone,
   stopZone,
   restartZone,
@@ -407,6 +411,7 @@ import {
   getZonePriorities,
   testOrchestration,
 } from '../controllers/ZoneOrchestrationController.js';
+import { getHosts, updateHosts, getDns, updateDns } from '../controllers/HostConfigController.js';
 import config from '../config/ConfigLoader.js';
 
 const router = express.Router();
@@ -474,6 +479,10 @@ router.put('/zones/:zoneName', verifyApiKey, modifyZone); // Modify zone configu
 router.get('/zones', verifyApiKey, listZones); // List all zones
 router.get('/zones/:zoneName', verifyApiKey, getZoneDetails); // Get zone details
 router.get('/zones/:zoneName/config', verifyApiKey, getZoneConfig); // Get zone configuration
+router.get('/zones/:zoneName/notes', verifyApiKey, getZoneNotes); // Get zone notes
+router.put('/zones/:zoneName/notes', verifyApiKey, updateZoneNotes); // Update zone notes
+router.get('/zones/:zoneName/tags', verifyApiKey, getZoneTags); // Get zone tags
+router.put('/zones/:zoneName/tags', verifyApiKey, updateZoneTags); // Update zone tags
 router.post('/zones/:zoneName/start', verifyApiKey, startZone); // Start zone
 router.post('/zones/:zoneName/stop', verifyApiKey, stopZone); // Stop zone
 router.post('/zones/:zoneName/restart', verifyApiKey, restartZone); // Restart zone
@@ -854,6 +863,12 @@ router.get('/system/host/status', verifyApiKey, getSystemStatus); // Get compreh
 router.get('/system/host/uptime', verifyApiKey, getSystemUptime); // Get detailed uptime information
 router.get('/system/host/reboot-status', verifyApiKey, getRebootRequiredStatus); // Get reboot required status
 router.delete('/system/host/reboot-status', verifyApiKey, clearRebootRequiredStatus); // Clear reboot flags
+
+// Host Configuration Routes
+router.get('/system/hosts', verifyApiKey, getHosts); // Get /etc/hosts entries
+router.put('/system/hosts', verifyApiKey, updateHosts); // Update /etc/hosts entries
+router.get('/system/dns', verifyApiKey, getDns); // Get DNS configuration (/etc/resolv.conf)
+router.put('/system/dns', verifyApiKey, updateDns); // Update DNS configuration (/etc/resolv.conf)
 
 // System Host Restart Operations (TaskQueue)
 router.post('/system/host/restart', verifyApiKey, restartHost); // Gracefully restart host system

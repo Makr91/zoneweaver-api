@@ -156,6 +156,16 @@ class DatabaseMigrations {
         await this.addColumnIfNotExists('zones', 'vm_type', "VARCHAR(255) DEFAULT 'production'");
       }
 
+      // Migration for zones table notes field
+      if (await this.tableExists('zones')) {
+        await this.addColumnIfNotExists('zones', 'notes', 'TEXT');
+      }
+
+      // Migration for zones table tags field
+      if (await this.tableExists('zones')) {
+        await this.addColumnIfNotExists('zones', 'tags', 'TEXT');
+      }
+
       // Migration: Rename partition_id to server_id in zones table
       if (await this.tableExists('zones')) {
         const hasPartitionId = await this.columnExists('zones', 'partition_id');

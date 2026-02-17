@@ -64,6 +64,18 @@ const { DataTypes } = Sequelize;
  *           description: VM type classification for VNIC naming
  *           enum: [template, development, production, firewall, other]
  *           example: "production"
+ *         notes:
+ *           type: string
+ *           nullable: true
+ *           description: Free-form user notes / annotations for this zone
+ *           example: "Primary web server - do not stop during business hours"
+ *         tags:
+ *           type: array
+ *           nullable: true
+ *           description: User-defined tags for categorization and filtering
+ *           items:
+ *             type: string
+ *           example: ["web", "production", "critical"]
  *         updated_at:
  *           type: string
  *           format: date-time
@@ -130,6 +142,16 @@ const Zones = db.define(
       allowNull: true,
       defaultValue: 'production',
       comment: 'VM type classification (template, development, production, firewall, other)',
+    },
+    notes: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Free-form user notes or annotations for this zone',
+    },
+    tags: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'User-defined tags for categorization and filtering',
     },
     configuration: {
       type: DataTypes.JSON,

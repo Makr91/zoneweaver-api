@@ -162,15 +162,15 @@ export const setTimezone = async (req, res) => {
  *         name: limit
  *         schema:
  *           type: integer
- *           default: 100
- *         description: Maximum number of timezones to return
+ *           default: 0
+ *         description: Maximum number of timezones to return (0 = all)
  *     responses:
  *       200:
  *         description: Available timezones retrieved successfully
  */
 export const listTimezones = async (req, res) => {
   try {
-    const { region, search, limit = 100 } = req.query;
+    const { region, search, limit = 0 } = req.query;
 
     const availableTimezones = await getAvailableTimezones();
 
@@ -194,9 +194,12 @@ export const listTimezones = async (req, res) => {
       filtered = true;
     }
 
-    // Apply limit
+    // Apply limit (0 = no limit, return all)
     const total = timezones.length;
-    timezones = timezones.slice(0, parseInt(limit));
+    const parsedLimit = parseInt(limit);
+    if (parsedLimit > 0) {
+      timezones = timezones.slice(0, parsedLimit);
+    }
 
     return directSuccessResponse(res, 'Available timezones retrieved successfully', {
       timezones,
@@ -206,7 +209,7 @@ export const listTimezones = async (req, res) => {
       filters: {
         region: region || null,
         search: search || null,
-        limit: parseInt(limit),
+        limit: parsedLimit,
       },
     });
   } catch (error) {

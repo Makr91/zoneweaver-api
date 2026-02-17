@@ -410,6 +410,11 @@ const handleAutoDownload = async (
  *           enum: [running, configured, installed, stopped]
  *         description: Filter zones by status
  *       - in: query
+ *         name: tag
+ *         schema:
+ *           type: string
+ *         description: Filter zones by tag (zones must contain this tag)
+ *       - in: query
  *         name: orphaned
  *         schema:
  *           type: boolean
@@ -434,7 +439,7 @@ const handleAutoDownload = async (
  */
 export const listZones = async (req, res) => {
   try {
-    const { status, orphaned } = req.query;
+    const { status, orphaned, tag } = req.query;
     const whereClause = {};
 
     if (status) {
@@ -445,10 +450,17 @@ export const listZones = async (req, res) => {
       whereClause.is_orphaned = orphaned === 'true';
     }
 
-    const zones = await Zones.findAll({
+    let zones = await Zones.findAll({
       where: whereClause,
       order: [['name', 'ASC']],
     });
+
+    if (tag) {
+      zones = zones.filter(zone => {
+        const zoneTags = zone.tags || [];
+        return Array.isArray(zoneTags) && zoneTags.includes(tag);
+      });
+    }
 
     return res.json({
       zones,
@@ -1351,6 +1363,18 @@ export const restartZone = async (req, res) => {
  *                     type: string
  *                     description: SSH public key for root access
  *                     example: "ssh-rsa AAAA..."
+ *               notes:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Free-form user notes for this zone
+ *                 example: "Primary web server"
+ *               tags:
+ *                 type: array
+ *                 nullable: true
+ *                 description: User-defined tags for categorization and filtering
+ *                 items:
+ *                   type: string
+ *                 example: ["web", "production", "critical"]
  *               force:
  *                 type: boolean
  *                 description: Force attach zvols even if in use by another zone
@@ -1864,6 +1888,18 @@ export const createZone = async (req, res) => {
  *                 items:
  *                   type: string
  *                   example: "cdrom0"
+ *               notes:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Free-form user notes for this zone
+ *                 example: "Primary web server"
+ *               tags:
+ *                 type: array
+ *                 nullable: true
+ *                 description: User-defined tags for categorization and filtering
+ *                 items:
+ *                   type: string
+ *                 example: ["web", "production"]
  *               cloud_init:
  *                 type: object
  *                 description: Cloud-init attributes to set or update
@@ -1973,11 +2009,41 @@ export const modifyZone = async (req, res) => {
       'remove_cdroms',
       'cloud_init',
       'provisioner',
+      'notes',
+      'tags',
     ];
     const hasChanges = changeFields.some(field => req.body[field] !== undefined);
 
     if (!hasChanges) {
       return res.status(400).json({ error: 'No modification fields specified' });
+    }
+
+    // Handle notes update immediately (DB only, no zone config task needed)
+    if (req.body.notes !== undefined) {
+      await zone.update({ notes: req.body.notes || null });
+    }
+
+    // Handle tags update immediately (DB only, no zone config task needed)
+    if (req.body.tags !== undefined) {
+      const tags = Array.isArray(req.body.tags) ? req.body.tags : null;
+      await zone.update({ tags });
+    }
+
+    // If only DB-only fields were changed, return early
+    const dbOnlyFields = ['notes', 'tags'];
+    const hasDbOnlyChanges = dbOnlyFields.some(f => req.body[f] !== undefined);
+    const hasOtherChanges = changeFields
+      .filter(f => !dbOnlyFields.includes(f))
+      .some(field => req.body[field] !== undefined);
+    if (hasDbOnlyChanges && !hasOtherChanges) {
+      return res.json({
+        success: true,
+        zone_name: zoneName,
+        operation: 'zone_modify',
+        status: 'completed',
+        message: 'Zone metadata updated successfully.',
+        requires_restart: false,
+      });
     }
 
     // Handle provisioner config update immediately (DB only)
@@ -2050,6 +2116,297 @@ export const modifyZone = async (req, res) => {
       user: req.entity.name,
     });
     return res.status(500).json({ error: 'Failed to queue zone modification task' });
+  }
+};
+
+/**
+ * @swagger
+ * /zones/{zoneName}/notes:
+ *   get:
+ *     summary: Get zone notes
+ *     description: Retrieves the user notes/annotations for a specific zone
+ *     tags: [Zone Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: zoneName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the zone
+ *     responses:
+ *       200:
+ *         description: Zone notes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 zone_name:
+ *                   type: string
+ *                 notes:
+ *                   type: string
+ *                   nullable: true
+ *       404:
+ *         description: Zone not found
+ */
+export const getZoneNotes = async (req, res) => {
+  try {
+    const { zoneName } = req.params;
+
+    if (!validateZoneName(zoneName)) {
+      return res.status(400).json({ error: 'Invalid zone name' });
+    }
+
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    return res.json({
+      zone_name: zoneName,
+      notes: zone.notes || null,
+    });
+  } catch (error) {
+    log.database.error('Database error getting zone notes', {
+      error: error.message,
+      zone_name: req.params.zoneName,
+    });
+    return res.status(500).json({ error: 'Failed to retrieve zone notes' });
+  }
+};
+
+/**
+ * @swagger
+ * /zones/{zoneName}/notes:
+ *   put:
+ *     summary: Update zone notes
+ *     description: Sets or updates the user notes/annotations for a specific zone
+ *     tags: [Zone Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: zoneName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the zone
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - notes
+ *             properties:
+ *               notes:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Free-form notes text (null or empty string to clear)
+ *                 example: "Primary web server - do not stop during business hours"
+ *     responses:
+ *       200:
+ *         description: Zone notes updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 zone_name:
+ *                   type: string
+ *                 notes:
+ *                   type: string
+ *                   nullable: true
+ *       404:
+ *         description: Zone not found
+ */
+export const updateZoneNotes = async (req, res) => {
+  try {
+    const { zoneName } = req.params;
+    const { notes } = req.body;
+
+    if (!validateZoneName(zoneName)) {
+      return res.status(400).json({ error: 'Invalid zone name' });
+    }
+
+    if (notes === undefined) {
+      return res.status(400).json({ error: 'notes field is required' });
+    }
+
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    await zone.update({ notes: notes || null });
+
+    return res.json({
+      success: true,
+      zone_name: zoneName,
+      notes: zone.notes,
+    });
+  } catch (error) {
+    log.database.error('Database error updating zone notes', {
+      error: error.message,
+      zone_name: req.params.zoneName,
+    });
+    return res.status(500).json({ error: 'Failed to update zone notes' });
+  }
+};
+
+/**
+ * @swagger
+ * /zones/{zoneName}/tags:
+ *   get:
+ *     summary: Get zone tags
+ *     description: Retrieves the tags for a specific zone
+ *     tags: [Zone Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: zoneName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the zone
+ *     responses:
+ *       200:
+ *         description: Zone tags retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 zone_name:
+ *                   type: string
+ *                 tags:
+ *                   type: array
+ *                   nullable: true
+ *                   items:
+ *                     type: string
+ *       404:
+ *         description: Zone not found
+ */
+export const getZoneTags = async (req, res) => {
+  try {
+    const { zoneName } = req.params;
+
+    if (!validateZoneName(zoneName)) {
+      return res.status(400).json({ error: 'Invalid zone name' });
+    }
+
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    return res.json({
+      zone_name: zoneName,
+      tags: zone.tags || [],
+    });
+  } catch (error) {
+    log.database.error('Database error getting zone tags', {
+      error: error.message,
+      zone_name: req.params.zoneName,
+    });
+    return res.status(500).json({ error: 'Failed to retrieve zone tags' });
+  }
+};
+
+/**
+ * @swagger
+ * /zones/{zoneName}/tags:
+ *   put:
+ *     summary: Update zone tags
+ *     description: Sets or updates the tags for a specific zone
+ *     tags: [Zone Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: zoneName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the zone
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tags
+ *             properties:
+ *               tags:
+ *                 type: array
+ *                 nullable: true
+ *                 description: Array of tag strings (null or empty array to clear)
+ *                 items:
+ *                   type: string
+ *                 example: ["web", "production", "critical"]
+ *     responses:
+ *       200:
+ *         description: Zone tags updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 zone_name:
+ *                   type: string
+ *                 tags:
+ *                   type: array
+ *                   nullable: true
+ *                   items:
+ *                     type: string
+ *       404:
+ *         description: Zone not found
+ */
+export const updateZoneTags = async (req, res) => {
+  try {
+    const { zoneName } = req.params;
+    const { tags } = req.body;
+
+    if (!validateZoneName(zoneName)) {
+      return res.status(400).json({ error: 'Invalid zone name' });
+    }
+
+    if (tags === undefined) {
+      return res.status(400).json({ error: 'tags field is required' });
+    }
+
+    if (tags !== null && !Array.isArray(tags)) {
+      return res.status(400).json({ error: 'tags must be an array or null' });
+    }
+
+    const zone = await Zones.findOne({ where: { name: zoneName } });
+    if (!zone) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    const sanitizedTags = Array.isArray(tags) && tags.length > 0 ? tags : null;
+    await zone.update({ tags: sanitizedTags });
+
+    return res.json({
+      success: true,
+      zone_name: zoneName,
+      tags: zone.tags || [],
+    });
+  } catch (error) {
+    log.database.error('Database error updating zone tags', {
+      error: error.message,
+      zone_name: req.params.zoneName,
+    });
+    return res.status(500).json({ error: 'Failed to update zone tags' });
   }
 };
 
