@@ -277,7 +277,7 @@ import {
   importPool,
   listImportablePools,
   upgradePool,
-} from '../controllers/ZPoolController.js';
+} from '../controllers/ZPoolController/index.js';
 import {
   listSources,
   listRemoteTemplates,
