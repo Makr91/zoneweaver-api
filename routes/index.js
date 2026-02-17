@@ -35,7 +35,7 @@ import {
   cancelTask,
   getTaskStats,
   clearCompletedTasks,
-} from '../controllers/TaskQueue.js';
+} from '../controllers/TaskQueue/index.js';
 import {
   startVncSession,
   getVncSessionInfo,

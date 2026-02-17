@@ -16,7 +16,7 @@ import { log, morganMiddleware } from './lib/Logger.js';
 import DatabaseMigrations from './config/DatabaseMigrations.js';
 import router from './routes/index.js';
 import { specs, swaggerUi } from './config/swagger.js';
-import { startTaskProcessor } from './controllers/TaskQueue.js';
+import { startTaskProcessor } from './controllers/TaskQueue/index.js';
 import { startVncSessionCleanup } from './controllers/VncConsoleController/index.js';
 import { getZloginCleanupTask } from './controllers/ZloginController.js';
 import { getSSHCleanupTask, startSSHSessionCleanup } from './controllers/SSHTerminalController.js';

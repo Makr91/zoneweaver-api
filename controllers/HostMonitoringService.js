@@ -10,7 +10,7 @@ import NetworkCollector from './NetworkCollectorController/index.js';
 import StorageCollector from './StorageController/index.js';
 import DeviceCollector from './DeviceCollector.js';
 import SystemMetricsCollector from './SystemMetricsCollector.js';
-import { cleanupOldTasks } from './TaskQueue.js';
+import { cleanupOldTasks } from './TaskQueue/index.js';
 import CleanupService from './CleanupService.js';
 import HostInfo from '../models/HostInfoModel.js';
 import db from '../config/Database.js';
