@@ -192,7 +192,8 @@ const importTemplate = async (metadata, zoneName, zfsCreated, onData = null) => 
     return null;
   }
 
-  const { template_dataset, clone_strategy = 'clone' } = bootDisk.source;
+  const { template_dataset, clone_strategy = 'clone', snapshot_name } = bootDisk.source;
+  const snapshot = snapshot_name || 'ready';
   const pool = bootDisk.pool || 'rpool';
   const dataset = bootDisk.dataset || 'zones';
   const volumeName = bootDisk.volume_name || 'boot';
@@ -213,7 +214,7 @@ const importTemplate = async (metadata, zoneName, zfsCreated, onData = null) => 
 
   if (clone_strategy === 'copy') {
     const sendRecvResult = await executeCommand(
-      `pfexec zfs send ${template_dataset}@ready | pfexec zfs recv -F ${targetDataset}`,
+      `pfexec zfs send ${template_dataset}@${snapshot} | pfexec zfs recv -F ${targetDataset}`,
       3600 * 1000,
       onData
     );
@@ -222,7 +223,7 @@ const importTemplate = async (metadata, zoneName, zfsCreated, onData = null) => 
     }
   } else {
     const cloneResult = await executeCommand(
-      `pfexec zfs clone ${template_dataset}@ready ${targetDataset}`,
+      `pfexec zfs clone ${template_dataset}@${snapshot} ${targetDataset}`,
       undefined,
       onData
     );

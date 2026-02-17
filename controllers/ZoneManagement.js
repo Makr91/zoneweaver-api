@@ -2821,3 +2821,396 @@ export const deleteZone = async (req, res) => {
     return res.status(500).json({ error: 'Failed to queue delete tasks' });
   }
 };
+
+/**
+ * Get next available provisioning IP from the configured range
+ * @param {Array<string>} excludeIps - IPs to exclude from selection
+ * @returns {Promise<string|null>} Next available IP or null
+ */
+const getNextProvisioningIP = async (excludeIps = []) => {
+  const provisioningConfig = config.get('provisioning') || {};
+  const networkConfig = provisioningConfig.network || {};
+
+  if (!networkConfig.dhcp_range_start || !networkConfig.dhcp_range_end) {
+    log.api.warn('Provisioning DHCP range not configured');
+    return null;
+  }
+
+  // Convert IP to long for comparison
+  const ipToLong = ip =>
+    ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+
+  const longToIp = long =>
+    [(long >>> 24) & 255, (long >>> 16) & 255, (long >>> 8) & 255, long & 255].join('.');
+
+  const start = ipToLong(networkConfig.dhcp_range_start);
+  const end = ipToLong(networkConfig.dhcp_range_end);
+
+  // Get all used IPs from zones in DB
+  const zones = await Zones.findAll();
+  const usedIps = new Set();
+
+  zones.forEach(zone => {
+    let zoneConfig = zone.configuration;
+    if (typeof zoneConfig === 'string') {
+      try {
+        zoneConfig = JSON.parse(zoneConfig);
+      } catch {
+        return;
+      }
+    }
+
+    if (zoneConfig && zoneConfig.networks) {
+      zoneConfig.networks.forEach(net => {
+        if (net.provisional && net.address) {
+          usedIps.add(net.address);
+        }
+      });
+    }
+  });
+
+  // Find first unused IP
+  for (let i = start; i <= end; i++) {
+    const ip = longToIp(i);
+    if (!usedIps.has(ip) && !excludeIps.includes(ip)) {
+      return ip;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Create ZFS snapshots for cloning
+ * @param {Object} sourceZone - Source zone DB record
+ * @returns {Promise<{bootDataset: string, bootSnapshotName: string, additionalSnapshots: Array}>}
+ */
+const createCloneSnapshots = async sourceZone => {
+  let zoneConfig = sourceZone.configuration;
+  if (typeof zoneConfig === 'string') {
+    zoneConfig = JSON.parse(zoneConfig);
+  }
+
+  // Identify boot dataset
+  let bootDataset = null;
+  if (zoneConfig.disks && zoneConfig.disks.boot && zoneConfig.disks.boot.dataset) {
+    // Hosts.yml format
+    const disk = zoneConfig.disks.boot;
+    bootDataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
+  } else if (zoneConfig.bootdisk) {
+    // zadm format
+    bootDataset = zoneConfig.bootdisk.path; // e.g. rpool/zones/zone1/boot
+  }
+
+  if (!bootDataset) {
+    throw new Error('Could not determine boot dataset for source zone');
+  }
+
+  const timestamp = Date.now();
+  const snapshotName = `clone_${timestamp}`;
+  const additionalSnapshots = [];
+
+  // Snapshot boot disk
+  log.api.info(`Creating snapshot for clone: ${bootDataset}@${snapshotName}`);
+  const bootSnapResult = await executeCommand(`pfexec zfs snapshot ${bootDataset}@${snapshotName}`);
+  if (!bootSnapResult.success) {
+    throw new Error(`Failed to snapshot boot dataset: ${bootSnapResult.error}`);
+  }
+
+  // Handle additional disks
+  if (zoneConfig.disks && zoneConfig.disks.additional) {
+    await Promise.all(
+      zoneConfig.disks.additional.map(async disk => {
+        const dataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
+        const snapResult = await executeCommand(`pfexec zfs snapshot ${dataset}@${snapshotName}`);
+        if (snapResult.success) {
+          additionalSnapshots.push({ dataset, snapshotName });
+        } else {
+          log.api.warn(`Failed to snapshot additional disk ${dataset}`, {
+            error: snapResult.error,
+          });
+        }
+      })
+    );
+  }
+
+  return { bootDataset, bootSnapshotName: snapshotName, additionalSnapshots };
+};
+
+/**
+ * Build clone metadata (Hosts.yml structure)
+ */
+const buildCloneMetadata = async (sourceZone, requestBody, snapshotInfo, newZoneName) => {
+  let sourceConfig = sourceZone.configuration;
+  if (typeof sourceConfig === 'string') {
+    sourceConfig = JSON.parse(sourceConfig);
+  }
+
+  // 1. Settings
+  const settings = {
+    ...sourceConfig.settings,
+    hostname: requestBody.settings.hostname,
+    domain: requestBody.settings.domain || sourceConfig.settings.domain,
+    server_id: requestBody.settings.server_id,
+  };
+
+  // Apply overrides
+  if (requestBody.overrides) {
+    if (requestBody.overrides.memory) {
+      settings.memory = requestBody.overrides.memory;
+    }
+    if (requestBody.overrides.vcpus) {
+      settings.vcpus = requestBody.overrides.vcpus;
+    }
+  }
+
+  // Remove consoleport to avoid conflict
+  delete settings.consoleport;
+
+  // 2. Disks
+  const disks = {
+    boot: {
+      ...sourceConfig.disks.boot,
+      source: {
+        type: 'template',
+        template_dataset: snapshotInfo.bootDataset,
+        snapshot_name: snapshotInfo.bootSnapshotName,
+        clone_strategy: requestBody.clone_strategy || 'clone',
+      },
+    },
+    additional: [],
+  };
+
+  // Process additional disks
+  if (sourceConfig.disks && sourceConfig.disks.additional) {
+    for (const disk of sourceConfig.disks.additional) {
+      const dataset = `${disk.pool}/${disk.dataset}/${disk.volume_name}`;
+      const snap = snapshotInfo.additionalSnapshots.find(s => s.dataset === dataset);
+
+      if (snap) {
+        // Clone from snapshot
+        disks.additional.push({
+          ...disk,
+          source: {
+            type: 'template',
+            template_dataset: dataset,
+            snapshot_name: snap.snapshotName,
+            clone_strategy: requestBody.clone_strategy || 'clone',
+          },
+        });
+      } else {
+        // Create empty (snapshot failed or not found)
+        disks.additional.push({ ...disk });
+      }
+    }
+  }
+
+  // 3. Networks
+  const networks = [];
+  const assignedIps = [];
+  if (sourceConfig.networks) {
+    for (const net of sourceConfig.networks) {
+      if (net.provisional) {
+        // eslint-disable-next-line no-await-in-loop
+        const nextIp = await getNextProvisioningIP(assignedIps);
+        if (nextIp) {
+          assignedIps.push(nextIp);
+        }
+        networks.push({
+          ...net,
+          address: nextIp || '', // Empty if no IP available
+        });
+      } else {
+        // Strip IP info for non-provisional networks
+        const netCopy = { ...net };
+        delete netCopy.address;
+        delete netCopy.gateway;
+        delete netCopy.dns;
+        delete netCopy.netmask;
+        networks.push(netCopy);
+      }
+    }
+  }
+
+  // 4. NICs - Strip physical names and MACs to force auto-generation
+  const nics = [];
+  if (sourceConfig.nics) {
+    for (const nic of sourceConfig.nics) {
+      const nicCopy = { ...nic };
+      delete nicCopy.physical;
+      delete nicCopy.mac_addr;
+      nics.push(nicCopy);
+    }
+  }
+
+  return {
+    settings,
+    zones: sourceConfig.zones,
+    networks,
+    disks,
+    nics,
+    cloud_init: sourceConfig.cloud_init,
+    name: newZoneName, // Base name for task
+  };
+};
+
+/**
+ * @swagger
+ * /zones/{zoneName}/clone:
+ *   post:
+ *     summary: Clone a zone
+ *     description: Creates a copy of an existing zone using ZFS snapshots and clones.
+ *     tags: [Zone Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: zoneName
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [settings]
+ *             properties:
+ *               settings:
+ *                 type: object
+ *                 required: [hostname, server_id]
+ *                 properties:
+ *                   hostname:
+ *                     type: string
+ *                   domain:
+ *                     type: string
+ *                   server_id:
+ *                     type: string
+ *               clone_strategy:
+ *                 type: string
+ *                 enum: [clone, copy]
+ *                 default: clone
+ *               start_after_create:
+ *                 type: boolean
+ *                 default: false
+ *               reprovision:
+ *                 type: boolean
+ *                 default: false
+ *               overrides:
+ *                 type: object
+ *                 properties:
+ *                   memory:
+ *                     type: string
+ *                   vcpus:
+ *                     integer: string
+ *     responses:
+ *       202:
+ *         description: Clone task queued
+ */
+export const cloneZone = async (req, res) => {
+  try {
+    const { zoneName } = req.params;
+    const { settings, start_after_create = false, reprovision = false } = req.body;
+
+    if (!settings || !settings.hostname || !settings.server_id) {
+      return res
+        .status(400)
+        .json({ error: 'settings.hostname and settings.server_id are required' });
+    }
+
+    // 1. Fetch source zone
+    const sourceZone = await Zones.findOne({ where: { name: zoneName } });
+    if (!sourceZone) {
+      return res.status(404).json({ error: 'Source zone not found' });
+    }
+
+    if (!sourceZone.configuration) {
+      return res.status(400).json({ error: 'Source zone has no configuration data' });
+    }
+
+    // 2. Resolve new zone name
+    // Use domain from source if not provided
+    if (!settings.domain) {
+      let sourceConfig = sourceZone.configuration;
+      if (typeof sourceConfig === 'string') {
+        sourceConfig = JSON.parse(sourceConfig);
+      }
+      if (sourceConfig.settings && sourceConfig.settings.domain) {
+        settings.domain = sourceConfig.settings.domain;
+      }
+    }
+
+    const fullBaseName = `${settings.hostname}.${settings.domain}`;
+    const nameResult = await resolveZoneName(fullBaseName, settings);
+    if (!nameResult.success) {
+      return res.status(nameResult.error.status).json(nameResult.error);
+    }
+    const { finalZoneName } = nameResult;
+
+    // 3. Check if new zone exists
+    const existingZone = await Zones.findOne({ where: { name: finalZoneName } });
+    if (existingZone) {
+      return res.status(409).json({ error: `Zone ${finalZoneName} already exists` });
+    }
+
+    // 4. Create snapshots
+    const snapshotInfo = await createCloneSnapshots(sourceZone);
+
+    // 5. Build metadata
+    const cloneMetadata = await buildCloneMetadata(
+      sourceZone,
+      req.body,
+      snapshotInfo,
+      fullBaseName
+    );
+
+    // 6. Validate resources
+    const resourceValidation = await validateZoneCreationResources(cloneMetadata);
+    if (!resourceValidation.valid) {
+      return res.status(400).json({
+        error: 'Insufficient resources for clone',
+        details: resourceValidation.errors,
+      });
+    }
+
+    // 7. Create orchestration tasks
+    const parentTask = await Tasks.create({
+      zone_name: finalZoneName,
+      operation: 'zone_clone_orchestration',
+      priority: TaskPriority.MEDIUM,
+      created_by: req.entity.name,
+      metadata: JSON.stringify(cloneMetadata),
+      status: 'pending',
+    });
+
+    const { subTasks } = await createZoneCreationSubTasks(
+      finalZoneName,
+      cloneMetadata,
+      parentTask.id,
+      null,
+      start_after_create,
+      req.entity.name
+    );
+
+    // 8. Handle reprovisioning (optional)
+    if (reprovision) {
+      // Logic to queue setup/provision tasks would go here
+      // For now, we'll stick to the creation pipeline
+    }
+
+    return res.status(202).json({
+      success: true,
+      parent_task_id: parentTask.id,
+      zone_name: finalZoneName,
+      source_zone: zoneName,
+      operation: 'zone_clone_orchestration',
+      status: 'pending',
+      message: 'Zone clone queued',
+      sub_tasks: subTasks,
+    });
+  } catch (error) {
+    log.api.error('Error cloning zone', { error: error.message, stack: error.stack });
+    return res.status(500).json({ error: 'Failed to clone zone', details: error.message });
+  }
+};

@@ -25,6 +25,7 @@ import {
   modifyZone,
   bulkStartZones,
   bulkStopZones,
+  cloneZone,
 } from '../controllers/ZoneManagement.js';
 import { getServerIds, getNextServerId } from '../controllers/ZoneServerIds.js';
 import {
@@ -507,6 +508,7 @@ router.post('/zones/:zoneName/start', verifyApiKey, startZone); // Start zone
 router.post('/zones/:zoneName/stop', verifyApiKey, stopZone); // Stop zone
 router.post('/zones/:zoneName/restart', verifyApiKey, restartZone); // Restart zone
 router.delete('/zones/:zoneName', verifyApiKey, deleteZone); // Delete zone
+router.post('/zones/:zoneName/clone', verifyApiKey, cloneZone); // Clone zone
 
 // Zone Provisioning Routes
 router.post('/zones/:name/provision', verifyApiKey, provisionZone); // Start provisioning pipeline

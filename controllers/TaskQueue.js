@@ -326,6 +326,7 @@ const OPERATION_CATEGORIES = {
   zone_provision: 'zone_lifecycle',
   zone_provision_parent: 'zone_lifecycle',
   zone_provision_orchestration: 'zone_lifecycle',
+  zone_clone_orchestration: 'zone_lifecycle',
 };
 
 /**
@@ -880,6 +881,7 @@ const TASK_OBJECT_OPERATIONS = {
   zone_wait_ssh: executeZoneWaitSSHTask,
   zone_sync: executeZoneSyncTask,
   zone_provision: executeZoneProvisionTask,
+  zone_clone_orchestration: () => ({ success: true, message: 'Clone orchestration completed' }),
 };
 
 /**
@@ -890,6 +892,7 @@ const PARENT_OPERATIONS = [
   'zone_provision_orchestration',
   'zone_sync_parent',
   'zone_provision_parent',
+  'zone_clone_orchestration',
 ];
 
 /**
