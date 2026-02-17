@@ -225,7 +225,7 @@ import {
   modifyRepository,
   enableRepository,
   disableRepository,
-} from '../controllers/RepositoryController.js';
+} from '../controllers/RepositoryController/index.js';
 import {
   getTimeSyncStatus,
   getTimeSyncConfig,
