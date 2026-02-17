@@ -344,7 +344,7 @@ import {
   createArchiveTask,
   extractArchiveTask,
   changePermissions,
-} from '../controllers/FileSystemController.js';
+} from '../controllers/FileSystemController/index.js';
 import {
   getCurrentUserInfo,
   getSystemUsers,
