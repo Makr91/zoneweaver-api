@@ -1,7 +1,7 @@
 import yj from 'yieldable-json';
 import { executeCommand } from '../../lib/CommandManager.js';
 import { log } from '../../lib/Logger.js';
-import { checkZvolInUse } from './ZoneCreationManager.js';
+import { checkZvolInUse } from './ZoneCreationManager/index.js';
 import { getZoneConfig, syncZoneToDatabase } from '../../lib/ZoneConfigUtils.js';
 import Zones from '../../models/ZoneModel.js';
 import { updateTaskProgress } from '../../lib/TaskProgressHelper.js';

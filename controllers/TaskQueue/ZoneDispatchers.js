@@ -16,7 +16,7 @@ import {
   executeZoneCreateConfigTask,
   executeZoneCreateInstallTask,
   executeZoneCreateFinalizeTask,
-} from '../TaskManager/ZoneCreationManager.js';
+} from '../TaskManager/ZoneCreationManager/index.js';
 import { executeZoneModifyTask } from '../TaskManager/ZoneModificationManager.js';
 import { executeZoneSetupTask } from '../TaskManager/ZoneSetupManager.js';
 import {
