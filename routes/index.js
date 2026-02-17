@@ -258,7 +258,7 @@ import {
   holdSnapshot,
   releaseSnapshot,
   listHolds,
-} from '../controllers/ZFSDatasetController.js';
+} from '../controllers/ZFSDatasetController/index.js';
 import {
   listPools,
   getPoolDetails,

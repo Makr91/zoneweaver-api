@@ -1,0 +1,209 @@
+import { executeCommand } from './utils/CommandExecutor.js';
+import Tasks, { TaskPriority } from '../../models/TaskModel.js';
+import yj from 'yieldable-json';
+import { log } from '../../lib/Logger.js';
+
+/**
+ * @fileoverview ZFS dataset clone and promote controllers
+ */
+
+/**
+ * @swagger
+ * /storage/datasets/{name}/clone:
+ *   post:
+ *     summary: Clone ZFS snapshot
+ *     description: Clones a snapshot to a new dataset (async task)
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Snapshot name (dataset@snapshot)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - target
+ *             properties:
+ *               target:
+ *                 type: string
+ *                 description: Target dataset name
+ *               properties:
+ *                 type: object
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Clone task created
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to create task
+ */
+export const cloneDataset = async (req, res) => {
+  const { name: snapshot } = req.params;
+  const { target, properties = {}, created_by = 'api' } = req.body;
+
+  try {
+    if (!snapshot) {
+      return res.status(400).json({ error: 'Snapshot name is required' });
+    }
+
+    if (!target) {
+      return res.status(400).json({ error: 'Target dataset name is required' });
+    }
+
+    if (!snapshot.includes('@')) {
+      return res.status(400).json({ error: 'Snapshot must be in format dataset@snapshot' });
+    }
+
+    const result = await executeCommand(`pfexec zfs list -t snapshot ${snapshot}`);
+    if (!result.success) {
+      return res.status(404).json({
+        error: `Snapshot ${snapshot} not found`,
+        details: result.error,
+      });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'zfs_clone_dataset',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            snapshot,
+            target,
+            properties,
+          },
+          (err, jsonResult) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(jsonResult);
+            }
+          }
+        );
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Clone task created from ${snapshot} to ${target}`,
+      task_id: task.id,
+      snapshot,
+      target,
+    });
+  } catch (error) {
+    log.api.error('Error cloning dataset', {
+      error: error.message,
+      stack: error.stack,
+      snapshot,
+      target,
+    });
+    return res.status(500).json({
+      error: 'Failed to create clone task',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /storage/datasets/{name}/promote:
+ *   post:
+ *     summary: Promote ZFS clone
+ *     description: Promotes a clone to an independent dataset (async task)
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Promote task created
+ *       404:
+ *         description: Dataset not found
+ *       500:
+ *         description: Failed to create task
+ */
+export const promoteDataset = async (req, res) => {
+  const { name } = req.params;
+  const { created_by = 'api' } = req.body;
+
+  try {
+    if (!name) {
+      return res.status(400).json({ error: 'Dataset name is required' });
+    }
+
+    const result = await executeCommand(`pfexec zfs list ${name}`);
+    if (!result.success) {
+      return res.status(404).json({
+        error: `Dataset ${name} not found`,
+        details: result.error,
+      });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'zfs_promote_dataset',
+      priority: TaskPriority.HIGH,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name,
+          },
+          (err, jsonResult) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(jsonResult);
+            }
+          }
+        );
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Promote task created for ${name}`,
+      task_id: task.id,
+      name,
+    });
+  } catch (error) {
+    log.api.error('Error promoting dataset', {
+      error: error.message,
+      stack: error.stack,
+      name,
+    });
+    return res.status(500).json({
+      error: 'Failed to create promote task',
+      details: error.message,
+    });
+  }
+};

@@ -1,0 +1,326 @@
+import { executeCommand } from './utils/CommandExecutor.js';
+import Tasks, { TaskPriority } from '../../models/TaskModel.js';
+import yj from 'yieldable-json';
+import { log } from '../../lib/Logger.js';
+
+/**
+ * @fileoverview ZFS snapshot lifecycle controllers - create, destroy, rollback
+ */
+
+/**
+ * @swagger
+ * /storage/datasets/{name}/snapshots:
+ *   post:
+ *     summary: Create ZFS snapshot
+ *     description: Creates a snapshot of a dataset (async task)
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Dataset name
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - snapshot_name
+ *             properties:
+ *               snapshot_name:
+ *                 type: string
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               properties:
+ *                 type: object
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Snapshot task created
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Dataset not found
+ *       500:
+ *         description: Failed to create task
+ */
+export const createSnapshot = async (req, res) => {
+  const { name } = req.params;
+  const { snapshot_name, recursive = false, properties = {}, created_by = 'api' } = req.body;
+
+  try {
+    if (!name) {
+      return res.status(400).json({ error: 'Dataset name is required' });
+    }
+
+    if (!snapshot_name) {
+      return res.status(400).json({ error: 'Snapshot name is required' });
+    }
+
+    const fullSnapshotName = `${name}@${snapshot_name}`;
+
+    const result = await executeCommand(`pfexec zfs list ${name}`);
+    if (!result.success) {
+      return res.status(404).json({
+        error: `Dataset ${name} not found`,
+        details: result.error,
+      });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'zfs_create_snapshot',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            name: fullSnapshotName,
+            recursive: recursive === 'true' || recursive === true,
+            properties,
+          },
+          (err, jsonResult) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(jsonResult);
+            }
+          }
+        );
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Snapshot creation task created for ${fullSnapshotName}`,
+      task_id: task.id,
+      snapshot: fullSnapshotName,
+    });
+  } catch (error) {
+    log.api.error('Error creating snapshot', {
+      error: error.message,
+      stack: error.stack,
+      name,
+      snapshot_name,
+    });
+    return res.status(500).json({
+      error: 'Failed to create snapshot task',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /storage/snapshots/{snapshot}:
+ *   delete:
+ *     summary: Destroy ZFS snapshot
+ *     description: Destroys a ZFS snapshot (async task)
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: snapshot
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Snapshot name (dataset@snapshot)
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               defer:
+ *                 type: boolean
+ *                 default: false
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Destruction task created
+ *       400:
+ *         description: Invalid snapshot name
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to create task
+ */
+export const destroySnapshot = async (req, res) => {
+  const { snapshot } = req.params;
+  const { recursive = false, defer = false, created_by = 'api' } = req.body;
+
+  try {
+    if (!snapshot) {
+      return res.status(400).json({ error: 'Snapshot name is required' });
+    }
+
+    if (!snapshot.includes('@')) {
+      return res.status(400).json({ error: 'Snapshot must be in format dataset@snapshot' });
+    }
+
+    const result = await executeCommand(`pfexec zfs list -t snapshot ${snapshot}`);
+    if (!result.success) {
+      return res.status(404).json({
+        error: `Snapshot ${snapshot} not found`,
+        details: result.error,
+      });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'zfs_destroy_snapshot',
+      priority: TaskPriority.HIGH,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            snapshot,
+            recursive: recursive === 'true' || recursive === true,
+            defer: defer === 'true' || defer === true,
+          },
+          (err, jsonResult) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(jsonResult);
+            }
+          }
+        );
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Snapshot destruction task created for ${snapshot}`,
+      task_id: task.id,
+      snapshot,
+    });
+  } catch (error) {
+    log.api.error('Error destroying snapshot', {
+      error: error.message,
+      stack: error.stack,
+      snapshot,
+    });
+    return res.status(500).json({
+      error: 'Failed to create snapshot destruction task',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /storage/snapshots/{snapshot}/rollback:
+ *   post:
+ *     summary: Rollback ZFS snapshot
+ *     description: Rolls back a dataset to a previous snapshot (async task)
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: snapshot
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               force:
+ *                 type: boolean
+ *                 default: false
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Rollback task created
+ *       400:
+ *         description: Invalid snapshot name
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to create task
+ */
+export const rollbackSnapshot = async (req, res) => {
+  const { snapshot } = req.params;
+  const { recursive = false, force = false, created_by = 'api' } = req.body;
+
+  try {
+    if (!snapshot) {
+      return res.status(400).json({ error: 'Snapshot name is required' });
+    }
+
+    if (!snapshot.includes('@')) {
+      return res.status(400).json({ error: 'Snapshot must be in format dataset@snapshot' });
+    }
+
+    const result = await executeCommand(`pfexec zfs list -t snapshot ${snapshot}`);
+    if (!result.success) {
+      return res.status(404).json({
+        error: `Snapshot ${snapshot} not found`,
+        details: result.error,
+      });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'zfs_rollback_snapshot',
+      priority: TaskPriority.CRITICAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            snapshot,
+            recursive: recursive === 'true' || recursive === true,
+            force: force === 'true' || force === true,
+          },
+          (err, jsonResult) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(jsonResult);
+            }
+          }
+        );
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Rollback task created for ${snapshot}`,
+      task_id: task.id,
+      snapshot,
+    });
+  } catch (error) {
+    log.api.error('Error rolling back snapshot', {
+      error: error.message,
+      stack: error.stack,
+      snapshot,
+    });
+    return res.status(500).json({
+      error: 'Failed to create rollback task',
+      details: error.message,
+    });
+  }
+};
