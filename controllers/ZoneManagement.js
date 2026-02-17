@@ -407,7 +407,7 @@ const handleAutoDownload = async (
  *         name: status
  *         schema:
  *           type: string
- *           enum: [running, configured, installed, stopped]
+ *           enum: [configured, incomplete, installed, ready, running, shutting_down, down]
  *         description: Filter zones by status
  *       - in: query
  *         name: tag

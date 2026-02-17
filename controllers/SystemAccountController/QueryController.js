@@ -16,6 +16,38 @@ import { log } from '../../lib/Logger.js';
 
 /**
  * @swagger
+ * components:
+ *   schemas:
+ *     SystemUser:
+ *       type: object
+ *       properties:
+ *         username:
+ *           type: string
+ *         uid:
+ *           type: integer
+ *         gid:
+ *           type: integer
+ *         home:
+ *           type: string
+ *         shell:
+ *           type: string
+ *         comment:
+ *           type: string
+ *     SystemGroup:
+ *       type: object
+ *       properties:
+ *         groupname:
+ *           type: string
+ *         gid:
+ *           type: integer
+ *         members:
+ *           type: array
+ *           items:
+ *             type: string
+ */
+
+/**
+ * @swagger
  * /system/user-info:
  *   get:
  *     summary: Get current API user information
@@ -145,20 +177,7 @@ export const getCurrentUserInfo = async (req, res) => {
  *                 users:
  *                   type: array
  *                   items:
- *                     type: object
- *                     properties:
- *                       username:
- *                         type: string
- *                       uid:
- *                         type: integer
- *                       gid:
- *                         type: integer
- *                       home:
- *                         type: string
- *                       shell:
- *                         type: string
- *                       comment:
- *                         type: string
+ *                     $ref: '#/components/schemas/SystemUser'
  *                 total_users:
  *                   type: integer
  *       500:
@@ -222,16 +241,7 @@ export const getUsers = async (req, res) => {
  *                 groups:
  *                   type: array
  *                   items:
- *                     type: object
- *                     properties:
- *                       groupname:
- *                         type: string
- *                       gid:
- *                         type: integer
- *                       members:
- *                         type: array
- *                         items:
- *                           type: string
+ *                     $ref: '#/components/schemas/SystemGroup'
  *                 total_groups:
  *                   type: integer
  *       500:

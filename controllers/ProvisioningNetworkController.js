@@ -124,6 +124,25 @@ const detectActiveInterface = async () => {
  *     responses:
  *       200:
  *         description: Provisioning network status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 enabled:
+ *                   type: boolean
+ *                 ready:
+ *                   type: boolean
+ *                 components:
+ *                   type: object
+ *                   properties:
+ *                     etherstub: { type: object }
+ *                     vnic: { type: object }
+ *                     ip_address: { type: object }
+ *                     nat: { type: object }
+ *                     dhcp: { type: object }
+ *                 config:
+ *                   type: object
  *       500:
  *         description: Failed to check provisioning network status
  */

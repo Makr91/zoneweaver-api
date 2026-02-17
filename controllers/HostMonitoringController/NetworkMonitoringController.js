@@ -63,9 +63,25 @@ import { log } from '../../lib/Logger.js';
  *         schema:
  *           type: string
  *         description: Filter by interface state (up, down)
+ *       - in: query
+ *         name: link
+ *         schema:
+ *           type: string
+ *         description: Filter by link name
  *     responses:
  *       200:
  *         description: Network interface data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 interfaces:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/NetworkInterface'
+ *                 totalCount:
+ *                   type: integer
  *       500:
  *         description: Failed to get network interfaces
  */
@@ -128,9 +144,26 @@ export const getNetworkInterfaces = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Filter by interface/link name
+ *       - in: query
+ *         name: per_interface
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Group results per interface (if false, returns raw list)
  *     responses:
  *       200:
  *         description: Network usage data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 usage:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/NetworkUsage'
+ *                 totalCount:
+ *                   type: integer
  *       500:
  *         description: Failed to get network usage
  */
@@ -327,6 +360,17 @@ export const getNetworkUsage = async (req, res) => {
  *     responses:
  *       200:
  *         description: IP address data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 addresses:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/IPAddress'
+ *                 returned:
+ *                   type: integer
  *       500:
  *         description: Failed to get IP addresses
  */
@@ -416,6 +460,17 @@ export const getIPAddresses = async (req, res) => {
  *     responses:
  *       200:
  *         description: Routing table data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 routes:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Route'
+ *                 returned:
+ *                   type: integer
  *       500:
  *         description: Failed to get routing table
  */

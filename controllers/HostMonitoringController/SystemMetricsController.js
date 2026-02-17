@@ -51,6 +51,19 @@ import { log } from '../../lib/Logger.js';
  *     responses:
  *       200:
  *         description: CPU statistics data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 cpu:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/CPUStats'
+ *                 latest:
+ *                   $ref: '#/components/schemas/CPUStats'
+ *                 totalCount:
+ *                   type: integer
  *       500:
  *         description: Failed to get CPU statistics
  */
@@ -207,6 +220,19 @@ export const getCPUStats = async (req, res) => {
  *     responses:
  *       200:
  *         description: Memory statistics data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 memory:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/MemoryStats'
+ *                 latest:
+ *                   $ref: '#/components/schemas/MemoryStats'
+ *                 totalCount:
+ *                   type: integer
  *       500:
  *         description: Failed to get memory statistics
  */

@@ -57,12 +57,6 @@ const executeCommand = async command => {
  *           type: integer
  *           default: 100
  *         description: Maximum number of etherstubs to return
- *       - in: query
- *         name: live
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Get live data directly from dladm instead of database
  *     responses:
  *       200:
  *         description: Etherstubs retrieved successfully
@@ -143,18 +137,6 @@ export const getEtherstubs = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Etherstub name
- *       - in: query
- *         name: live
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Get live data directly from dladm
- *       - in: query
- *         name: show_vnics
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Include VNICs created on this etherstub
  *     responses:
  *       200:
  *         description: Etherstub details retrieved successfully

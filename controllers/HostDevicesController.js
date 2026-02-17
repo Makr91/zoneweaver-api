@@ -249,6 +249,17 @@ export const listDevices = async (req, res) => {
  *     responses:
  *       200:
  *         description: Available devices retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available_devices:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/PCIDevice'
+ *                 total:
+ *                   type: integer
  */
 export const listAvailableDevices = async (req, res) => {
   const { category, ppt_only = false } = req.query;

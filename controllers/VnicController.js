@@ -68,12 +68,6 @@ const executeCommand = async command => {
  *           type: integer
  *           default: 100
  *         description: Maximum number of VNICs to return
- *       - in: query
- *         name: live
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Get live data directly from dladm instead of database
  *     responses:
  *       200:
  *         description: VNICs retrieved successfully
@@ -174,12 +168,6 @@ export const getVNICs = async (req, res) => {
  *         schema:
  *           type: string
  *         description: VNIC name
- *       - in: query
- *         name: live
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Get live data directly from dladm
  *     responses:
  *       200:
  *         description: VNIC details retrieved successfully

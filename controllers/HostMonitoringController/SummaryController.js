@@ -24,15 +24,13 @@ import { log } from '../../lib/Logger.js';
  *     summary: Get host information
  *     description: Returns general host information and monitoring status
  *     tags: [Host Monitoring]
- *     parameters:
- *       - in: query
- *         name: host
- *         schema:
- *           type: string
- *         description: Specific host to query (defaults to current host)
  *     responses:
  *       200:
  *         description: Host information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HostInfo'
  *       404:
  *         description: Host not found
  *       500:

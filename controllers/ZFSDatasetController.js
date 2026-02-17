@@ -29,6 +29,63 @@ const executeCommand = async command => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets:
+ *   get:
+ *     summary: List ZFS datasets
+ *     description: Retrieves a list of ZFS datasets
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: pool
+ *         schema:
+ *           type: string
+ *         description: Filter by pool name
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [filesystem, volume, snapshot, bookmark]
+ *         description: Filter by dataset type
+ *       - in: query
+ *         name: recursive
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: List recursively
+ *     responses:
+ *       200:
+ *         description: List of datasets
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 datasets:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       type:
+ *                         type: string
+ *                       used:
+ *                         type: string
+ *                       avail:
+ *                         type: string
+ *                       refer:
+ *                         type: string
+ *                       mountpoint:
+ *                         type: string
+ *                 total:
+ *                   type: integer
+ *       500:
+ *         description: Failed to list datasets
+ */
 export const listDatasets = async (req, res) => {
   const { pool, type, recursive = false } = req.query;
 
@@ -87,6 +144,46 @@ export const listDatasets = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets/{name}:
+ *   get:
+ *     summary: Get dataset details
+ *     description: Retrieves detailed properties of a ZFS dataset
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Dataset name (URL encoded)
+ *     responses:
+ *       200:
+ *         description: Dataset details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 name:
+ *                   type: string
+ *                 properties:
+ *                   type: object
+ *                   additionalProperties:
+ *                     type: object
+ *                     properties:
+ *                       value:
+ *                         type: string
+ *                       source:
+ *                         type: string
+ *       404:
+ *         description: Dataset not found
+ *       500:
+ *         description: Failed to get dataset details
+ */
 export const getDatasetDetails = async (req, res) => {
   const { name } = req.params;
 
@@ -130,6 +227,44 @@ export const getDatasetDetails = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets:
+ *   post:
+ *     summary: Create ZFS dataset
+ *     description: Creates a new ZFS dataset or volume (async task)
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Dataset name
+ *               type:
+ *                 type: string
+ *                 enum: [filesystem, volume]
+ *                 default: filesystem
+ *               properties:
+ *                 type: object
+ *                 description: ZFS properties to set
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Dataset creation task created
+ *       400:
+ *         description: Invalid request
+ *       500:
+ *         description: Failed to create task
+ */
 export const createDataset = async (req, res) => {
   const { name, type = 'filesystem', properties = {}, created_by = 'api' } = req.body;
 
@@ -190,6 +325,43 @@ export const createDataset = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets/{name}:
+ *   delete:
+ *     summary: Destroy ZFS dataset
+ *     description: Destroys a ZFS dataset (async task)
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               force:
+ *                 type: boolean
+ *                 default: false
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Destruction task created
+ *       404:
+ *         description: Dataset not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const destroyDataset = async (req, res) => {
   const { name } = req.params;
   const { recursive = false, force = false, created_by = 'api' } = req.body;
@@ -252,6 +424,42 @@ export const destroyDataset = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets/{name}/properties:
+ *   put:
+ *     summary: Set dataset properties
+ *     description: Updates ZFS properties for a dataset (async task)
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - properties
+ *             properties:
+ *               properties:
+ *                 type: object
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Property update task created
+ *       404:
+ *         description: Dataset not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const setDatasetProperties = async (req, res) => {
   const { name } = req.params;
   const { properties, created_by = 'api' } = req.body;
@@ -316,8 +524,50 @@ export const setDatasetProperties = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets/{name}/clone:
+ *   post:
+ *     summary: Clone ZFS snapshot
+ *     description: Clones a snapshot to a new dataset (async task)
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Snapshot name (dataset@snapshot)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - target
+ *             properties:
+ *               target:
+ *                 type: string
+ *                 description: Target dataset name
+ *               properties:
+ *                 type: object
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Clone task created
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const cloneDataset = async (req, res) => {
-  const { snapshot } = req.params;
+  const { name: snapshot } = req.params;
   const { target, properties = {}, created_by = 'api' } = req.body;
 
   try {
@@ -386,6 +636,37 @@ export const cloneDataset = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets/{name}/promote:
+ *   post:
+ *     summary: Promote ZFS clone
+ *     description: Promotes a clone to an independent dataset (async task)
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Promote task created
+ *       404:
+ *         description: Dataset not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const promoteDataset = async (req, res) => {
   const { name } = req.params;
   const { created_by = 'api' } = req.body;
@@ -444,6 +725,50 @@ export const promoteDataset = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets/{name}/rename:
+ *   post:
+ *     summary: Rename ZFS dataset
+ *     description: Renames a ZFS dataset (async task)
+ *     tags: [ZFS Datasets]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - new_name
+ *             properties:
+ *               new_name:
+ *                 type: string
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               force:
+ *                 type: boolean
+ *                 default: false
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Rename task created
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Dataset not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const renameDataset = async (req, res) => {
   const { name } = req.params;
   const { new_name, recursive = false, force = false, created_by = 'api' } = req.body;
@@ -511,6 +836,50 @@ export const renameDataset = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/datasets/{name}/snapshots:
+ *   post:
+ *     summary: Create ZFS snapshot
+ *     description: Creates a snapshot of a dataset (async task)
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Dataset name
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - snapshot_name
+ *             properties:
+ *               snapshot_name:
+ *                 type: string
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               properties:
+ *                 type: object
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Snapshot task created
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Dataset not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const createSnapshot = async (req, res) => {
   const { name } = req.params;
   const { snapshot_name, recursive = false, properties = {}, created_by = 'api' } = req.body;
@@ -578,6 +947,46 @@ export const createSnapshot = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/snapshots/{snapshot}:
+ *   delete:
+ *     summary: Destroy ZFS snapshot
+ *     description: Destroys a ZFS snapshot (async task)
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: snapshot
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Snapshot name (dataset@snapshot)
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               defer:
+ *                 type: boolean
+ *                 default: false
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Destruction task created
+ *       400:
+ *         description: Invalid snapshot name
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const destroySnapshot = async (req, res) => {
   const { snapshot } = req.params;
   const { recursive = false, defer = false, created_by = 'api' } = req.body;
@@ -642,6 +1051,45 @@ export const destroySnapshot = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/snapshots/{snapshot}/rollback:
+ *   post:
+ *     summary: Rollback ZFS snapshot
+ *     description: Rolls back a dataset to a previous snapshot (async task)
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: snapshot
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               force:
+ *                 type: boolean
+ *                 default: false
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Rollback task created
+ *       400:
+ *         description: Invalid snapshot name
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const rollbackSnapshot = async (req, res) => {
   const { snapshot } = req.params;
   const { recursive = false, force = false, created_by = 'api' } = req.body;
@@ -706,6 +1154,47 @@ export const rollbackSnapshot = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/snapshots/{snapshot}/holds:
+ *   post:
+ *     summary: Hold ZFS snapshot
+ *     description: Adds a hold tag to a snapshot (async task)
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: snapshot
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tag
+ *             properties:
+ *               tag:
+ *                 type: string
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Hold task created
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const holdSnapshot = async (req, res) => {
   const { snapshot } = req.params;
   const { tag, recursive = false, created_by = 'api' } = req.body;
@@ -776,6 +1265,47 @@ export const holdSnapshot = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/snapshots/{snapshot}/holds/{tag}:
+ *   delete:
+ *     summary: Release ZFS snapshot hold
+ *     description: Removes a hold tag from a snapshot (async task)
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: snapshot
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: tag
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               recursive:
+ *                 type: boolean
+ *                 default: false
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Release task created
+ *       400:
+ *         description: Invalid request
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to create task
+ */
 export const releaseSnapshot = async (req, res) => {
   const { snapshot, tag } = req.params;
   const { recursive = false, created_by = 'api' } = req.body;
@@ -846,6 +1376,56 @@ export const releaseSnapshot = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /storage/snapshots/{snapshot}/holds:
+ *   get:
+ *     summary: List snapshot holds
+ *     description: Lists holds on a specific snapshot
+ *     tags: [ZFS Snapshots]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: snapshot
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: recursive
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *     responses:
+ *       200:
+ *         description: List of holds
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 snapshot:
+ *                   type: string
+ *                 holds:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       tag:
+ *                         type: string
+ *                       timestamp:
+ *                         type: string
+ *                 total:
+ *                   type: integer
+ *       400:
+ *         description: Invalid snapshot name
+ *       404:
+ *         description: Snapshot not found
+ *       500:
+ *         description: Failed to list holds
+ */
 export const listHolds = async (req, res) => {
   const { snapshot } = req.params;
   const { recursive = false } = req.query;

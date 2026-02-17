@@ -1568,7 +1568,6 @@ export const stopTaskProcessor = () => {
  *         name: operation
  *         schema:
  *           type: string
- *           enum: [start, stop, restart, delete, discover]
  *         description: Filter by operation type
  *       - in: query
  *         name: operation_ne

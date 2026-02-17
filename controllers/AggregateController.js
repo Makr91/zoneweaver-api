@@ -50,29 +50,11 @@ const executeCommand = command => {
  *           enum: [up, down, unknown]
  *         description: Filter by aggregate state
  *       - in: query
- *         name: policy
- *         schema:
- *           type: string
- *           enum: [L2, L3, L4, L2L3, L2L4, L3L4, L2L3L4]
- *         description: Filter by load balancing policy
- *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 100
  *         description: Maximum number of aggregates to return
- *       - in: query
- *         name: live
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Get live data directly from dladm instead of database
- *       - in: query
- *         name: extended
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Include detailed port information
  *     responses:
  *       200:
  *         description: Aggregates retrieved successfully
@@ -162,24 +144,6 @@ export const getAggregates = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Aggregate link name
- *       - in: query
- *         name: live
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Get live data directly from dladm
- *       - in: query
- *         name: extended
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Include detailed port information
- *       - in: query
- *         name: lacp
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Include LACP information
  *     responses:
  *       200:
  *         description: Aggregate details retrieved successfully

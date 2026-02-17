@@ -57,6 +57,17 @@ import { log } from '../../lib/Logger.js';
  *     responses:
  *       200:
  *         description: ZFS pool data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pools:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ZFSPool'
+ *                 totalCount:
+ *                   type: integer
  *       500:
  *         description: Failed to get ZFS pools
  */
@@ -129,6 +140,17 @@ export const getZFSPools = async (req, res) => {
  *     responses:
  *       200:
  *         description: ZFS dataset data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 datasets:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ZFSDataset'
+ *                 totalCount:
+ *                   type: integer
  *       500:
  *         description: Failed to get ZFS datasets
  */
@@ -203,6 +225,17 @@ export const getZFSDatasets = async (req, res) => {
  *     responses:
  *       200:
  *         description: Physical disk data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 disks:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Disk'
+ *                 totalCount:
+ *                   type: integer
  *       500:
  *         description: Failed to get disk information
  */
@@ -273,9 +306,24 @@ export const getDisks = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Filter by device name (partial match)
+ *       - in: query
+ *         name: per_device
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Group results per device
  *     responses:
  *       200:
  *         description: Disk I/O statistics data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 diskio:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/DiskIOStats'
  *       500:
  *         description: Failed to get disk I/O statistics
  */
@@ -428,9 +476,24 @@ export const getDiskIOStats = async (req, res) => {
  *         schema:
  *           type: string
  *         description: Filter by pool type (raidz1, raidz2, mirror)
+ *       - in: query
+ *         name: per_pool
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Group results per pool
  *     responses:
  *       200:
  *         description: Pool I/O performance data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 poolio:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/PoolIOStats'
  *       500:
  *         description: Failed to get pool I/O statistics
  */
@@ -576,6 +639,17 @@ export const getPoolIOStats = async (req, res) => {
  *     responses:
  *       200:
  *         description: ARC statistics data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 arc:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ARCStats'
+ *                 latest:
+ *                   $ref: '#/components/schemas/ARCStats'
  *       500:
  *         description: Failed to get ARC statistics
  */
