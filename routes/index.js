@@ -26,7 +26,7 @@ import {
   bulkStartZones,
   bulkStopZones,
   cloneZone,
-} from '../controllers/ZoneManagement.js';
+} from '../controllers/ZoneManagement/index.js';
 import { getServerIds, getNextServerId } from '../controllers/ZoneServerIds.js';
 import {
   listTasks,
