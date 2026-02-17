@@ -23,6 +23,8 @@ import {
   deleteZone,
   createZone,
   modifyZone,
+  bulkStartZones,
+  bulkStopZones,
 } from '../controllers/ZoneManagement.js';
 import { getServerIds, getNextServerId } from '../controllers/ZoneServerIds.js';
 import {
@@ -412,6 +414,12 @@ import {
   testOrchestration,
 } from '../controllers/ZoneOrchestrationController.js';
 import { getHosts, updateHosts, getDns, updateDns } from '../controllers/HostConfigController.js';
+import {
+  getDatabaseStats,
+  vacuumDatabase,
+  analyzeDatabase,
+  triggerCleanup,
+} from '../controllers/DatabaseController.js';
 import config from '../config/ConfigLoader.js';
 
 const router = express.Router();
@@ -466,6 +474,10 @@ router.post('/zones/orchestration/enable', verifyApiKey, enableOrchestration); /
 router.post('/zones/orchestration/disable', verifyApiKey, disableOrchestration); // Disable zone orchestration control
 router.get('/zones/priorities', verifyApiKey, getZonePriorities); // List all zones with priorities
 router.post('/zones/orchestration/test', verifyApiKey, testOrchestration); // Test orchestration (dry run)
+
+// Bulk Zone Operations (MUST come before parameterized routes)
+router.post('/zones/bulk/start', verifyApiKey, bulkStartZones); // Bulk start zones
+router.post('/zones/bulk/stop', verifyApiKey, bulkStopZones); // Bulk stop zones
 
 // Zone Server ID Discovery Routes (must come before parameterized routes)
 router.get('/zones/ids/next', verifyApiKey, getNextServerId); // Get next available server ID
@@ -869,6 +881,12 @@ router.get('/system/hosts', verifyApiKey, getHosts); // Get /etc/hosts entries
 router.put('/system/hosts', verifyApiKey, updateHosts); // Update /etc/hosts entries
 router.get('/system/dns', verifyApiKey, getDns); // Get DNS configuration (/etc/resolv.conf)
 router.put('/system/dns', verifyApiKey, updateDns); // Update DNS configuration (/etc/resolv.conf)
+
+// Database Management Routes
+router.get('/database/stats', verifyApiKey, getDatabaseStats); // Get database statistics
+router.post('/database/vacuum', verifyApiKey, vacuumDatabase); // Run SQLite VACUUM
+router.post('/database/analyze', verifyApiKey, analyzeDatabase); // Run SQLite ANALYZE
+router.post('/database/cleanup', verifyApiKey, triggerCleanup); // Trigger manual cleanup
 
 // System Host Restart Operations (TaskQueue)
 router.post('/system/host/restart', verifyApiKey, restartHost); // Gracefully restart host system
