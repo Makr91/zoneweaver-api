@@ -287,6 +287,7 @@ import {
   deleteLocalTemplate,
   publishTemplate,
   exportTemplate,
+  moveTemplate,
 } from '../controllers/TemplateController.js';
 import {
   getFaults,
@@ -766,6 +767,7 @@ router.post('/templates/pull', verifyApiKey, downloadTemplate);
 router.delete('/templates/local/:templateId', verifyApiKey, deleteLocalTemplate);
 router.post('/templates/publish', verifyApiKey, publishTemplate);
 router.post('/templates/export', verifyApiKey, exportTemplate);
+router.post('/templates/local/:templateId/move', verifyApiKey, moveTemplate);
 
 // Fault Management Routes
 router.get('/system/fault-management/faults', verifyApiKey, getFaults); // List system faults

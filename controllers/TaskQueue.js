@@ -135,6 +135,7 @@ import {
   executeTemplateDeleteTask,
   executeTemplatePublishTask,
   executeTemplateExportTask,
+  executeTemplateMoveTask,
 } from './TaskManager/TemplateManager.js';
 import {
   executeZoneCreateStorageTask,
@@ -308,6 +309,7 @@ const OPERATION_CATEGORIES = {
   template_upload: 'template',
   template_delete: 'template',
   template_export: 'template',
+  template_move: 'template',
 
   // Zone lifecycle operations
   zone_create_orchestration: 'zone_lifecycle',
@@ -691,6 +693,8 @@ const executeTemplateTask = (operation, metadata) => {
       return executeTemplatePublishTask(metadata);
     case 'template_export':
       return executeTemplateExportTask(metadata);
+    case 'template_move':
+      return executeTemplateMoveTask(metadata);
     default:
       return { success: false, error: `Unknown template operation: ${operation}` };
   }

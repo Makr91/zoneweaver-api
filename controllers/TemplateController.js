@@ -568,3 +568,119 @@ export const exportTemplate = async (req, res) => {
     return res.status(500).json({ error: 'Failed to create export task' });
   }
 };
+
+/**
+ * @swagger
+ * /templates/local/{templateId}/move:
+ *   post:
+ *     summary: Move template to a different ZFS pool or path
+ *     description: |
+ *       Moves a template's underlying ZFS dataset to a different pool/location (async task).
+ *       Same-pool moves use zfs rename (instant). Cross-pool moves use zfs send/recv.
+ *       If the template has dependent ZFS clones (zones created via clone strategy),
+ *       cross-pool moves are blocked unless force_promote is set to true.
+ *     tags: [Template Management]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: templateId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               target_pool:
+ *                 type: string
+ *                 description: Target pool name (API constructs path automatically)
+ *               target_path:
+ *                 type: string
+ *                 description: Explicit target ZFS dataset path (takes precedence over target_pool)
+ *               force_promote:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Auto-promote a dependent clone to allow cross-pool move
+ *               created_by:
+ *                 type: string
+ *     responses:
+ *       202:
+ *         description: Move task created
+ *       400:
+ *         description: Missing required fields or invalid target
+ *       404:
+ *         description: Template not found
+ *       409:
+ *         description: Target dataset path conflicts with existing template
+ */
+export const moveTemplate = async (req, res) => {
+  const { templateId } = req.params;
+  const { target_pool, target_path, force_promote = false, created_by = 'api' } = req.body || {};
+
+  try {
+    if (!target_pool && !target_path) {
+      return res.status(400).json({ error: 'Either target_pool or target_path is required' });
+    }
+
+    const template = await Template.findByPk(templateId);
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    // Compute target dataset path
+    const targetDatasetPath = target_path
+      ? target_path
+      : `${target_pool}/templates/${template.organization}/${template.box_name}/${template.version}`;
+
+    // Validate source != target
+    if (targetDatasetPath === template.dataset_path) {
+      return res.status(400).json({
+        error: 'Target path is the same as current path',
+        current_path: template.dataset_path,
+      });
+    }
+
+    // Check for DB conflict on target path
+    const conflicting = await Template.findOne({
+      where: { dataset_path: targetDatasetPath },
+    });
+    if (conflicting) {
+      return res.status(409).json({
+        error: 'A template already exists at the target dataset path',
+        conflicting_template_id: conflicting.id,
+        target_path: targetDatasetPath,
+      });
+    }
+
+    const task = await Tasks.create({
+      zone_name: 'system',
+      operation: 'template_move',
+      priority: TaskPriority.NORMAL,
+      created_by,
+      status: 'pending',
+      metadata: await new Promise((resolve, reject) => {
+        yj.stringifyAsync(
+          {
+            template_id: templateId,
+            target_dataset_path: targetDatasetPath,
+            force_promote,
+          },
+          (err, jsonResult) => (err ? reject(err) : resolve(jsonResult))
+        );
+      }),
+    });
+
+    return res.status(202).json({
+      success: true,
+      message: `Move task created for template ${template.box_name} to ${targetDatasetPath}`,
+      task_id: task.id,
+    });
+  } catch (error) {
+    log.api.error('Error creating template move task', { error: error.message });
+    return res.status(500).json({ error: 'Failed to create move task' });
+  }
+};
