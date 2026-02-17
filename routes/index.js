@@ -217,7 +217,7 @@ import {
   activateBootEnvironment,
   mountBootEnvironment,
   unmountBootEnvironment,
-} from '../controllers/BootEnvironmentController.js';
+} from '../controllers/BootEnvironmentController/index.js';
 import {
   listRepositories,
   addRepository,
