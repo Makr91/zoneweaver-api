@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/Makr91/zoneweaver-api/compare/v0.2.1...v0.2.2) (2026-06-30)
+
+
+### Bug Fixes
+
+* omnios build ([3a7d864](https://github.com/Makr91/zoneweaver-api/commit/3a7d864fb39c34847fe21ca85b66cd68244b23d4))
+* stuff ([e3ba80d](https://github.com/Makr91/zoneweaver-api/commit/e3ba80d201702f8bcae0c62a98550b532331769c))
+
 ## [0.2.1](https://github.com/Makr91/zoneweaver-api/compare/v0.2.0...v0.2.1) (2026-06-30)
 
 
