@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/Makr91/zoneweaver-api/compare/v0.2.0...v0.2.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* package lock ([0337b7f](https://github.com/Makr91/zoneweaver-api/commit/0337b7fd4f2029bfcff5e3d92dcc65dfc984876f))
+
 ## [0.2.0](https://github.com/Makr91/zoneweaver-api/compare/v0.1.14...v0.2.0) (2026-06-30)
 
 
