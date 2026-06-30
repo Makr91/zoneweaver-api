@@ -96,7 +96,7 @@ install_app() {
     logcmd cp $SRCDIR/LICENSE.md .
     
     # Copy application directories
-    for dir in controllers models routes middleware config lib; do
+    for dir in controllers models routes middleware config lib db; do
         if [ -d "$SRCDIR/$dir" ]; then
             logcmd cp -r $SRCDIR/$dir .
         fi
