@@ -46,7 +46,7 @@ const app = express();
  */
 const serverConfig = config.getServer();
 const sslConfig = config.getSSL();
-const corsConfig = config.getCORS();
+const corsConfig = config.getCORS() || {};
 
 /**
  * Server port configuration
@@ -56,14 +56,26 @@ const httpsPort = serverConfig.https_port;
 
 /**
  * CORS configuration options
- * @description Configures Cross-Origin Resource Sharing with whitelist-based origin validation
+ * @description This is an API-key-authenticated backend in a many-to-many mesh:
+ *   any number of Zoneweaver front-ends proxy to any number of these backends,
+ *   each authenticating with a per-backend API key. The API key — not the browser
+ *   Origin — is the access boundary, so by default the API does not gate on Origin
+ *   (`cors.allow_all`, default true). This avoids having to enumerate every
+ *   front-end origin in every backend's config. Set `cors.allow_all: false` to
+ *   fall back to the explicit `cors.whitelist` and lock down direct browser
+ *   access; proxied, API-key-authenticated calls are unaffected either way.
  */
+const corsAllowAll = corsConfig.allow_all !== false;
+const corsWhitelist = corsConfig.whitelist || [];
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || corsConfig.whitelist.indexOf(origin) !== -1) {
+    if (corsAllowAll || !origin || corsWhitelist.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // Decline (omit Access-Control-Allow-Origin) rather than throw — a thrown
+      // error has no handler here and would surface as a bare HTTP 500.
+      log.app.warn('CORS: origin not allowed', { origin });
+      callback(null, false);
     }
   },
   credentials: true,

@@ -8,6 +8,13 @@ ssl:
   key_path: /etc/zoneweaver-api/ssl/server.key
   cert_path: /etc/zoneweaver-api/ssl/server.crt
 cors:
+  # This backend authenticates every request with an API key (the real access
+  # boundary in the many-to-many Zoneweaver mesh), so by default it does NOT gate
+  # on the browser Origin. Leave allow_all: true for normal mesh operation — it
+  # means front-end origins never have to be enumerated here.
+  # Set allow_all: false to enforce the whitelist below, locking down DIRECT
+  # browser access to only these origins (proxied API-key calls are unaffected).
+  allow_all: true
   whitelist:
     - http://localhost:3000
     - https://localhost:3001

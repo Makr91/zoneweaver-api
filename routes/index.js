@@ -43,6 +43,7 @@ import {
   listVncSessions,
   serveVncConsole,
   proxyVncContent,
+  getVncScreenshot,
 } from '../controllers/VncConsoleController/index.js';
 import {
   getMonitoringStatus,
@@ -528,6 +529,7 @@ router.delete('/tasks/:taskId', verifyApiKey, cancelTask); // Cancel task
 router.post('/zones/:zoneName/vnc/start', verifyApiKey, startVncSession); // Start VNC session
 router.get('/zones/:zoneName/vnc/info', verifyApiKey, getVncSessionInfo); // Get VNC session info
 router.delete('/zones/:zoneName/vnc/stop', verifyApiKey, stopVncSession); // Stop VNC session
+router.get('/zones/:zoneName/vnc/screenshot', verifyApiKey, getVncScreenshot); // Capture VNC console screenshot (PNG)
 router.get('/vnc/sessions', verifyApiKey, listVncSessions); // List all VNC sessions
 
 // VNC Console Content Routes (HTTP proxy to VNC server)

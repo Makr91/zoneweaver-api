@@ -14,6 +14,9 @@ import { serveVncConsole, proxyVncContent } from './ProxyController.js';
 // Import management functions
 import { listVncSessions } from './ManagementController.js';
 
+// Import screenshot function
+import { getVncScreenshot } from './ScreenshotController.js';
+
 // Import cleanup service
 import { startVncSessionCleanup, isVncEnabledAtBoot } from './utils/VncCleanupService.js';
 
@@ -107,6 +110,9 @@ export {
   // Management functions
   listVncSessions,
 
+  // Screenshot
+  getVncScreenshot,
+
   // Cleanup service
   startVncSessionCleanup,
 };
@@ -119,5 +125,6 @@ export default {
   serveVncConsole,
   proxyVncContent,
   listVncSessions,
+  getVncScreenshot,
   startVncSessionCleanup,
 };
