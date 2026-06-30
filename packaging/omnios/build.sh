@@ -80,6 +80,12 @@ build_app() {
     
     # Install production dependencies only
     MAKE=gmake logcmd npm ci --omit=dev
+
+    # Remove cpu-features: optional ssh2 native addon that fails to link on
+    # illumos (fatal relocation error: GetX86Info). ssh2 degrades gracefully
+    # when it is absent. npm overrides cannot disable it (no boolean support),
+    # so strip it here after install.
+    logcmd rm -rf node_modules/cpu-features
 }
 
 install_app() {

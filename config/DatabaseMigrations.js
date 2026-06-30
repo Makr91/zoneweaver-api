@@ -140,6 +140,22 @@ class DatabaseMigrations {
       // Migration for tasks table parent_task_id
       if (await this.tableExists('tasks')) {
         await this.addColumnIfNotExists('tasks', 'parent_task_id', 'CHAR(36) REFERENCES tasks(id)');
+        await this.addColumnIfNotExists('tasks', 'output', 'TEXT');
+      }
+
+      // Migration for vnc_sessions static port columns
+      if (await this.tableExists('vnc_sessions')) {
+        await this.addColumnIfNotExists('vnc_sessions', 'requested_port', 'INTEGER');
+        await this.addColumnIfNotExists(
+          'vnc_sessions',
+          'console_host',
+          "VARCHAR(255) DEFAULT '0.0.0.0'"
+        );
+        await this.addColumnIfNotExists(
+          'vnc_sessions',
+          'port_source',
+          "VARCHAR(255) DEFAULT 'dynamic'"
+        );
       }
 
       // Migration for zones table server_id and vm_type (legacy - kept for old installs)
