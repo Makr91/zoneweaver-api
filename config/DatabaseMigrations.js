@@ -161,7 +161,11 @@ class DatabaseMigrations {
       // Migration for zlogin_sessions automation columns
       if (await this.tableExists('zlogin_sessions')) {
         await this.addColumnIfNotExists('zlogin_sessions', 'session_buffer', 'TEXT');
-        await this.addColumnIfNotExists('zlogin_sessions', 'automation_active', 'BOOLEAN DEFAULT 0');
+        await this.addColumnIfNotExists(
+          'zlogin_sessions',
+          'automation_active',
+          'BOOLEAN DEFAULT 0'
+        );
         await this.addColumnIfNotExists('zlogin_sessions', 'last_activity', 'DATETIME');
       }
 
