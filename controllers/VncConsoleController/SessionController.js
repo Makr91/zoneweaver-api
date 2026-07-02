@@ -280,7 +280,7 @@ const validateAndFinalizeSession = async (req, res, options) => {
 const createNewVncSession = async (req, res, zoneName) => {
   // Get zone configuration for static port settings
   const zone = await Zones.findOne({ where: { name: zoneName } });
-  const zoneConfig = zone?.configuration ? JSON.parse(zone.configuration) : {};
+  const zoneConfig = zone?.configuration || {};
   const staticPort = zoneConfig.settings?.consoleport;
   const bindHost = zoneConfig.settings?.consolehost || '0.0.0.0';
 
