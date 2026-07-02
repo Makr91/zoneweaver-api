@@ -177,6 +177,9 @@ reconciliation:
   log_level: warn
 api_docs:
   enabled: true
+ui:
+  enabled: false
+  path: /opt/zoneweaver-api/ui
 fault_management:
   enabled: true
   cache_interval: 3600

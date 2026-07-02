@@ -426,7 +426,9 @@ import {
   triggerCleanup,
 } from '../controllers/DatabaseController.js';
 import { getVersion, checkForAppUpdates } from '../controllers/VersionController.js';
+import { getStatus } from '../controllers/StatusController.js';
 import config from '../config/ConfigLoader.js';
+import path from 'path';
 
 const router = express.Router();
 
@@ -455,13 +457,40 @@ router.delete('/provisioning/profiles/:id', verifyApiKey, deleteProvisioningProf
 router.get('/version', verifyApiKey, getVersion); // Get application version information
 router.get('/app/updates/check', verifyApiKey, checkForAppUpdates); // Check for application updates
 
-// Root route to display registered Zoneweaver API instances
-router.get('/', getRoot);
-
 // Get configuration for conditional routing
 const statsConfig = config.get('stats') || { public_access: true };
+const uiConfig = config.get('ui') || {};
+
+// UI shim (Direct mode): serve the published Hyperweaver UI artifact when enabled
+if (uiConfig.enabled) {
+  const uiDir = path.resolve(uiConfig.path || path.join(process.cwd(), 'ui'));
+
+  router.use('/ui', express.static(uiDir));
+  router.get('/ui/*splat', (req, res) => {
+    // SPA fallback: client-side routes resolve to index.html
+    void req;
+    res.sendFile(path.join(uiDir, 'index.html'), err => {
+      if (err && !res.headersSent) {
+        res.status(503).json({
+          error: 'UI artifact not installed',
+          details:
+            'The Hyperweaver UI is baked in at package build time - reinstall the package or check ui.path',
+        });
+      }
+    });
+  });
+  router.get('/', (req, res) => {
+    void req;
+    res.redirect('/ui/');
+  });
+} else {
+  // Root route to display registered Zoneweaver API instances
+  router.get('/', getRoot);
+}
 
 // Public routes (no authentication required)
+router.get('/status', getStatus); // Public slim identity & capabilities (Hyperweaver dual-mode contract)
+router.get('/api/status', getStatus); // Unconditional alias — the single mode-discovery probe URL for the SPA
 router.post('/api-keys/bootstrap', bootstrapFirstApiKey); // Bootstrap endpoint for initial setup
 
 // Conditionally public stats endpoint

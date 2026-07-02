@@ -162,9 +162,35 @@ install_app() {
     popd >/dev/null # $DESTDIR
 }
 
+install_ui() {
+    # Bake the published Hyperweaver UI artifact (D4) into the package.
+    # Pinned by the hyperweaverUiVersion field in package.json (same convention
+    # as hyperweaver-server). Tarball root is the SPA root (index.html at top).
+    UI_VERSION=$(node -p "require('./package.json').hyperweaverUiVersion || ''" 2>/dev/null)
+    if [ -z "$UI_VERSION" ]; then
+        logmsg "No hyperweaverUiVersion pin in package.json - skipping UI artifact"
+        return 0
+    fi
+
+    logmsg "Installing Hyperweaver UI ${UI_VERSION}"
+    UI_URL="https://github.com/MarkProminic/hyperweaver-ui/releases/download/v${UI_VERSION}/hyperweaver-ui-${UI_VERSION}.tar.gz"
+    UI_TARBALL="${SRCDIR}/hyperweaver-ui-${UI_VERSION}.tar.gz"
+    UI_DIR="${DESTDIR}/opt/zoneweaver-api/ui"
+
+    logcmd curl -fsSL -o "$UI_TARBALL" "$UI_URL"
+    logcmd mkdir -p "$UI_DIR"
+    (cd "$UI_DIR" && gunzip -c "$UI_TARBALL" | tar -xf -)
+    logcmd rm -f "$UI_TARBALL"
+
+    if [ ! -f "${UI_DIR}/index.html" ]; then
+        logerr "Hyperweaver UI artifact has no index.html at root - aborting"
+        exit 1
+    fi
+}
+
 post_install() {
     logmsg "--- Setting up ZoneweaverAPI staging directory"
-    
+
     logmsg "ZoneweaverAPI staging setup completed"
 }
 
@@ -172,6 +198,7 @@ post_install() {
 logmsg "Starting ZoneweaverAPI build process"
 build_app
 install_app
+install_ui
 post_install
 
 # Create the complete package
