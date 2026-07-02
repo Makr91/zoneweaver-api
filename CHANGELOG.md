@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/Makr91/zoneweaver-api/compare/v0.2.2...v0.2.3) (2026-07-02)
+
+
+### Bug Fixes
+
+* db migrations ([77fc48e](https://github.com/Makr91/zoneweaver-api/commit/77fc48e0d8079b085cb313cb52b1c80613b5b195))
+* linting ([45eca5f](https://github.com/Makr91/zoneweaver-api/commit/45eca5fdf2521ee2a0c09cee3dfb77e2fe569aa3))
+
 ## [0.2.2](https://github.com/Makr91/zoneweaver-api/compare/v0.2.1...v0.2.2) (2026-06-30)
 
 
